@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import {
   Card,
   Row,
@@ -12,9 +12,11 @@ import {
   Badge,
   Spin,
   Empty,
+  Tooltip,
 } from "antd";
-import { UserOutlined } from "@ant-design/icons";
+import { UserOutlined, WifiOutlined } from "@ant-design/icons";
 import { useParams } from "react-router-dom";
+import { useAttendanceSSE } from "../hooks/useAttendanceSSE";
 import { studentsService } from "../services/students";
 import type { Student, DailyAttendance, AttendanceStatus } from "../types";
 import dayjs, { Dayjs } from "dayjs";
@@ -34,25 +36,39 @@ const StudentDetail: React.FC = () => {
   const [attendance, setAttendance] = useState<DailyAttendance[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      if (!id) return;
-      setLoading(true);
-      try {
-        const [studentData, attendanceData] = await Promise.all([
-          studentsService.getById(id),
-          studentsService.getAttendance(id),
-        ]);
-        setStudent(studentData);
-        setAttendance(attendanceData);
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
+  const fetchData = useCallback(async () => {
+    if (!id) return;
+    try {
+      const [studentData, attendanceData] = await Promise.all([
+        studentsService.getById(id),
+        studentsService.getAttendance(id),
+      ]);
+      setStudent(studentData);
+      setAttendance(attendanceData);
+    } catch (err) {
+      console.error(err);
+    }
   }, [id]);
+
+  // SSE for real-time updates - filter by this student
+  const { isConnected } = useAttendanceSSE(student?.schoolId || null, {
+    onEvent: (event) => {
+      // Only refresh if event is for this student
+      if (event?.studentId === id) {
+        fetchData();
+      }
+    },
+    enabled: !!student?.schoolId,
+  });
+
+  useEffect(() => {
+    const loadInitial = async () => {
+      setLoading(true);
+      await fetchData();
+      setLoading(false);
+    };
+    loadInitial();
+  }, [fetchData]);
 
   if (loading) {
     return (
@@ -125,6 +141,21 @@ const StudentDetail: React.FC = () => {
 
   return (
     <div>
+      {/* Connection Status Indicator */}
+      <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <Tooltip title={isConnected ? 'Real-time ulangan' : 'Real-time ulanish yo\'q'}>
+          <Badge
+            status={isConnected ? 'success' : 'error'}
+            text={
+              <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
+                <WifiOutlined style={{ color: isConnected ? '#52c41a' : '#ff4d4f' }} />
+                {isConnected ? 'Live' : 'Offline'}
+              </span>
+            }
+          />
+        </Tooltip>
+      </div>
+
       <Card style={{ marginBottom: 16 }}>
         <Row gutter={24} align="middle">
           <Col>

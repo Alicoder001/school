@@ -1,5 +1,6 @@
 import { FastifyInstance } from "fastify";
 import prisma from "../prisma";
+import { attendanceEmitter } from "../eventEmitter";
 import { MultipartFile } from "@fastify/multipart";
 import fs from "fs";
 import path from "path";
@@ -314,6 +315,19 @@ export default async function (fastify: FastifyInstance) {
         }
       }
     }
+
+    // Emit event for SSE clients
+    attendanceEmitter.emit('attendance', {
+      schoolId: school.id,
+      event: {
+        ...event,
+        student: student ? {
+          id: student.id,
+          name: student.name,
+          class: student.classId ? await prisma.class.findUnique({ where: { id: student.classId } }) : null
+        } : null
+      }
+    });
 
     return reply.send({ ok: true, event });
   });

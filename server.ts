@@ -17,6 +17,7 @@ import devicesRoutes from "./src/routes/devices";
 import holidaysRoutes from "./src/routes/holidays";
 import attendanceRoutes from "./src/routes/attendance";
 import dashboardRoutes from "./src/routes/dashboard";
+import sseRoutes from "./src/routes/sse";
 import { registerJobs } from "./src/cron/jobs";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
@@ -59,6 +60,7 @@ server.register(devicesRoutes, { prefix: "/" });
 server.register(holidaysRoutes, { prefix: "/" });
 server.register(attendanceRoutes, { prefix: "/" });
 server.register(dashboardRoutes, { prefix: "/" });
+server.register(sseRoutes, { prefix: "/" });
 
 const start = async () => {
   try {

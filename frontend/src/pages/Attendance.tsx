@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import {
   Table,
   Button,
@@ -12,9 +12,12 @@ import {
   Statistic,
   message as antdMessage,
   App,
+  Badge,
+  Tooltip,
 } from "antd";
-import { DownloadOutlined } from "@ant-design/icons";
+import { DownloadOutlined, WifiOutlined } from "@ant-design/icons";
 import { useSchool } from "../hooks/useSchool";
+import { useAttendanceSSE } from "../hooks/useAttendanceSSE";
 import { attendanceService } from "../services/attendance";
 import { classesService } from "../services/classes";
 import type { DailyAttendance, Class, AttendanceStatus } from "../types";
@@ -35,7 +38,7 @@ const Attendance: React.FC = () => {
   const [classFilter, setClassFilter] = useState<string | undefined>();
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     if (!schoolId) return;
     setLoading(true);
     try {
@@ -66,7 +69,18 @@ const Attendance: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [schoolId, dateRange, classFilter, statusFilter]);
+
+  // SSE for real-time updates
+  const { isConnected } = useAttendanceSSE(schoolId, {
+    onEvent: () => {
+      // Only auto-refresh if viewing today's data
+      const isToday = dateRange[0].isSame(dayjs(), 'day') && dateRange[1].isSame(dayjs(), 'day');
+      if (isToday) {
+        fetchData();
+      }
+    },
+  });
 
   const fetchClasses = async () => {
     if (!schoolId) return;
@@ -185,6 +199,21 @@ const Attendance: React.FC = () => {
 
   return (
     <div>
+      {/* Connection Status Indicator */}
+      <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <Tooltip title={isConnected ? 'Real-time ulangan' : 'Real-time ulanish yo\'q'}>
+          <Badge
+            status={isConnected ? 'success' : 'error'}
+            text={
+              <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
+                <WifiOutlined style={{ color: isConnected ? '#52c41a' : '#ff4d4f' }} />
+                {isConnected ? 'Live' : 'Offline'}
+              </span>
+            }
+          />
+        </Tooltip>
+      </div>
+
       <Row gutter={16} style={{ marginBottom: 16 }}>
         <Col xs={8}>
           <Card>

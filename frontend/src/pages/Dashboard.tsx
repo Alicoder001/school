@@ -1,13 +1,15 @@
-import React, { useEffect, useState } from "react";
-import { Row, Col, Card, Statistic, Table, Tag, Spin, Empty } from "antd";
+import React, { useEffect, useState, useCallback } from "react";
+import { Row, Col, Card, Statistic, Table, Tag, Spin, Empty, Badge, Tooltip } from "antd";
 import {
   TeamOutlined,
   CheckCircleOutlined,
   ClockCircleOutlined,
   CloseCircleOutlined,
+  WifiOutlined,
 } from "@ant-design/icons";
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend } from "recharts";
 import { useSchool } from "../hooks/useSchool";
+import { useAttendanceSSE } from "../hooks/useAttendanceSSE";
 import { dashboardService } from "../services/dashboard";
 import type { DashboardStats, AttendanceEvent } from "../types";
 import dayjs from "dayjs";
@@ -19,6 +21,26 @@ const Dashboard: React.FC = () => {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [events, setEvents] = useState<AttendanceEvent[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const fetchStats = useCallback(async () => {
+    if (!schoolId) return;
+    try {
+      const statsData = await dashboardService.getStats(schoolId);
+      setStats(statsData);
+    } catch (err) {
+      console.error("Failed to fetch stats:", err);
+    }
+  }, [schoolId]);
+
+  // SSE for real-time updates
+  const { isConnected } = useAttendanceSSE(schoolId, {
+    onEvent: (event) => {
+      // Add new event to the top of the list
+      setEvents((prev) => [event as unknown as AttendanceEvent, ...prev].slice(0, 10));
+      // Refresh stats
+      fetchStats();
+    },
+  });
 
   useEffect(() => {
     const fetchData = async () => {
@@ -91,6 +113,21 @@ const Dashboard: React.FC = () => {
 
   return (
     <div>
+      {/* Connection Status Indicator */}
+      <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <Tooltip title={isConnected ? 'Real-time ulangan' : 'Real-time ulanish yo\'q'}>
+          <Badge
+            status={isConnected ? 'success' : 'error'}
+            text={
+              <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <WifiOutlined style={{ color: isConnected ? '#52c41a' : '#ff4d4f' }} />
+                {isConnected ? 'Live' : 'Offline'}
+              </span>
+            }
+          />
+        </Tooltip>
+      </div>
+
       <Row gutter={[16, 16]}>
         <Col xs={24} sm={12} lg={6}>
           <Card>
