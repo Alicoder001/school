@@ -1,5 +1,5 @@
 import api from "./api";
-import type { Student, DailyAttendance, PaginatedResponse } from "../types";
+import type { Student, DailyAttendance, PaginatedResponse, AttendanceEvent } from "../types";
 
 export const studentsService = {
   async getAll(
@@ -41,6 +41,17 @@ export const studentsService = {
   ): Promise<DailyAttendance[]> {
     const response = await api.get<DailyAttendance[]>(
       `/students/${id}/attendance`,
+      { params },
+    );
+    return response.data;
+  },
+
+  async getEvents(
+    id: string,
+    params?: { date?: string },
+  ): Promise<AttendanceEvent[]> {
+    const response = await api.get<AttendanceEvent[]>(
+      `/students/${id}/events`,
       { params },
     );
     return response.data;

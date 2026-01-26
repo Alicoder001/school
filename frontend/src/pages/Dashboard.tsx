@@ -8,6 +8,8 @@ import {
   WifiOutlined,
   FileTextOutlined,
   WarningOutlined,
+  LoginOutlined,
+  LogoutOutlined,
 } from "@ant-design/icons";
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip } from "recharts";
 import { useSchool } from "../hooks/useSchool";
@@ -92,35 +94,40 @@ const Dashboard: React.FC = () => {
   }
 
   const pieData = [
-    { name: "Present", value: stats.presentToday - stats.lateToday },
-    { name: "Late", value: stats.lateToday },
-    { name: "Absent", value: stats.absentToday },
+    { name: "Kelgan", value: stats.presentToday - stats.lateToday },
+    { name: "Kech", value: stats.lateToday },
+    { name: "Kelmagan", value: stats.absentToday },
   ].filter((d) => d.value > 0);
 
   const eventColumns = [
     {
-      title: "Student",
+      title: "O'quvchi",
       dataIndex: ["student", "name"],
       key: "student",
       render: (_: any, record: AttendanceEvent) =>
-        record.student?.name || "Unknown",
+        record.student?.name || "Noma'lum",
     },
     {
-      title: "Time",
+      title: "Vaqt",
       dataIndex: "timestamp",
       key: "time",
       render: (time: string) => dayjs(time).format("HH:mm"),
     },
     {
-      title: "Type",
+      title: "Holat",
       dataIndex: "eventType",
       key: "type",
       render: (type: string) => (
-        <Tag color={type === "IN" ? "green" : "blue"}>{type}</Tag>
+        <Tag 
+          icon={type === "IN" ? <LoginOutlined /> : <LogoutOutlined />}
+          color={type === "IN" ? "success" : "processing"}
+        >
+          {type === "IN" ? "Kirdi" : "Chiqdi"}
+        </Tag>
       ),
     },
     {
-      title: "Class",
+      title: "Sinf",
       dataIndex: ["student", "class", "name"],
       key: "class",
       render: (_: any, record: AttendanceEvent) =>
@@ -157,75 +164,82 @@ const Dashboard: React.FC = () => {
         </Tooltip>
       </div>
 
+      {/* Asosiy statistika kartochkalari */}
       <Row gutter={[16, 16]}>
-        <Col xs={24} sm={12} lg={6}>
-          <Card>
+        <Col xs={24} sm={12} lg={4}>
+          <Card size="small">
             <Statistic
-              title="Total Students"
+              title="Jami o'quvchilar"
               value={stats.totalStudents}
               prefix={<TeamOutlined style={{ color: "#1890ff" }} />}
-              styles={{ content: { color: "#1890ff" } }}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} lg={6}>
-          <Card>
-            <Statistic
-              title="Present Today"
-              value={stats.presentToday}
-              suffix={`(${stats.presentPercentage}%)`}
-              prefix={<CheckCircleOutlined style={{ color: "#52c41a" }} />}
-              styles={{ content: { color: "#52c41a" } }}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} lg={6}>
-          <Card>
-            <Statistic
-              title="Late Today"
-              value={stats.lateToday}
-              prefix={<ClockCircleOutlined style={{ color: "#faad14" }} />}
-              styles={{ content: { color: "#faad14" } }}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} lg={6}>
-          <Card>
-            <Statistic
-              title="Absent Today"
-              value={stats.absentToday}
-              prefix={<CloseCircleOutlined style={{ color: "#ff4d4f" }} />}
-              styles={{ content: { color: "#ff4d4f" } }}
             />
           </Card>
         </Col>
         <Col xs={24} sm={12} lg={4}>
-          <Card>
+          <Card size="small">
             <Statistic
-              title="Excused"
+              title="Kelganlar"
+              value={stats.presentToday}
+              suffix={<span style={{ fontSize: 14, color: "#8c8c8c" }}>({stats.presentPercentage}%)</span>}
+              prefix={<CheckCircleOutlined style={{ color: "#52c41a" }} />}
+            />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={4}>
+          <Card size="small">
+            <Statistic
+              title="Kech qolganlar"
+              value={stats.lateToday}
+              prefix={<ClockCircleOutlined style={{ color: "#faad14" }} />}
+            />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={4}>
+          <Card size="small">
+            <Statistic
+              title="Kelmaganlar"
+              value={stats.absentToday}
+              prefix={<CloseCircleOutlined style={{ color: "#ff4d4f" }} />}
+            />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={4}>
+          <Card size="small">
+            <Statistic
+              title="Sababli"
               value={stats.excusedToday || 0}
               prefix={<FileTextOutlined style={{ color: "#8c8c8c" }} />}
-              styles={{ content: { color: "#8c8c8c" } }}
+            />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={4}>
+          <Card size="small">
+            <Statistic
+              title="Hozir maktabda"
+              value={stats.currentlyInSchool || 0}
+              suffix={<span style={{ fontSize: 14, color: "#8c8c8c" }}>/ {stats.totalStudents}</span>}
+              prefix={<LoginOutlined style={{ color: "#722ed1" }} />}
             />
           </Card>
         </Col>
       </Row>
 
+      {/* Grafiklar va oxirgi faoliyat */}
       <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
         <Col xs={24} lg={12}>
-          <Card title="Attendance Distribution">
+          <Card title="Davomat taqsimoti" size="small">
             {pieData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={250}>
+              <ResponsiveContainer width="100%" height={220}>
                 <PieChart>
                   <Pie
                     data={pieData}
                     cx="50%"
                     cy="50%"
-                    innerRadius={60}
-                    outerRadius={80}
+                    innerRadius={50}
+                    outerRadius={70}
                     paddingAngle={5}
                     dataKey="value"
-                    label
+                    label={({ name, value }) => `${name}: ${value}`}
                   >
                     {pieData.map((_, index) => (
                       <Cell
@@ -238,19 +252,19 @@ const Dashboard: React.FC = () => {
                 </PieChart>
               </ResponsiveContainer>
             ) : (
-              <Empty description="No attendance data" />
+              <Empty description="Ma'lumot yo'q" />
             )}
           </Card>
         </Col>
         <Col xs={24} lg={12}>
-          <Card title="Recent Activity">
+          <Card title="Oxirgi faoliyat" size="small">
             <Table
               dataSource={events}
               columns={eventColumns}
               rowKey="id"
               pagination={false}
               size="small"
-              locale={{ emptyText: "No recent activity" }}
+              locale={{ emptyText: "Hozircha faoliyat yo'q" }}
             />
           </Card>
         </Col>

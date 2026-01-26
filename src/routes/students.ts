@@ -249,6 +249,35 @@ export default async function (fastify: FastifyInstance) {
     },
   );
 
+  // Kirdi-chiqdi eventlar tarixi
+  fastify.get(
+    "/students/:id/events",
+    { preHandler: [(fastify as any).authenticate] } as any,
+    async (request: any, reply) => {
+      const { id } = request.params;
+      const { date } = request.query as { date?: string };
+      
+      const where: any = { studentId: id };
+      
+      // Agar sana berilgan bo'lsa, faqat o'sha kunniki
+      if (date) {
+        const startOfDay = new Date(`${date}T00:00:00Z`);
+        const endOfDay = new Date(`${date}T23:59:59Z`);
+        where.timestamp = { gte: startOfDay, lte: endOfDay };
+      }
+      
+      const events = await prisma.attendanceEvent.findMany({
+        where,
+        orderBy: { timestamp: "desc" },
+        take: 100,
+        include: {
+          device: true,
+        },
+      });
+      return events;
+    },
+  );
+
   fastify.put(
     "/students/:id",
     { preHandler: [(fastify as any).authenticate] } as any,

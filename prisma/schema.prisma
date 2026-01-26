@@ -128,8 +128,15 @@ model DailyAttendance {
   firstScanTime       DateTime?
   lastScanTime        DateTime?
   lateMinutes         Int?
-  totalTimeOnPremises Int?
+  totalTimeOnPremises Int?      // Jami maktabda bo'lgan vaqt (daqiqalarda)
   notes               String?
+  
+  // Yangi fieldlar - IN/OUT tracking uchun
+  lastInTime          DateTime? // Oxirgi KIRISH vaqti
+  lastOutTime         DateTime? // Oxirgi CHIQISH vaqti
+  currentlyInSchool   Boolean   @default(false) // Hozir maktabdami?
+  scanCount           Int       @default(0) // Jami scan soni
+  
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 

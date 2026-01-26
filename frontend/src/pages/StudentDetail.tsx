@@ -16,12 +16,14 @@ import {
   DatePicker,
   Select,
   Space,
+  Modal,
 } from "antd";
-import { UserOutlined, WifiOutlined } from "@ant-design/icons";
+import { UserOutlined, WifiOutlined, LoginOutlined, LogoutOutlined, ClockCircleOutlined } from "@ant-design/icons";
+import { PieChart, Pie, Cell, ResponsiveContainer, Legend } from "recharts";
 import { useParams } from "react-router-dom";
 import { useAttendanceSSE } from "../hooks/useAttendanceSSE";
 import { studentsService } from "../services/students";
-import type { Student, DailyAttendance, AttendanceStatus } from "../types";
+import type { Student, DailyAttendance, AttendanceStatus, AttendanceEvent } from "../types";
 import dayjs, { Dayjs } from "dayjs";
 
 const { Title, Text } = Typography;
@@ -37,23 +39,34 @@ const StudentDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const [student, setStudent] = useState<Student | null>(null);
   const [attendance, setAttendance] = useState<DailyAttendance[]>([]);
+  const [events, setEvents] = useState<AttendanceEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [monthFilter, setMonthFilter] = useState<Dayjs | null>(null);
   const [statusFilter, setStatusFilter] = useState<AttendanceStatus | undefined>();
+  const [selectedRecord, setSelectedRecord] = useState<DailyAttendance | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!id) return;
     try {
-      const [studentData, attendanceData] = await Promise.all([
+      const [studentData, attendanceData, eventsData] = await Promise.all([
         studentsService.getById(id),
         studentsService.getAttendance(id),
+        studentsService.getEvents(id),
       ]);
       setStudent(studentData);
       setAttendance(attendanceData);
+      setEvents(eventsData);
     } catch (err) {
       console.error(err);
     }
   }, [id]);
+
+  // Eventlarni kun bo'yicha guruhlash
+  const getEventsForDate = (date: string) => {
+    const dateStr = dayjs(date).format("YYYY-MM-DD");
+    return events.filter((e) => dayjs(e.timestamp).format("YYYY-MM-DD") === dateStr);
+  };
 
   // SSE for real-time updates - filter by this student
   const { isConnected } = useAttendanceSSE(student?.schoolId || null, {
@@ -113,39 +126,65 @@ const StudentDetail: React.FC = () => {
     return <Badge color={statusColors[record.status]} />;
   };
 
+  // Jami maktabda bo'lgan vaqtni hisoblash
+  const totalTimeInSchool = attendance.reduce((sum, a) => sum + (a.totalTimeOnPremises || 0), 0);
+  const avgTimePerDay = stats.total > 0 ? Math.round(totalTimeInSchool / stats.total) : 0;
+
+  // Vaqtni soat:daqiqa formatiga o'girish
+  const formatDuration = (minutes: number) => {
+    if (!minutes) return "-";
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    if (hours > 0) {
+      return `${hours}s ${mins}d`;
+    }
+    return `${mins} daqiqa`;
+  };
+
   const columns = [
     {
-      title: "Date",
+      title: "Sana",
       dataIndex: "date",
       key: "date",
-      render: (d: string) => dayjs(d).format("MMM DD, YYYY"),
+      render: (d: string) => dayjs(d).format("DD MMM, YYYY"),
     },
     {
-      title: "Status",
+      title: "Holat",
       dataIndex: "status",
       key: "status",
-      render: (s: AttendanceStatus) => <Tag color={statusColors[s]}>{s}</Tag>,
+      render: (s: AttendanceStatus, record: DailyAttendance) => (
+        <Space>
+          <Tag color={statusColors[s]}>{s}</Tag>
+          {record.currentlyInSchool && <Tag icon={<LoginOutlined />} color="purple">Maktabda</Tag>}
+        </Space>
+      ),
     },
     {
-      title: "Arrived",
+      title: "Kirdi",
       dataIndex: "firstScanTime",
       key: "arrived",
-      render: (t: string) => (t ? dayjs(t).format("HH:mm") : "-"),
+      render: (t: string) => (t ? <><LoginOutlined style={{ color: '#52c41a', marginRight: 4 }} />{dayjs(t).format("HH:mm")}</> : "-"),
     },
     {
-      title: "Left",
-      dataIndex: "lastScanTime",
+      title: "Chiqdi",
+      dataIndex: "lastOutTime",
       key: "left",
-      render: (t: string) => (t ? dayjs(t).format("HH:mm") : "-"),
+      render: (t: string) => (t ? <><LogoutOutlined style={{ color: '#1890ff', marginRight: 4 }} />{dayjs(t).format("HH:mm")}</> : "-"),
     },
     {
-      title: "Late By",
+      title: "Maktabda",
+      dataIndex: "totalTimeOnPremises",
+      key: "timeInSchool",
+      render: (m: number | null) => (m ? <><ClockCircleOutlined style={{ marginRight: 4 }} />{formatDuration(m)}</> : "-"),
+    },
+    {
+      title: "Kechikish",
       dataIndex: "lateMinutes",
       key: "late",
-      render: (m: number | null) => (m ? `${m} min` : "-"),
+      render: (m: number | null) => (m ? <Tag color="orange">{m} daqiqa</Tag> : "-"),
     },
     {
-      title: "Notes",
+      title: "Izoh",
       dataIndex: "notes",
       key: "notes",
       render: (n: string) => n || "-",
@@ -197,36 +236,54 @@ const StudentDetail: React.FC = () => {
         </Row>
       </Card>
 
-      <Row gutter={16} style={{ marginBottom: 16 }}>
-        <Col xs={12} sm={6}>
-          <Card>
-            <Statistic title="Total Days" value={stats.total} />
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        <Col xs={12} sm={4}>
+          <Card size="small">
+            <Statistic title="Jami kunlar" value={stats.total} />
           </Card>
         </Col>
-        <Col xs={12} sm={6}>
-          <Card>
+        <Col xs={12} sm={4}>
+          <Card size="small">
             <Statistic
-              title="Present"
+              title="Kelgan"
               value={stats.present}
               styles={{ content: { color: "#52c41a" } }}
             />
           </Card>
         </Col>
-        <Col xs={12} sm={6}>
-          <Card>
+        <Col xs={12} sm={4}>
+          <Card size="small">
             <Statistic
-              title="Late"
+              title="Kech qolgan"
               value={stats.late}
               styles={{ content: { color: "#faad14" } }}
             />
           </Card>
         </Col>
-        <Col xs={12} sm={6}>
-          <Card>
+        <Col xs={12} sm={4}>
+          <Card size="small">
             <Statistic
-              title="Absent"
+              title="Kelmagan"
               value={stats.absent}
               styles={{ content: { color: "#ff4d4f" } }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} sm={4}>
+          <Card size="small">
+            <Statistic
+              title="Sababli"
+              value={stats.excused}
+              styles={{ content: { color: "#8c8c8c" } }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} sm={4}>
+          <Card size="small">
+            <Statistic
+              title="O'rtacha vaqt"
+              value={formatDuration(avgTimePerDay)}
+              prefix={<ClockCircleOutlined />}
             />
           </Card>
         </Col>
@@ -240,6 +297,89 @@ const StudentDetail: React.FC = () => {
           </Text>
         </Card>
       )}
+
+      {/* Pie Chart va Oxirgi Kirdi-Chiqdilar */}
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        <Col xs={24} lg={12}>
+          <Card title="Davomat taqsimoti" size="small">
+            {stats.total > 0 ? (
+              <ResponsiveContainer width="100%" height={220}>
+                <PieChart>
+                  <Pie
+                    data={[
+                      { name: "Kelgan", value: stats.present, color: "#52c41a" },
+                      { name: "Kech", value: stats.late, color: "#faad14" },
+                      { name: "Kelmagan", value: stats.absent, color: "#ff4d4f" },
+                      { name: "Sababli", value: stats.excused, color: "#8c8c8c" },
+                    ].filter(d => d.value > 0)}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={50}
+                    outerRadius={70}
+                    paddingAngle={5}
+                    dataKey="value"
+                    label={({ name, value }) => `${name}: ${value}`}
+                  >
+                    {[
+                      { name: "Kelgan", value: stats.present, color: "#52c41a" },
+                      { name: "Kech", value: stats.late, color: "#faad14" },
+                      { name: "Kelmagan", value: stats.absent, color: "#ff4d4f" },
+                      { name: "Sababli", value: stats.excused, color: "#8c8c8c" },
+                    ].filter(d => d.value > 0).map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <Empty description="Ma'lumot yo'q" />
+            )}
+          </Card>
+        </Col>
+        <Col xs={24} lg={12}>
+          <Card title="Oxirgi kirdi-chiqdilar" size="small">
+            {events.length > 0 ? (
+              <div style={{ maxHeight: 220, overflowY: 'auto' }}>
+                {events.slice(0, 10).map((event) => (
+                  <div 
+                    key={event.id} 
+                    style={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: 10,
+                      padding: '8px 10px',
+                      marginBottom: 6,
+                      background: event.eventType === 'IN' ? '#f6ffed' : '#e6f7ff',
+                      borderRadius: 6,
+                      borderLeft: `3px solid ${event.eventType === 'IN' ? '#52c41a' : '#1890ff'}`,
+                    }}
+                  >
+                    <Tag 
+                      icon={event.eventType === "IN" ? <LoginOutlined /> : <LogoutOutlined />}
+                      color={event.eventType === "IN" ? "success" : "processing"}
+                      style={{ margin: 0 }}
+                    >
+                      {event.eventType === "IN" ? "KIRDI" : "CHIQDI"}
+                    </Tag>
+                    <Text strong>{dayjs(event.timestamp).format("HH:mm")}</Text>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      {dayjs(event.timestamp).format("DD MMM")}
+                    </Text>
+                    {event.device?.name && (
+                      <Text type="secondary" style={{ fontSize: 11, marginLeft: 'auto' }}>
+                        {event.device.name}
+                      </Text>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <Empty description="Kirdi-chiqdi ma'lumoti yo'q" />
+            )}
+          </Card>
+        </Col>
+      </Row>
 
       <Card 
         title="Davomat Kalendari" 
@@ -298,8 +438,106 @@ const StudentDetail: React.FC = () => {
           rowKey="id"
           size="small"
           pagination={{ pageSize: 20 }}
+          onRow={(record) => ({
+            onClick: () => {
+              setSelectedRecord(record);
+              setModalOpen(true);
+            },
+            style: { cursor: 'pointer' },
+          })}
         />
       </Card>
+
+      {/* Kirdi-Chiqdi Modal */}
+      <Modal
+        title={
+          selectedRecord && (
+            <Space>
+              <span>{dayjs(selectedRecord.date).format("DD MMMM, YYYY")}</span>
+              <Tag color={statusColors[selectedRecord.status]}>{selectedRecord.status}</Tag>
+              {selectedRecord.currentlyInSchool && (
+                <Tag icon={<LoginOutlined />} color="purple">Hozir maktabda</Tag>
+              )}
+            </Space>
+          )
+        }
+        open={modalOpen}
+        onCancel={() => setModalOpen(false)}
+        footer={null}
+        width={500}
+      >
+        {selectedRecord && (
+          <div>
+            {/* Kunlik statistika */}
+            <div style={{ 
+              display: 'flex', 
+              gap: 16, 
+              marginBottom: 16, 
+              padding: 12, 
+              background: '#fafafa', 
+              borderRadius: 8 
+            }}>
+              <div>
+                <Text type="secondary">Kirdi</Text>
+                <div><Text strong>{selectedRecord.firstScanTime ? dayjs(selectedRecord.firstScanTime).format("HH:mm") : "-"}</Text></div>
+              </div>
+              <div>
+                <Text type="secondary">Chiqdi</Text>
+                <div><Text strong>{selectedRecord.lastOutTime ? dayjs(selectedRecord.lastOutTime).format("HH:mm") : "-"}</Text></div>
+              </div>
+              <div>
+                <Text type="secondary">Maktabda</Text>
+                <div><Text strong>{formatDuration(selectedRecord.totalTimeOnPremises || 0)}</Text></div>
+              </div>
+              {selectedRecord.lateMinutes && selectedRecord.lateMinutes > 0 && (
+                <div>
+                  <Text type="secondary">Kechikish</Text>
+                  <div><Tag color="orange">{selectedRecord.lateMinutes} daqiqa</Tag></div>
+                </div>
+              )}
+            </div>
+
+            {/* Kirdi-Chiqdi tarixi */}
+            <Text strong style={{ display: 'block', marginBottom: 8 }}>Kirdi-Chiqdi tarixi</Text>
+            {(() => {
+              const dayEvents = getEventsForDate(selectedRecord.date);
+              if (dayEvents.length === 0) {
+                return <Empty description="Bu kunda kirdi-chiqdi ma'lumoti yo'q" />;
+              }
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {dayEvents.map((event) => (
+                    <div 
+                      key={event.id} 
+                      style={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: 12,
+                        padding: '10px 14px',
+                        background: event.eventType === 'IN' ? '#f6ffed' : '#e6f7ff',
+                        borderRadius: 8,
+                        borderLeft: `4px solid ${event.eventType === 'IN' ? '#52c41a' : '#1890ff'}`,
+                      }}
+                    >
+                      <Tag 
+                        icon={event.eventType === "IN" ? <LoginOutlined /> : <LogoutOutlined />}
+                        color={event.eventType === "IN" ? "success" : "processing"}
+                        style={{ margin: 0 }}
+                      >
+                        {event.eventType === "IN" ? "KIRDI" : "CHIQDI"}
+                      </Tag>
+                      <Text strong style={{ fontSize: 16 }}>{dayjs(event.timestamp).format("HH:mm:ss")}</Text>
+                      {event.device?.name && (
+                        <Text type="secondary">{event.device.name}</Text>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
+        )}
+      </Modal>
     </div>
   );
 };

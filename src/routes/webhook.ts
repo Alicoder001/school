@@ -265,25 +265,79 @@ export default async function (fastify: FastifyInstance) {
         })
         .catch(() => null);
 
+      // IN yoki OUT ekanligini aniqlash
+      const eventType = params.direction === "in" ? "IN" : "OUT";
+      const eventTime = new Date(dateTime);
+
       if (existing) {
-        const update: any = {};
-        if (!existing.firstScanTime) update.firstScanTime = new Date(dateTime);
-        update.lastScanTime = new Date(dateTime);
+        const update: any = {
+          lastScanTime: eventTime,
+          scanCount: existing.scanCount + 1,
+        };
+
+        // Takroriy scan filtri - 2 daqiqa ichida bir xil eventType bo'lsa, ignore
+        const MIN_SCAN_INTERVAL = 2 * 60 * 1000; // 2 daqiqa
+        
+        if (eventType === "IN") {
+          // KIRISH
+          // Agar allaqachon maktabda bo'lsa va 2 daqiqa ichida yana IN kelsa - ignore
+          if (existing.currentlyInSchool && existing.lastInTime) {
+            const timeSinceLastIn = eventTime.getTime() - new Date(existing.lastInTime).getTime();
+            if (timeSinceLastIn < MIN_SCAN_INTERVAL) {
+              console.log(`Ignoring duplicate IN scan (${Math.round(timeSinceLastIn/1000)}s since last IN)`);
+              return reply.send({ ok: true, ignored: true, reason: "duplicate_scan" });
+            }
+          }
+          
+          if (!existing.firstScanTime) {
+            update.firstScanTime = eventTime;
+          }
+          update.lastInTime = eventTime;
+          update.currentlyInSchool = true;
+        } else {
+          // CHIQISH
+          // Agar allaqachon tashqarida bo'lsa va 2 daqiqa ichida yana OUT kelsa - ignore
+          if (!existing.currentlyInSchool && existing.lastOutTime) {
+            const timeSinceLastOut = eventTime.getTime() - new Date(existing.lastOutTime).getTime();
+            if (timeSinceLastOut < MIN_SCAN_INTERVAL) {
+              console.log(`Ignoring duplicate OUT scan (${Math.round(timeSinceLastOut/1000)}s since last OUT)`);
+              return reply.send({ ok: true, ignored: true, reason: "duplicate_scan" });
+            }
+          }
+          
+          update.lastOutTime = eventTime;
+          update.currentlyInSchool = false;
+
+          // totalTimeOnPremises hisoblash (agar oldin kirgan bo'lsa va hozir maktabda bo'lsa)
+          if (existing.lastInTime && existing.currentlyInSchool) {
+            const sessionMinutes = Math.round(
+              (eventTime.getTime() - new Date(existing.lastInTime).getTime()) / 60000
+            );
+            // Faqat musbat qiymatni qo'shamiz (noto'g'ri scan'larni filtrlash)
+            if (sessionMinutes > 0 && sessionMinutes < 720) { // max 12 soat
+              update.totalTimeOnPremises = (existing.totalTimeOnPremises || 0) + sessionMinutes;
+              console.log(`Added ${sessionMinutes} minutes to totalTimeOnPremises`);
+            }
+          }
+        }
+
         await prisma.dailyAttendance.update({
           where: { id: existing.id },
           data: update,
         });
       } else {
-        // determine late
+        // Yangi DailyAttendance yaratish
+        // Faqat KIRISH bo'lsa yoki birinchi scan bo'lsa
+        
+        // Kech qolishni aniqlash (faqat IN uchun)
         let status: any = "PRESENT";
         let lateMinutes: number | null = null;
-        if (cls) {
-          // parse class.startTime like "08:00"
+        
+        if (eventType === "IN" && cls) {
           const [h, m] = cls.startTime.split(":").map(Number);
           const classStart = new Date(dateTime);
           classStart.setHours(h, m, 0, 0);
-          const diff =
-            (new Date(dateTime).getTime() - classStart.getTime()) / 60000;
+          const diff = (eventTime.getTime() - classStart.getTime()) / 60000;
           if (diff > school.lateThresholdMinutes) {
             status = "LATE";
             lateMinutes = Math.round(diff - school.lateThresholdMinutes);
@@ -296,9 +350,13 @@ export default async function (fastify: FastifyInstance) {
             schoolId: school.id,
             date: dateOnly,
             status,
-            firstScanTime: new Date(dateTime),
-            lastScanTime: new Date(dateTime),
+            firstScanTime: eventType === "IN" ? eventTime : null,
+            lastScanTime: eventTime,
             lateMinutes,
+            lastInTime: eventType === "IN" ? eventTime : null,
+            lastOutTime: eventType === "OUT" ? eventTime : null,
+            currentlyInSchool: eventType === "IN",
+            scanCount: 1,
           },
         });
       }

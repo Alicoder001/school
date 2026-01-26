@@ -29,6 +29,11 @@ export default async function (fastify: FastifyInstance) {
         where: { schoolId, date: today, status: "EXCUSED" },
       });
 
+      // Hozir maktabda bo'lganlar soni
+      const currentlyInSchool = await prisma.dailyAttendance.count({
+        where: { schoolId, date: today, currentlyInSchool: true },
+      });
+
       // Class breakdown - get stats per class
       const classes = await prisma.class.findMany({
         where: { schoolId },
@@ -125,6 +130,7 @@ export default async function (fastify: FastifyInstance) {
         lateToday,
         absentToday,
         excusedToday,
+        currentlyInSchool,
         timezone: tz,
         presentPercentage:
           totalStudents > 0

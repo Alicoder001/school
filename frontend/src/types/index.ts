@@ -113,6 +113,11 @@ export interface DailyAttendance {
     lateMinutes?: number;
     totalTimeOnPremises?: number;
     notes?: string;
+    // Yangi IN/OUT tracking fieldlar
+    lastInTime?: string;
+    lastOutTime?: string;
+    currentlyInSchool?: boolean;
+    scanCount?: number;
     createdAt: string;
     updatedAt: string;
 }
@@ -134,6 +139,8 @@ export interface DashboardStats {
     absentToday: number;
     excusedToday: number;
     presentPercentage: number;
+    // Yangi: Hozir maktabda bo'lganlar
+    currentlyInSchool?: number;
     morningStats?: { present: number; late: number; absent: number };
     afternoonStats?: { present: number; late: number; absent: number };
     classBreakdown?: Array<{
