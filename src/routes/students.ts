@@ -39,7 +39,35 @@ export default async function (fastify: FastifyInstance) {
         prisma.student.count({ where }),
       ]);
 
-      return { data: students, total, page: Number(page) };
+      // Get today's attendance for all students
+      const todayStr = new Date().toLocaleDateString("en-CA");
+      const today = new Date(`${todayStr}T00:00:00Z`);
+      const studentIds = students.map((s) => s.id);
+      
+      const todayAttendance = await prisma.dailyAttendance.findMany({
+        where: {
+          studentId: { in: studentIds },
+          date: today,
+        },
+        select: {
+          studentId: true,
+          status: true,
+          firstScanTime: true,
+        },
+      });
+
+      const attendanceMap = new Map(
+        todayAttendance.map((a) => [a.studentId, a])
+      );
+
+      // Add today's status to each student
+      const studentsWithStatus = students.map((s) => ({
+        ...s,
+        todayStatus: attendanceMap.get(s.id)?.status || null,
+        todayFirstScan: attendanceMap.get(s.id)?.firstScanTime || null,
+      }));
+
+      return { data: studentsWithStatus, total, page: Number(page) };
     },
   );
 

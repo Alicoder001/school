@@ -7,7 +7,36 @@ export default async function (fastify: FastifyInstance) {
     // check permission: if not SUPER_ADMIN and not matching user's school -> forbidden
     const user = request.user;
     if (user.role !== 'SUPER_ADMIN' && user.schoolId !== schoolId) return reply.status(403).send({ error: 'forbidden' });
-    return prisma.class.findMany({ where: { schoolId } });
+    
+    const classes = await prisma.class.findMany({ 
+      where: { schoolId },
+      include: {
+        _count: { select: { students: true } },
+      },
+    });
+
+    // Get today's attendance for each class
+    const todayStr = new Date().toLocaleDateString("en-CA");
+    const today = new Date(`${todayStr}T00:00:00Z`);
+
+    const classesWithAttendance = await Promise.all(
+      classes.map(async (cls) => {
+        const presentCount = await prisma.dailyAttendance.count({
+          where: {
+            date: today,
+            status: { in: ["PRESENT", "LATE"] },
+            student: { classId: cls.id },
+          },
+        });
+        return {
+          ...cls,
+          todayPresent: presentCount,
+          totalStudents: cls._count.students,
+        };
+      })
+    );
+
+    return classesWithAttendance;
   });
 
   fastify.post('/schools/:schoolId/classes', { preHandler: [(fastify as any).authenticate] } as any, async (request: any, reply) => {

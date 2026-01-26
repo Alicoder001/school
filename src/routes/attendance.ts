@@ -124,4 +124,29 @@ export default async function (fastify: FastifyInstance) {
       return prisma.dailyAttendance.update({ where: { id }, data });
     },
   );
+
+  // Bulk update attendance status
+  fastify.put(
+    "/attendance/bulk",
+    { preHandler: [(fastify as any).authenticate] } as any,
+    async (request: any) => {
+      const { ids, status, notes } = request.body as {
+        ids: string[];
+        status: string;
+        notes?: string;
+      };
+
+      const updateData: any = { status };
+      if (notes !== undefined) {
+        updateData.notes = notes;
+      }
+
+      const result = await prisma.dailyAttendance.updateMany({
+        where: { id: { in: ids } },
+        data: updateData,
+      });
+
+      return { updated: result.count };
+    },
+  );
 }

@@ -25,18 +25,120 @@ export default async function (fastify: FastifyInstance) {
       const absentToday = await prisma.dailyAttendance.count({
         where: { schoolId, date: today, status: "ABSENT" },
       });
+      const excusedToday = await prisma.dailyAttendance.count({
+        where: { schoolId, date: today, status: "EXCUSED" },
+      });
+
+      // Class breakdown - get stats per class
+      const classes = await prisma.class.findMany({
+        where: { schoolId },
+        include: {
+          _count: { select: { students: true } },
+        },
+      });
+
+      const classBreakdown = await Promise.all(
+        classes.map(async (cls) => {
+          const totalInClass = cls._count.students;
+          const presentInClass = await prisma.dailyAttendance.count({
+            where: {
+              schoolId,
+              date: today,
+              status: { in: ["PRESENT", "LATE"] },
+              student: { classId: cls.id },
+            },
+          });
+          const lateInClass = await prisma.dailyAttendance.count({
+            where: {
+              schoolId,
+              date: today,
+              status: "LATE",
+              student: { classId: cls.id },
+            },
+          });
+          return {
+            classId: cls.id,
+            className: cls.name,
+            total: totalInClass,
+            present: presentInClass,
+            late: lateInClass,
+          };
+        })
+      );
+
+      // Weekly stats (last 7 days)
+      const weeklyStats = [];
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(today);
+        d.setDate(d.getDate() - i);
+        const dayStr = d.toLocaleDateString("en-CA");
+        const dayDate = new Date(`${dayStr}T00:00:00Z`);
+        
+        const present = await prisma.dailyAttendance.count({
+          where: { schoolId, date: dayDate, status: { in: ["PRESENT", "LATE"] } },
+        });
+        const late = await prisma.dailyAttendance.count({
+          where: { schoolId, date: dayDate, status: "LATE" },
+        });
+        const absent = await prisma.dailyAttendance.count({
+          where: { schoolId, date: dayDate, status: "ABSENT" },
+        });
+        
+        weeklyStats.push({
+          date: dayStr,
+          dayName: ["Ya", "Du", "Se", "Ch", "Pa", "Ju", "Sh"][d.getDay()],
+          present,
+          late,
+          absent,
+        });
+      }
+
+      // Not yet arrived students (students without attendance record today)
+      const studentsWithAttendance = await prisma.dailyAttendance.findMany({
+        where: { schoolId, date: today },
+        select: { studentId: true },
+      });
+      const arrivedIds = studentsWithAttendance.map((a) => a.studentId);
+      
+      const notYetArrived = await prisma.student.findMany({
+        where: {
+          schoolId,
+          isActive: true,
+          id: { notIn: arrivedIds },
+        },
+        take: 20,
+        include: { class: true },
+        orderBy: { name: "asc" },
+      });
+
+      const notYetArrivedCount = await prisma.student.count({
+        where: {
+          schoolId,
+          isActive: true,
+          id: { notIn: arrivedIds },
+        },
+      });
 
       return {
         totalStudents,
         presentToday,
         lateToday,
         absentToday,
+        excusedToday,
         timezone: tz,
         presentPercentage:
           totalStudents > 0
             ? Math.round(((presentToday + lateToday) / totalStudents) * 100)
             : 0,
         currentTime: new Date().toISOString(),
+        classBreakdown,
+        weeklyStats,
+        notYetArrived: notYetArrived.map((s) => ({
+          id: s.id,
+          name: s.name,
+          className: s.class?.name || "-",
+        })),
+        notYetArrivedCount,
       };
     },
   );

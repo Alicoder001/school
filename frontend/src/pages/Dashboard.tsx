@@ -1,26 +1,33 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { Row, Col, Card, Statistic, Table, Tag, Spin, Empty, Badge, Tooltip } from "antd";
+import { Row, Col, Card, Statistic, Table, Tag, Spin, Empty, Badge, Tooltip, Typography, Alert, List, Progress } from "antd";
 import {
   TeamOutlined,
   CheckCircleOutlined,
   ClockCircleOutlined,
   CloseCircleOutlined,
   WifiOutlined,
+  FileTextOutlined,
+  WarningOutlined,
 } from "@ant-design/icons";
-import { PieChart, Pie, Cell, ResponsiveContainer, Legend } from "recharts";
+import { PieChart, Pie, Cell, ResponsiveContainer, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip } from "recharts";
 import { useSchool } from "../hooks/useSchool";
 import { useAttendanceSSE } from "../hooks/useAttendanceSSE";
 import { dashboardService } from "../services/dashboard";
-import type { DashboardStats, AttendanceEvent } from "../types";
+import { schoolsService } from "../services/schools";
+import type { DashboardStats, AttendanceEvent, School } from "../types";
 import dayjs from "dayjs";
 
-const COLORS = ["#52c41a", "#faad14", "#ff4d4f"];
+const { Text } = Typography;
+
+const COLORS = ["#52c41a", "#faad14", "#ff4d4f", "#8c8c8c"];
 
 const Dashboard: React.FC = () => {
   const { schoolId } = useSchool();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [events, setEvents] = useState<AttendanceEvent[]>([]);
+  const [school, setSchool] = useState<School | null>(null);
   const [loading, setLoading] = useState(true);
+  const [currentTime, setCurrentTime] = useState(dayjs());
 
   const fetchStats = useCallback(async () => {
     if (!schoolId) return;
@@ -31,6 +38,14 @@ const Dashboard: React.FC = () => {
       console.error("Failed to fetch stats:", err);
     }
   }, [schoolId]);
+
+  // Update current time every minute
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(dayjs());
+    }, 60000);
+    return () => clearInterval(timer);
+  }, []);
 
   // SSE for real-time updates
   const { isConnected } = useAttendanceSSE(schoolId, {
@@ -47,12 +62,14 @@ const Dashboard: React.FC = () => {
       if (!schoolId) return;
       setLoading(true);
       try {
-        const [statsData, eventsData] = await Promise.all([
+        const [statsData, eventsData, schoolData] = await Promise.all([
           dashboardService.getStats(schoolId),
           dashboardService.getRecentEvents(schoolId, 10),
+          schoolsService.getById(schoolId),
         ]);
         setStats(statsData);
         setEvents(eventsData);
+        setSchool(schoolData);
       } catch (err) {
         console.error("Failed to load dashboard:", err);
       } finally {
@@ -113,8 +130,20 @@ const Dashboard: React.FC = () => {
 
   return (
     <div>
-      {/* Connection Status Indicator */}
-      <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+      {/* Header with time and connection status */}
+      <div style={{ 
+        marginBottom: 16, 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: 8
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <Text strong style={{ fontSize: 16 }}>
+            🕐 {currentTime.format('HH:mm')} | 📅 {currentTime.format('YYYY-MM-DD, dddd')}
+          </Text>
+        </div>
         <Tooltip title={isConnected ? 'Real-time ulangan' : 'Real-time ulanish yo\'q'}>
           <Badge
             status={isConnected ? 'success' : 'error'}
@@ -170,6 +199,16 @@ const Dashboard: React.FC = () => {
             />
           </Card>
         </Col>
+        <Col xs={24} sm={12} lg={4}>
+          <Card>
+            <Statistic
+              title="Excused"
+              value={stats.excusedToday || 0}
+              prefix={<FileTextOutlined style={{ color: "#8c8c8c" }} />}
+              styles={{ content: { color: "#8c8c8c" } }}
+            />
+          </Card>
+        </Col>
       </Row>
 
       <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
@@ -216,6 +255,101 @@ const Dashboard: React.FC = () => {
           </Card>
         </Col>
       </Row>
+
+      {/* Not Yet Arrived Alert */}
+      {stats.notYetArrivedCount && stats.notYetArrivedCount > 0 && (
+        <Alert
+          type="warning"
+          showIcon
+          icon={<WarningOutlined />}
+          style={{ marginTop: 16 }}
+          message={
+            <span>
+              <strong>{stats.notYetArrivedCount}</strong> ta o'quvchi hali kelmagan
+            </span>
+          }
+          description={
+            <List
+              size="small"
+              dataSource={stats.notYetArrived?.slice(0, 5)}
+              renderItem={(item) => (
+                <List.Item style={{ padding: '4px 0' }}>
+                  {item.name} ({item.className})
+                </List.Item>
+              )}
+              footer={
+                stats.notYetArrivedCount > 5 && (
+                  <Text type="secondary">...va yana {stats.notYetArrivedCount - 5} ta</Text>
+                )
+              }
+            />
+          }
+        />
+      )}
+
+      {/* Class Breakdown and Weekly Stats */}
+      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+        <Col xs={24} lg={12}>
+          <Card title="Sinf bo'yicha davomat" size="small">
+            {stats.classBreakdown && stats.classBreakdown.length > 0 ? (
+              <div style={{ maxHeight: 250, overflowY: 'auto' }}>
+                {stats.classBreakdown.map((cls) => (
+                  <div key={cls.classId} style={{ marginBottom: 12 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <Text strong>{cls.className}</Text>
+                      <Text type="secondary">
+                        {cls.present}/{cls.total} kelgan
+                        {cls.late > 0 && <Tag color="orange" style={{ marginLeft: 8 }}>{cls.late} kech</Tag>}
+                      </Text>
+                    </div>
+                    <Progress
+                      percent={cls.total > 0 ? Math.round((cls.present / cls.total) * 100) : 0}
+                      size="small"
+                      status={cls.total > 0 && cls.present / cls.total < 0.8 ? 'exception' : 'success'}
+                      showInfo={false}
+                    />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <Empty description="Ma'lumot yo'q" />
+            )}
+          </Card>
+        </Col>
+        <Col xs={24} lg={12}>
+          <Card title="Haftalik trend" size="small">
+            {stats.weeklyStats && stats.weeklyStats.length > 0 ? (
+              <ResponsiveContainer width="100%" height={250}>
+                <BarChart data={stats.weeklyStats}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="dayName" />
+                  <YAxis />
+                  <RechartsTooltip />
+                  <Bar dataKey="present" fill="#52c41a" name="Kelgan" />
+                  <Bar dataKey="late" fill="#faad14" name="Kech" />
+                  <Bar dataKey="absent" fill="#ff4d4f" name="Kelmagan" />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <Empty description="Ma'lumot yo'q" />
+            )}
+          </Card>
+        </Col>
+      </Row>
+
+      {/* Rules Footer */}
+      {school && (
+        <Card size="small" style={{ marginTop: 16, background: '#fafafa' }}>
+          <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', color: '#666' }}>
+            <Text type="secondary">
+              ⏰ <strong>Kech qolish:</strong> sinf boshlanishidan {school.lateThresholdMinutes} daqiqa keyin
+            </Text>
+            <Text type="secondary">
+              ❌ <strong>Kelmagan:</strong> {school.absenceCutoffTime} gacha scan qilmasa
+            </Text>
+          </div>
+        </Card>
+      )}
     </div>
   );
 };

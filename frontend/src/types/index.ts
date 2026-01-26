@@ -49,6 +49,8 @@ export interface Class {
     createdAt: string;
     updatedAt: string;
     _count?: { students: number };
+    todayPresent?: number;
+    totalStudents?: number;
 }
 
 // Student
@@ -65,6 +67,9 @@ export interface Student {
     isActive: boolean;
     createdAt: string;
     updatedAt: string;
+    // Today's attendance (populated by list endpoint)
+    todayStatus?: AttendanceStatus | null;
+    todayFirstScan?: string | null;
 }
 
 // Device
@@ -127,9 +132,30 @@ export interface DashboardStats {
     presentToday: number;
     lateToday: number;
     absentToday: number;
+    excusedToday: number;
     presentPercentage: number;
     morningStats?: { present: number; late: number; absent: number };
     afternoonStats?: { present: number; late: number; absent: number };
+    classBreakdown?: Array<{
+        classId: string;
+        className: string;
+        total: number;
+        present: number;
+        late: number;
+    }>;
+    weeklyStats?: Array<{
+        date: string;
+        dayName: string;
+        present: number;
+        late: number;
+        absent: number;
+    }>;
+    notYetArrived?: Array<{
+        id: string;
+        name: string;
+        className: string;
+    }>;
+    notYetArrivedCount?: number;
 }
 
 // API Response types

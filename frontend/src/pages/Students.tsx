@@ -10,6 +10,7 @@ import {
   message,
   Modal,
   Form,
+  Popconfirm,
 } from "antd";
 import {
   PlusOutlined,
@@ -17,6 +18,7 @@ import {
   UploadOutlined,
   DownloadOutlined,
   UserOutlined,
+  DeleteOutlined,
 } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
 import { useSchool } from "../hooks/useSchool";
@@ -157,7 +159,26 @@ const Students: React.FC = () => {
     {
       title: "Status",
       key: "status",
-      render: () => <Tag color="default">-</Tag>, // TODO: fetch today's status
+      render: (_: any, record: Student) => {
+        if (!record.todayStatus) {
+          return <Tag color="default">—</Tag>;
+        }
+        const statusConfig: Record<string, { color: string; text: string }> = {
+          PRESENT: { color: "green", text: "Kelgan" },
+          LATE: { color: "orange", text: "Kech" },
+          ABSENT: { color: "red", text: "Kelmagan" },
+          EXCUSED: { color: "gray", text: "Excused" },
+        };
+        const config = statusConfig[record.todayStatus] || { color: "default", text: record.todayStatus };
+        const time = record.todayFirstScan 
+          ? new Date(record.todayFirstScan).toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" })
+          : "";
+        return (
+          <Tag color={config.color}>
+            {config.text} {time && `(${time})`}
+          </Tag>
+        );
+      },
     },
     {
       title: "Actions",
@@ -173,6 +194,23 @@ const Students: React.FC = () => {
           <Button size="small" onClick={() => handleEdit(record)}>
             Edit
           </Button>
+          <Popconfirm
+            title="O'quvchini o'chirish?"
+            description="Bu o'quvchining barcha ma'lumotlari o'chiriladi."
+            onConfirm={async () => {
+              try {
+                await studentsService.delete(record.id);
+                message.success('O\'quvchi o\'chirildi');
+                fetchStudents();
+              } catch (err) {
+                message.error('O\'chirishda xatolik');
+              }
+            }}
+            okText="Ha"
+            cancelText="Yo'q"
+          >
+            <Button size="small" danger icon={<DeleteOutlined />} />
+          </Popconfirm>
         </Space>
       ),
     },

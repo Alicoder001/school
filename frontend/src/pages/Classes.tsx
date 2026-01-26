@@ -84,6 +84,20 @@ const Classes: React.FC = () => {
         { title: 'Start Time', dataIndex: 'startTime', key: 'startTime' },
         { title: 'End Time', dataIndex: 'endTime', key: 'endTime', render: (t: string) => t || '-' },
         { title: 'Students', dataIndex: ['_count', 'students'], key: 'students', render: (c: number) => c || 0 },
+        { 
+            title: 'Bugun', 
+            key: 'today', 
+            render: (_: any, record: Class) => {
+                const present = record.todayPresent || 0;
+                const total = record.totalStudents || record._count?.students || 0;
+                const percent = total > 0 ? Math.round((present / total) * 100) : 0;
+                return (
+                    <span style={{ color: percent < 80 ? '#ff4d4f' : '#52c41a' }}>
+                        {present}/{total} ({percent}%)
+                    </span>
+                );
+            }
+        },
         {
             title: 'Actions',
             key: 'actions',

@@ -23,4 +23,9 @@ export const attendanceService = {
         });
         return response.data;
     },
+
+    async bulkUpdate(ids: string[], status: string, notes?: string): Promise<{ updated: number }> {
+        const response = await api.put<{ updated: number }>('/attendance/bulk', { ids, status, notes });
+        return response.data;
+    },
 };

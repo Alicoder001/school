@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import {
   Table,
   Button,
@@ -10,12 +10,12 @@ import {
   Row,
   Col,
   Statistic,
-  message as antdMessage,
   App,
   Badge,
   Tooltip,
+  Input,
 } from "antd";
-import { DownloadOutlined, WifiOutlined } from "@ant-design/icons";
+import { DownloadOutlined, WifiOutlined, SearchOutlined } from "@ant-design/icons";
 import { useSchool } from "../hooks/useSchool";
 import { useAttendanceSSE } from "../hooks/useAttendanceSSE";
 import { attendanceService } from "../services/attendance";
@@ -37,6 +37,9 @@ const Attendance: React.FC = () => {
   ]);
   const [classFilter, setClassFilter] = useState<string | undefined>();
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
+  const [searchText, setSearchText] = useState("");
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
+  const [bulkLoading, setBulkLoading] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!schoolId) return;
@@ -129,12 +132,21 @@ const Attendance: React.FC = () => {
     }
   };
 
+  // Filter records by search text
+  const filteredRecords = useMemo(() => {
+    if (!searchText.trim()) return records;
+    const search = searchText.toLowerCase();
+    return records.filter((r) => 
+      r.student?.name?.toLowerCase().includes(search)
+    );
+  }, [records, searchText]);
+
   const stats = {
-    present: records.filter(
+    present: filteredRecords.filter(
       (r) => r.status === "PRESENT" || r.status === "LATE",
     ).length,
-    late: records.filter((r) => r.status === "LATE").length,
-    absent: records.filter((r) => r.status === "ABSENT").length,
+    late: filteredRecords.filter((r) => r.status === "LATE").length,
+    absent: filteredRecords.filter((r) => r.status === "ABSENT").length,
   };
 
   const columns = [
@@ -245,6 +257,38 @@ const Attendance: React.FC = () => {
       </Row>
 
       <Space style={{ marginBottom: 16, flexWrap: "wrap" }} size="middle">
+        {/* Search Input */}
+        <Input
+          placeholder="O'quvchi nomi..."
+          prefix={<SearchOutlined />}
+          value={searchText}
+          onChange={(e) => setSearchText(e.target.value)}
+          style={{ width: 180 }}
+          allowClear
+        />
+
+        {/* Quick Date Buttons */}
+        <Button.Group>
+          <Button
+            type={dateRange[0].isSame(dayjs(), 'day') && dateRange[1].isSame(dayjs(), 'day') ? 'primary' : 'default'}
+            onClick={() => setDateRange([dayjs(), dayjs()])}
+          >
+            Bugun
+          </Button>
+          <Button
+            type={dateRange[0].isSame(dayjs().subtract(1, 'day'), 'day') && dateRange[1].isSame(dayjs().subtract(1, 'day'), 'day') ? 'primary' : 'default'}
+            onClick={() => setDateRange([dayjs().subtract(1, 'day'), dayjs().subtract(1, 'day')])}
+          >
+            Kecha
+          </Button>
+          <Button
+            type={dateRange[0].isSame(dayjs().startOf('week'), 'day') && dateRange[1].isSame(dayjs(), 'day') ? 'primary' : 'default'}
+            onClick={() => setDateRange([dayjs().startOf('week'), dayjs()])}
+          >
+            Bu hafta
+          </Button>
+        </Button.Group>
+
         <RangePicker
           value={dateRange}
           onChange={(values) =>
@@ -252,37 +296,65 @@ const Attendance: React.FC = () => {
           }
         />
         <Select
-          placeholder="Filter by class"
+          placeholder="Sinf"
           value={classFilter}
           onChange={setClassFilter}
-          style={{ width: 150 }}
+          style={{ width: 120 }}
           allowClear
           options={classes.map((c) => ({ label: c.name, value: c.id }))}
         />
         <Select
-          placeholder="Filter by status"
+          placeholder="Status"
           value={statusFilter}
           onChange={setStatusFilter}
           style={{ width: 120 }}
           allowClear
           options={[
-            { value: "PRESENT", label: "Present" },
-            { value: "LATE", label: "Late" },
-            { value: "ABSENT", label: "Absent" },
+            { value: "PRESENT", label: "Kelgan" },
+            { value: "LATE", label: "Kech" },
+            { value: "ABSENT", label: "Kelmagan" },
             { value: "EXCUSED", label: "Excused" },
           ]}
         />
         <Button icon={<DownloadOutlined />} onClick={handleExport}>
           Export
         </Button>
+        {selectedRowKeys.length > 0 && (
+          <Button
+            type="primary"
+            loading={bulkLoading}
+            onClick={async () => {
+              setBulkLoading(true);
+              try {
+                const result = await attendanceService.bulkUpdate(
+                  selectedRowKeys as string[],
+                  'EXCUSED'
+                );
+                message.success(`${result.updated} ta yozuv "Excused" qilindi`);
+                setSelectedRowKeys([]);
+                fetchData();
+              } catch (err) {
+                message.error('Xatolik yuz berdi');
+              } finally {
+                setBulkLoading(false);
+              }
+            }}
+          >
+            {selectedRowKeys.length} tani Excused qilish
+          </Button>
+        )}
       </Space>
 
       <Table
-        dataSource={records}
+        dataSource={filteredRecords}
         columns={columns}
         rowKey="id"
         loading={loading}
         size="middle"
+        rowSelection={{
+          selectedRowKeys,
+          onChange: (keys) => setSelectedRowKeys(keys),
+        }}
       />
     </div>
   );

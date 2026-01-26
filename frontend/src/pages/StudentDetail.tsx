@@ -13,6 +13,9 @@ import {
   Spin,
   Empty,
   Tooltip,
+  DatePicker,
+  Select,
+  Space,
 } from "antd";
 import { UserOutlined, WifiOutlined } from "@ant-design/icons";
 import { useParams } from "react-router-dom";
@@ -35,6 +38,8 @@ const StudentDetail: React.FC = () => {
   const [student, setStudent] = useState<Student | null>(null);
   const [attendance, setAttendance] = useState<DailyAttendance[]>([]);
   const [loading, setLoading] = useState(true);
+  const [monthFilter, setMonthFilter] = useState<Dayjs | null>(null);
+  const [statusFilter, setStatusFilter] = useState<AttendanceStatus | undefined>();
 
   const fetchData = useCallback(async () => {
     if (!id) return;
@@ -82,11 +87,19 @@ const StudentDetail: React.FC = () => {
     return <Empty description="Student not found" />;
   }
 
+  // Calculate stats including excused and average late time
+  const lateRecords = attendance.filter((a) => a.status === "LATE");
+  const avgLateMinutes = lateRecords.length > 0
+    ? Math.round(lateRecords.reduce((sum, a) => sum + (a.lateMinutes || 0), 0) / lateRecords.length)
+    : 0;
+
   const stats = {
     total: attendance.length,
     present: attendance.filter((a) => a.status === "PRESENT").length,
-    late: attendance.filter((a) => a.status === "LATE").length,
+    late: lateRecords.length,
     absent: attendance.filter((a) => a.status === "ABSENT").length,
+    excused: attendance.filter((a) => a.status === "EXCUSED").length,
+    avgLateMinutes,
   };
 
   const attendanceMap = new Map(
@@ -219,16 +232,72 @@ const StudentDetail: React.FC = () => {
         </Col>
       </Row>
 
-      <Card title="Attendance Calendar" style={{ marginBottom: 16 }}>
+      {/* Average late info */}
+      {stats.late > 0 && (
+        <Card size="small" style={{ marginBottom: 16, background: '#fffbe6' }}>
+          <Text>
+            ⏰ <strong>O'rtacha kechikish:</strong> {stats.avgLateMinutes} daqiqa ({stats.late} marta kech kelgan)
+          </Text>
+        </Card>
+      )}
+
+      <Card 
+        title="Davomat Kalendari" 
+        style={{ marginBottom: 16 }}
+        extra={
+          <div style={{ display: 'flex', gap: 12, fontSize: 12 }}>
+            <span><Badge color="green" /> Kelgan</span>
+            <span><Badge color="orange" /> Kech</span>
+            <span><Badge color="red" /> Kelmagan</span>
+            <span><Badge color="gray" /> Excused</span>
+          </div>
+        }
+      >
         <Calendar fullscreen={false} cellRender={dateCellRender} />
       </Card>
 
-      <Card title="Attendance History">
+      <Card 
+        title="Davomat Tarixi"
+        extra={
+          <Space>
+            <DatePicker
+              picker="month"
+              placeholder="Oy tanlang"
+              value={monthFilter}
+              onChange={(date) => setMonthFilter(date)}
+              allowClear
+            />
+            <Select
+              placeholder="Status"
+              value={statusFilter}
+              onChange={(value) => setStatusFilter(value)}
+              style={{ width: 120 }}
+              allowClear
+              options={[
+                { value: "PRESENT", label: "Kelgan" },
+                { value: "LATE", label: "Kech" },
+                { value: "ABSENT", label: "Kelmagan" },
+                { value: "EXCUSED", label: "Excused" },
+              ]}
+            />
+          </Space>
+        }
+      >
         <Table
-          dataSource={attendance}
+          dataSource={attendance.filter((a) => {
+            let match = true;
+            if (monthFilter) {
+              match = match && dayjs(a.date).isSame(monthFilter, 'month');
+            }
+            if (statusFilter) {
+              match = match && a.status === statusFilter;
+            }
+            return match;
+          })}
           columns={columns}
           rowKey="id"
           size="small"
+          pagination={{ pageSize: 20 }}
         />
       </Card>
     </div>
