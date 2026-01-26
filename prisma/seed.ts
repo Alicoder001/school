@@ -143,7 +143,7 @@ async function main() {
         phone: "123456789",
         email: "school1@example.com",
         lateThresholdMinutes: config.lateThresholdMinutes,
-        absenceCutoffTime: "10:00",
+        absenceCutoffMinutes: 180,
         timezone: "Asia/Tashkent",
       },
     });
@@ -233,7 +233,7 @@ async function main() {
         phone: `100000${schoolNumber}`,
         email: `school${schoolNumber}@example.com`,
         lateThresholdMinutes: config.lateThresholdMinutes,
-        absenceCutoffTime: "10:00",
+        absenceCutoffMinutes: 180,
         timezone: "Asia/Tashkent",
       },
     });

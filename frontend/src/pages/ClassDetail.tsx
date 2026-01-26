@@ -72,7 +72,7 @@ const STATUS_CONFIG: Record<EffectiveStatus, { color: string; bg: string; text: 
 // Effective status aniqlash funksiyasi
 const getEffectiveStatus = (
   todayStatus: AttendanceStatus | null | undefined,
-  absenceCutoffTime: string,
+  absenceCutoffMinutes: number,
   classStartTime?: string
 ): EffectiveStatus => {
   // Agar status mavjud bo'lsa - uni qaytaramiz
@@ -81,18 +81,19 @@ const getEffectiveStatus = (
   // Status null - DailyAttendance yozuvi yo'q
   const now = dayjs();
   
-  // 1. Dars boshlanmagan bo'lsa - PENDING
-  if (classStartTime) {
-    const [sh, sm] = classStartTime.split(':').map(Number);
-    const classStart = dayjs().hour(sh).minute(sm).second(0);
-    if (now.isBefore(classStart)) {
-      return 'PENDING';
-    }
+  // Dars boshlanish vaqti bo'lishi shart
+  if (!classStartTime) return 'PENDING';
+
+  const [sh, sm] = classStartTime.split(':').map(Number);
+  const classStart = dayjs().hour(sh).minute(sm).second(0);
+  
+  // 1. Dars hali boshlanmagan bo'lsa - PENDING
+  if (now.isBefore(classStart)) {
+    return 'PENDING';
   }
   
-  // 2. Cutoff vaqti o'tmagan bo'lsa - PENDING
-  const [ch, cm] = absenceCutoffTime.split(':').map(Number);
-  const cutoff = dayjs().hour(ch).minute(cm).second(0);
+  // 2. Dars boshlangan, lekin cutoff muddati hali o'tmagan bo'lsa - PENDING
+  const cutoff = classStart.add(absenceCutoffMinutes, 'minute');
   if (now.isBefore(cutoff)) {
     return 'PENDING';
   }
@@ -228,17 +229,17 @@ const ClassDetail: React.FC = () => {
     }
   };
 
-  // Default cutoff time va class start time
-  const absenceCutoffTime = school?.absenceCutoffTime || '10:00';
+  // Default cutoff minutes va class start time
+  const absenceCutoffMinutes = school?.absenceCutoffMinutes || 180;
   const classStartTime = classData?.startTime;
 
   // O'quvchilarning effective statuslarini hisoblash
   const studentsWithEffectiveStatus = useMemo(() => {
     return students.map(student => ({
       ...student,
-      effectiveStatus: getEffectiveStatus(student.todayStatus, absenceCutoffTime, classStartTime),
+      effectiveStatus: getEffectiveStatus(student.todayStatus, absenceCutoffMinutes, classStartTime),
     }));
-  }, [students, absenceCutoffTime, classStartTime]);
+  }, [students, absenceCutoffMinutes, classStartTime]);
 
   // Statistikalar
   const stats = useMemo(() => {

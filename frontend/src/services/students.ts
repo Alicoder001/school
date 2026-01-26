@@ -1,12 +1,24 @@
 import api from "./api";
-import type { Student, DailyAttendance, PaginatedResponse, AttendanceEvent } from "../types";
+import type { Student, DailyAttendance, AttendanceEvent, PeriodType, StudentsResponse } from "../types";
+
+// Re-export for convenience
+export type { StudentsResponse } from "../types";
+
+export interface StudentsFilters {
+  page?: number;
+  search?: string;
+  classId?: string;
+  period?: PeriodType;
+  startDate?: string;
+  endDate?: string;
+}
 
 export const studentsService = {
   async getAll(
     schoolId: string,
-    params?: { page?: number; search?: string; classId?: string },
-  ): Promise<PaginatedResponse<Student>> {
-    const response = await api.get<PaginatedResponse<Student>>(
+    params?: StudentsFilters,
+  ): Promise<StudentsResponse> {
+    const response = await api.get<StudentsResponse>(
       `/schools/${schoolId}/students`,
       { params },
     );

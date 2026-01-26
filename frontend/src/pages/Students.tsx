@@ -12,6 +12,9 @@ import {
   Popconfirm,
   App,
   Typography,
+  Segmented,
+  DatePicker,
+  Progress,
 } from "antd";
 import {
   PlusOutlined,
@@ -24,17 +27,31 @@ import {
   CheckCircleOutlined,
   ClockCircleOutlined,
   CloseCircleOutlined,
+  PercentageOutlined,
 } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
 import { useSchool } from "../hooks/useSchool";
 import { studentsService } from "../services/students";
+import type { StudentsResponse } from "../types";
 import { classesService } from "../services/classes";
+import type { PeriodType } from "../types";
 import { PageHeader, Divider } from "../components";
 import { StatItem } from "../components/StatItem";
 import { getAssetUrl, DEFAULT_PAGE_SIZE } from "../config";
 import type { Student, Class } from "../types";
+import dayjs from "dayjs";
 
 const { Text } = Typography;
+const { RangePicker } = DatePicker;
+
+// Vaqt filterlari opsiyalari
+const PERIOD_OPTIONS = [
+  { label: 'Bugun', value: 'today' },
+  { label: 'Kecha', value: 'yesterday' },
+  { label: 'Hafta', value: 'week' },
+  { label: 'Oy', value: 'month' },
+  { label: 'Yil', value: 'year' },
+];
 
 const Students: React.FC = () => {
   const { schoolId } = useSchool();
@@ -50,18 +67,32 @@ const Students: React.FC = () => {
   const [modalOpen, setModalOpen] = useState(false);
   const [form] = Form.useForm();
   const [editingId, setEditingId] = useState<string | null>(null);
+  
+  // Vaqt filterlari
+  const [selectedPeriod, setSelectedPeriod] = useState<PeriodType>('today');
+  const [customDateRange, setCustomDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
+  const [responseData, setResponseData] = useState<StudentsResponse | null>(null);
 
   const fetchStudents = async () => {
     if (!schoolId) return;
     setLoading(true);
     try {
-      const data = await studentsService.getAll(schoolId, {
+      const params: any = {
         page,
         search,
         classId: classFilter,
-      });
+        period: selectedPeriod,
+      };
+      
+      if (selectedPeriod === 'custom' && customDateRange) {
+        params.startDate = customDateRange[0].format('YYYY-MM-DD');
+        params.endDate = customDateRange[1].format('YYYY-MM-DD');
+      }
+      
+      const data = await studentsService.getAll(schoolId, params);
       setStudents(data.data || []);
       setTotal(data.total || 0);
+      setResponseData(data);
     } catch (err) {
       console.error(err);
     } finally {
@@ -82,15 +113,21 @@ const Students: React.FC = () => {
   useEffect(() => {
     fetchStudents();
     fetchClasses();
-  }, [schoolId, page, search, classFilter]);
+  }, [schoolId, page, search, classFilter, selectedPeriod, customDateRange]);
 
-  // Statistikalar
+  // Statistikalar - API'dan kelgan stats'dan olish
   const stats = useMemo(() => {
+    if (responseData?.stats) {
+      return responseData.stats;
+    }
+    // Fallback
     const present = students.filter(s => s.todayStatus === 'PRESENT').length;
     const late = students.filter(s => s.todayStatus === 'LATE').length;
     const absent = students.filter(s => s.todayStatus === 'ABSENT').length;
-    return { total, present, late, absent };
-  }, [students, total]);
+    return { total, present, late, absent, excused: 0 };
+  }, [responseData, students, total]);
+  
+  const isSingleDay = responseData?.isSingleDay ?? true;
 
   const handleAdd = () => {
     setEditingId(null);
@@ -188,8 +225,9 @@ const Students: React.FC = () => {
       width: 80,
       render: (cls: Class | undefined) => cls?.name ? <Tag>{cls.name}</Tag> : <Text type="secondary">-</Text>,
     },
-    {
-      title: "Bugungi holat",
+    // Bitta kun uchun - holat ustuni
+    ...(isSingleDay ? [{
+      title: "Holat",
       key: "status",
       width: 140,
       render: (_: any, record: Student) => {
@@ -212,7 +250,63 @@ const Students: React.FC = () => {
           </Tag>
         );
       },
-    },
+    }] : []),
+    // Ko'p kun uchun - statistika ustunlari
+    ...(!isSingleDay ? [
+      {
+        title: "Davomat %",
+        key: "attendancePercent",
+        width: 120,
+        sorter: (a: any, b: any) => (a.periodStats?.attendancePercent || 0) - (b.periodStats?.attendancePercent || 0),
+        render: (_: any, record: any) => {
+          const percent = record.periodStats?.attendancePercent || 0;
+          return (
+            <Progress 
+              percent={percent} 
+              size="small" 
+              status={percent >= 80 ? "success" : percent >= 60 ? "normal" : "exception"}
+              format={(p) => `${p}%`}
+            />
+          );
+        },
+      },
+      {
+        title: <span style={{ color: "#52c41a" }}><CheckCircleOutlined /> Kelgan</span>,
+        key: "present",
+        width: 80,
+        align: "center" as const,
+        render: (_: any, record: any) => (
+          <Text style={{ color: "#52c41a" }}>{record.periodStats?.presentCount || 0}</Text>
+        ),
+      },
+      {
+        title: <span style={{ color: "#faad14" }}><ClockCircleOutlined /> Kech</span>,
+        key: "late",
+        width: 80,
+        align: "center" as const,
+        render: (_: any, record: any) => (
+          <Text style={{ color: "#faad14" }}>{record.periodStats?.lateCount || 0}</Text>
+        ),
+      },
+      {
+        title: <span style={{ color: "#ff4d4f" }}><CloseCircleOutlined /> Yo'q</span>,
+        key: "absent",
+        width: 80,
+        align: "center" as const,
+        render: (_: any, record: any) => (
+          <Text style={{ color: "#ff4d4f" }}>{record.periodStats?.absentCount || 0}</Text>
+        ),
+      },
+      {
+        title: "Kunlar",
+        key: "totalDays",
+        width: 70,
+        align: "center" as const,
+        render: (_: any, record: any) => (
+          <Text type="secondary">{record.periodStats?.totalDays || 0}</Text>
+        ),
+      },
+    ] : []),
     {
       title: "",
       key: "actions",
@@ -254,6 +348,44 @@ const Students: React.FC = () => {
     <div>
       {/* Kompakt Header - Dashboard uslubida */}
       <PageHeader>
+        {/* Vaqt filterlari */}
+        <Segmented
+          size="small"
+          value={selectedPeriod}
+          onChange={(value) => {
+            setSelectedPeriod(value as PeriodType);
+            if (value !== 'custom') setCustomDateRange(null);
+            setPage(1);
+          }}
+          options={PERIOD_OPTIONS}
+        />
+        
+        {/* Custom date range picker */}
+        {selectedPeriod === 'custom' || customDateRange ? (
+          <RangePicker
+            size="small"
+            value={customDateRange}
+            onChange={(dates) => {
+              if (dates && dates[0] && dates[1]) {
+                setCustomDateRange([dates[0], dates[1]]);
+                setSelectedPeriod('custom');
+              } else {
+                setCustomDateRange(null);
+                setSelectedPeriod('today');
+              }
+              setPage(1);
+            }}
+            format="DD.MM.YYYY"
+            style={{ width: 200 }}
+          />
+        ) : null}
+        
+        {responseData?.periodLabel && selectedPeriod !== 'today' && (
+          <Tag color="blue">{responseData.periodLabel}</Tag>
+        )}
+
+        <Divider />
+        
         <StatItem 
           icon={<TeamOutlined />} 
           value={stats.total} 
@@ -265,23 +397,23 @@ const Students: React.FC = () => {
         <StatItem 
           icon={<CheckCircleOutlined />} 
           value={stats.present} 
-          label="kelgan" 
+          label={isSingleDay ? "kelgan" : "kelgan (jami)"} 
           color="#52c41a"
-          tooltip="Bugun kelganlar"
+          tooltip={isSingleDay ? "Kelganlar" : "Vaqt oralig'ida kelgan kunlar soni"}
         />
         <StatItem 
           icon={<ClockCircleOutlined />} 
           value={stats.late} 
-          label="kech" 
+          label={isSingleDay ? "kech" : "kech (jami)"} 
           color="#faad14"
-          tooltip="Kech qolganlar"
+          tooltip={isSingleDay ? "Kech qolganlar" : "Vaqt oralig'ida kech qolgan kunlar soni"}
         />
         <StatItem 
           icon={<CloseCircleOutlined />} 
           value={stats.absent} 
-          label="yo'q" 
+          label={isSingleDay ? "yo'q" : "yo'q (jami)"} 
           color="#ff4d4f"
-          tooltip="Kelmaganlar"
+          tooltip={isSingleDay ? "Kelmaganlar" : "Vaqt oralig'ida kelmagan kunlar soni"}
         />
         <Divider />
         <Input

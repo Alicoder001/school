@@ -28,7 +28,7 @@ const Settings: React.FC = () => {
                 setSchoolName(data.name);
                 form.setFieldsValue({
                     lateThresholdMinutes: data.lateThresholdMinutes,
-                    absenceCutoffTime: dayjs(data.absenceCutoffTime, 'HH:mm'),
+                    absenceCutoffMinutes: data.absenceCutoffMinutes,
                 });
             } catch (err) {
                 console.error(err);
@@ -45,7 +45,7 @@ const Settings: React.FC = () => {
         try {
             await schoolsService.update(schoolId, {
                 lateThresholdMinutes: values.lateThresholdMinutes,
-                absenceCutoffTime: values.absenceCutoffTime?.format('HH:mm'),
+                absenceCutoffMinutes: values.absenceCutoffMinutes,
             });
             message.success('Sozlamalar saqlandi');
         } catch (err) {
@@ -97,14 +97,16 @@ const Settings: React.FC = () => {
                     </Form.Item>
                     
                     <Form.Item 
-                        name="absenceCutoffTime" 
-                        label="Kelmagan deb belgilash vaqti"
-                        tooltip="Bu vaqtgacha kelmagan o'quvchi avtomatik 'Kelmagan' deb belgilanadi"
+                        name="absenceCutoffMinutes" 
+                        label="Kelmagan deb belgilash muddati"
+                        tooltip="Dars boshlanishidan necha daqiqa keyin kelmagan o'quvchi avtomatik 'Kelmagan' deb belgilanadi"
                     >
-                        <TimePicker 
-                            format="HH:mm" 
+                        <InputNumber 
+                            min={0} 
+                            max={600} 
                             style={{ width: '100%' }} 
-                            placeholder="10:00"
+                            placeholder="180"
+                            addonAfter="daqiqa"
                         />
                     </Form.Item>
 

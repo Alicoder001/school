@@ -1,6 +1,7 @@
 import { FastifyInstance } from "fastify";
 import prisma from "../prisma";
 import { v4 as uuidv4 } from "uuid";
+import bcrypt from "bcryptjs";
 
 export default async function (fastify: FastifyInstance) {
   fastify.get(
@@ -14,6 +15,7 @@ export default async function (fastify: FastifyInstance) {
     },
   );
 
+  // Yangi maktab qo'shish - admin bilan birga
   fastify.post(
     "/",
     { preHandler: [(fastify as any).authenticate] } as any,
@@ -21,16 +23,89 @@ export default async function (fastify: FastifyInstance) {
       const user = request.user;
       if (user.role !== "SUPER_ADMIN")
         return reply.status(403).send({ error: "forbidden" });
-      const { name, address, phone, email } = request.body;
-      const school = await prisma.school.create({
-        data: {
-          name,
-          address,
-          phone,
-          email,
-        },
-      });
-      return school;
+      
+            const {
+              name,
+              address,
+              phone,
+              email,
+              lateThresholdMinutes,
+              absenceCutoffMinutes,
+              // Admin ma'lumotlari
+              adminName,
+              adminEmail,
+              adminPassword,
+            } = request.body as any;
+      
+            // Email validatsiya
+            if (adminEmail) {
+              const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+              if (!emailRegex.test(adminEmail)) {
+                return reply.status(400).send({ error: "Noto'g'ri email formati" });
+              }
+      
+              // Email mavjudligini tekshirish
+              const existingUser = await prisma.user.findUnique({
+                where: { email: adminEmail },
+              });
+              if (existingUser) {
+                return reply.status(400).send({ error: "Bu email allaqachon ro'yxatdan o'tgan" });
+              }
+            }
+      
+            // Parol validatsiya
+            if (adminPassword && adminPassword.length < 6) {
+              return reply.status(400).send({ error: "Parol kamida 6 ta belgidan iborat bo'lishi kerak" });
+            }
+      
+            try {
+              // Transaction bilan maktab va admin yaratish
+              const result = await prisma.$transaction(async (tx) => {
+                // Maktab yaratish
+                          const school = await tx.school.create({
+                            data: {
+                              name,
+                              address,
+                              phone,
+                              email,
+                              lateThresholdMinutes: lateThresholdMinutes || 15,
+                              absenceCutoffMinutes: absenceCutoffMinutes || 180,
+                              webhookSecretIn: uuidv4(),
+                              webhookSecretOut: uuidv4(),
+                            },
+                          });          // Admin yaratish (agar ma'lumotlar berilgan bo'lsa)
+          let admin = null;
+          if (adminName && adminEmail && adminPassword) {
+            const hashedPassword = await bcrypt.hash(adminPassword, 10);
+            admin = await tx.user.create({
+              data: {
+                name: adminName,
+                email: adminEmail,
+                password: hashedPassword,
+                role: "SCHOOL_ADMIN",
+                schoolId: school.id,
+              },
+            });
+          }
+
+          return { school, admin };
+        });
+
+        return {
+          ...result.school,
+          admin: result.admin ? {
+            id: result.admin.id,
+            name: result.admin.name,
+            email: result.admin.email,
+          } : null,
+        };
+      } catch (err: any) {
+        console.error("School creation error:", err);
+        if (err.code === "P2002") {
+          return reply.status(400).send({ error: "Bu email allaqachon mavjud" });
+        }
+        return reply.status(500).send({ error: "Maktab yaratishda xatolik" });
+      }
     },
   );
 
@@ -62,7 +137,7 @@ export default async function (fastify: FastifyInstance) {
         phone,
         email,
         lateThresholdMinutes,
-        absenceCutoffTime,
+        absenceCutoffMinutes,
         timezone,
       } = request.body;
       const school = await prisma.school.update({
@@ -73,7 +148,7 @@ export default async function (fastify: FastifyInstance) {
           phone,
           email,
           lateThresholdMinutes,
-          absenceCutoffTime,
+          absenceCutoffMinutes,
           timezone,
         },
       });

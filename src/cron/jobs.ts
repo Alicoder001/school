@@ -1,9 +1,9 @@
 import cron from 'node-cron';
 import prisma from '../prisma';
-import { getLocalDateOnly } from '../utils/date';
+import { getLocalDateOnly, addMinutesToTime } from '../utils/date';
 
 export function registerJobs(server: any) {
-  // ✅ OPTIMIZED: Device health check every 30 minutes - batch update
+  // ... (device health check qismi o'zgarishsiz qoladi)
   cron.schedule('*/30 * * * *', async () => {
     const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
     
@@ -35,40 +35,48 @@ export function registerJobs(server: any) {
     }
   });
 
-  // ✅ OPTIMIZED: Mark Absent Job - batch operations
-  // Har daqiqada faqat tegishli maktablarni tekshirish
+  // ✅ OPTIMIZED: Mark Absent Job - sinflar bo'yicha ishlaydi
   cron.schedule('* * * * *', async () => {
     const now = new Date();
     const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
     const today = getLocalDateOnly(now);
 
     try {
-      // ✅ OPTIMIZATION 1: Faqat hozirgi vaqtga to'g'ri keladigan maktablarni olish
-      const schoolsAtCutoff = await prisma.school.findMany({
-        where: { absenceCutoffTime: currentTime },
-        select: { id: true, name: true }
+      // 1. Barcha maktablarni va ularning sinflarini olamiz
+      const schools = await prisma.school.findMany({
+        include: {
+          classes: {
+            select: {
+              id: true,
+              startTime: true,
+              name: true
+            }
+          }
+        }
       });
 
-      if (schoolsAtCutoff.length === 0) {
-        return; // Hech qanday maktab cutoff vaqtida emas
-      }
-
-      server.log.info(`Processing absence marking for ${schoolsAtCutoff.length} schools at ${currentTime}`);
-
-      for (const school of schoolsAtCutoff) {
+      for (const school of schools) {
         try {
-          // ✅ OPTIMIZATION 2: Bayram kunini tekshirish
+          // 2. Bayram kunini tekshirish
           const holidayCount = await prisma.holiday.count({
             where: { schoolId: school.id, date: today }
           });
 
-          if (holidayCount > 0) {
-            server.log.info(`Skipping ${school.name} - holiday`);
-            continue;
-          }
+          if (holidayCount > 0) continue;
 
-          // ✅ OPTIMIZATION 3: Bitta raw query bilan kelmaganlarni topish va insert qilish
-          // Bu N+1 muammosini to'liq hal qiladi
+          // 3. Ushbu maktabda aynan hozir cutoff vaqti kelgan sinflarni aniqlaymiz
+          const classesToProcess = school.classes.filter(cls => 
+            addMinutesToTime(cls.startTime, school.absenceCutoffMinutes) === currentTime
+          );
+
+          if (classesToProcess.length === 0) continue;
+
+          const classIds = classesToProcess.map(c => c.id);
+          
+          server.log.info(`Processing ${classIds.length} classes for ${school.name} at cutoff ${currentTime}`);
+
+          // 4. Bitta query bilan ushbu sinflardagi kelmagan o'quvchilarni belgilash
+          // Postgresql 'ANY' operatori orqali classIds arrayini uzatamiz
           const result = await prisma.$executeRaw`
             INSERT INTO "DailyAttendance" ("id", "studentId", "schoolId", "date", "status", "createdAt", "updatedAt", "currentlyInSchool", "scanCount")
             SELECT 
@@ -83,6 +91,7 @@ export function registerJobs(server: any) {
               0
             FROM "Student" s
             WHERE s."schoolId" = ${school.id}
+              AND s."classId" = ANY(${classIds})
               AND s."isActive" = true
               AND NOT EXISTS (
                 SELECT 1 FROM "DailyAttendance" da 
@@ -91,7 +100,9 @@ export function registerJobs(server: any) {
               )
           `;
 
-          server.log.info(`Marked ${result} students as ABSENT for ${school.name}`);
+          if (result > 0) {
+            server.log.info(`Marked ${result} students as ABSENT in classes: ${classesToProcess.map(c => c.name).join(', ')}`);
+          }
         } catch (schoolErr) {
           server.log.error(`Error processing school ${school.name}:`, schoolErr);
         }

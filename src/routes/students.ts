@@ -1,21 +1,26 @@
 import { FastifyInstance } from "fastify";
 import prisma from "../prisma";
 import ExcelJS from "exceljs";
-import { getLocalDateOnly } from "../utils/date";
+import { getLocalDateOnly, getDateRange, DateRangeType } from "../utils/date";
 
 export default async function (fastify: FastifyInstance) {
+  // Students list with period-based attendance stats
   fastify.get(
     "/schools/:schoolId/students",
     { preHandler: [(fastify as any).authenticate] } as any,
     async (request: any, reply) => {
       const { schoolId } = request.params;
-      const { page = 1, search = "", classId } = request.query as any;
+      const { page = 1, search = "", classId, period, startDate, endDate } = request.query as any;
       const take = 50;
       const skip = (Number(page) - 1) * take;
 
       const user = request.user;
       if (user.role !== "SUPER_ADMIN" && user.schoolId !== schoolId)
         return reply.status(403).send({ error: "forbidden" });
+
+      // Vaqt oralig'ini hisoblash
+      const dateRange = getDateRange(period || 'today', startDate, endDate);
+      const isSingleDay = dateRange.startDate.getTime() === dateRange.endDate.getTime();
 
       const where: any = {
         schoolId,
@@ -40,34 +45,118 @@ export default async function (fastify: FastifyInstance) {
         prisma.student.count({ where }),
       ]);
 
-      // Get today's attendance for all students
-      const today = getLocalDateOnly(new Date());
       const studentIds = students.map((s) => s.id);
       
-      const todayAttendance = await prisma.dailyAttendance.findMany({
+      // Vaqt oralig'iga qarab attendance olish
+      const dateFilter = isSingleDay 
+        ? { date: dateRange.startDate }
+        : { date: { gte: dateRange.startDate, lte: dateRange.endDate } };
+
+      const periodAttendance = await prisma.dailyAttendance.findMany({
         where: {
           studentId: { in: studentIds },
-          date: today,
+          ...dateFilter,
         },
         select: {
           studentId: true,
           status: true,
           firstScanTime: true,
+          date: true,
         },
       });
 
-      const attendanceMap = new Map(
-        todayAttendance.map((a) => [a.studentId, a])
-      );
+      // Har bir student uchun statistikani hisoblash
+      const studentStatsMap = new Map<string, {
+        presentCount: number;
+        lateCount: number;
+        absentCount: number;
+        excusedCount: number;
+        totalDays: number;
+        lastStatus: string | null;
+        lastFirstScan: Date | null;
+      }>();
 
-      // Add today's status to each student
-      const studentsWithStatus = students.map((s) => ({
-        ...s,
-        todayStatus: attendanceMap.get(s.id)?.status || null,
-        todayFirstScan: attendanceMap.get(s.id)?.firstScanTime || null,
-      }));
+      // Studentlar uchun boshlang'ich qiymatlar
+      studentIds.forEach(id => {
+        studentStatsMap.set(id, {
+          presentCount: 0,
+          lateCount: 0,
+          absentCount: 0,
+          excusedCount: 0,
+          totalDays: 0,
+          lastStatus: null,
+          lastFirstScan: null,
+        });
+      });
 
-      return { data: studentsWithStatus, total, page: Number(page) };
+      // Attendance ma'lumotlarini yig'ish
+      periodAttendance.forEach((a) => {
+        const stats = studentStatsMap.get(a.studentId);
+        if (stats) {
+          stats.totalDays++;
+          if (a.status === 'PRESENT') stats.presentCount++;
+          else if (a.status === 'LATE') stats.lateCount++;
+          else if (a.status === 'ABSENT') stats.absentCount++;
+          else if (a.status === 'EXCUSED') stats.excusedCount++;
+          
+          // Oxirgi sanani saqlash (bugun yoki oxirgi kun uchun)
+          if (!stats.lastFirstScan || (a.firstScanTime && a.date > (stats.lastFirstScan as any))) {
+            stats.lastStatus = a.status;
+            stats.lastFirstScan = a.firstScanTime;
+          }
+        }
+      });
+
+      // Add attendance stats to each student
+      const studentsWithStatus = students.map((s) => {
+        const stats = studentStatsMap.get(s.id);
+        return {
+          ...s,
+          // Bitta kun uchun - to'g'ridan-to'g'ri status
+          todayStatus: isSingleDay ? stats?.lastStatus || null : null,
+          todayFirstScan: isSingleDay ? stats?.lastFirstScan || null : null,
+          // Ko'p kunlik statistika
+          periodStats: !isSingleDay ? {
+            presentCount: stats?.presentCount || 0,
+            lateCount: stats?.lateCount || 0,
+            absentCount: stats?.absentCount || 0,
+            excusedCount: stats?.excusedCount || 0,
+            totalDays: stats?.totalDays || 0,
+            attendancePercent: stats && stats.totalDays > 0 
+              ? Math.round(((stats.presentCount + stats.lateCount) / stats.totalDays) * 100)
+              : 0,
+          } : null,
+        };
+      });
+
+      // Umumiy statistika
+      const overallStats = {
+        total,
+        present: isSingleDay 
+          ? studentsWithStatus.filter(s => s.todayStatus === 'PRESENT').length
+          : studentsWithStatus.reduce((sum, s) => sum + (s.periodStats?.presentCount || 0), 0),
+        late: isSingleDay
+          ? studentsWithStatus.filter(s => s.todayStatus === 'LATE').length
+          : studentsWithStatus.reduce((sum, s) => sum + (s.periodStats?.lateCount || 0), 0),
+        absent: isSingleDay
+          ? studentsWithStatus.filter(s => s.todayStatus === 'ABSENT').length
+          : studentsWithStatus.reduce((sum, s) => sum + (s.periodStats?.absentCount || 0), 0),
+        excused: isSingleDay
+          ? studentsWithStatus.filter(s => s.todayStatus === 'EXCUSED').length
+          : studentsWithStatus.reduce((sum, s) => sum + (s.periodStats?.excusedCount || 0), 0),
+      };
+
+      return { 
+        data: studentsWithStatus, 
+        total, 
+        page: Number(page),
+        period: period || 'today',
+        periodLabel: dateRange.label,
+        startDate: dateRange.startDate.toISOString(),
+        endDate: dateRange.endDate.toISOString(),
+        isSingleDay,
+        stats: overallStats,
+      };
     },
   );
 

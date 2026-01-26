@@ -10,6 +10,8 @@ import {
   Popover,
   Badge,
   List,
+  Segmented,
+  DatePicker,
 } from "antd";
 import {
   TeamOutlined,
@@ -36,11 +38,22 @@ import {
 } from "recharts";
 import { useNavigate } from "react-router-dom";
 import { dashboardService } from "../services/dashboard";
+import type { PeriodType } from "../types";
 import { useAdminSSE } from "../hooks/useAdminSSE";
 import dayjs from "dayjs";
 import debounce from "lodash/debounce";
 
 const { Text } = Typography;
+const { RangePicker } = DatePicker;
+
+// Vaqt filterlari opsiyalari
+const PERIOD_OPTIONS = [
+  { label: 'Bugun', value: 'today' },
+  { label: 'Kecha', value: 'yesterday' },
+  { label: 'Hafta', value: 'week' },
+  { label: 'Oy', value: 'month' },
+  { label: 'Yil', value: 'year' },
+];
 
 interface SchoolStats {
   id: string;
@@ -89,24 +102,39 @@ const SuperAdminDashboard: React.FC = () => {
   const [currentTime, setCurrentTime] = useState(dayjs());
   const [realtimeEvents, setRealtimeEvents] = useState<RealtimeEvent[]>([]);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+  
+  // Vaqt filterlari
+  const [selectedPeriod, setSelectedPeriod] = useState<PeriodType>('today');
+  const [customDateRange, setCustomDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
+  
+  // Bugunmi tekshirish (SSE va real-time uchun)
+  const isToday = selectedPeriod === 'today';
 
   // ✅ Debounced fetch - har bir eventda emas, 5 sekundda bir marta
   const debouncedFetchData = useMemo(
     () =>
       debounce(async () => {
         try {
-          const result = await dashboardService.getAdminStats();
+          const filters: any = { period: selectedPeriod };
+          if (selectedPeriod === 'custom' && customDateRange) {
+            filters.startDate = customDateRange[0].format('YYYY-MM-DD');
+            filters.endDate = customDateRange[1].format('YYYY-MM-DD');
+          }
+          const result = await dashboardService.getAdminStats(filters);
           setData(result);
           setLastUpdate(new Date());
         } catch (err) {
           console.error("Failed to refresh admin dashboard:", err);
         }
       }, 5000),
-    []
+    [selectedPeriod, customDateRange]
   );
 
-  // ✅ SSE event handler - local state update + debounced API call
+  // ✅ SSE event handler - local state update + debounced API call (faqat bugun uchun)
   const handleAttendanceEvent = useCallback((event: any) => {
+    // Faqat bugun tanlangan bo'lsa real-time yangilash
+    if (!isToday) return;
+    
     const newEvent: RealtimeEvent = {
       id: event.event?.id || Date.now().toString(),
       schoolId: event.schoolId,
@@ -157,12 +185,12 @@ const SuperAdminDashboard: React.FC = () => {
 
     // Debounced full refresh
     debouncedFetchData();
-  }, [data, debouncedFetchData]);
+  }, [data, debouncedFetchData, isToday]);
 
-  // ✅ SSE connection
+  // ✅ SSE connection (faqat bugun uchun faol)
   const { isConnected, connectionStats } = useAdminSSE({
     onAttendanceEvent: handleAttendanceEvent,
-    enabled: true,
+    enabled: isToday,
   });
 
   useEffect(() => {
@@ -172,10 +200,20 @@ const SuperAdminDashboard: React.FC = () => {
 
   useEffect(() => {
     const fetchData = async () => {
+      setLoading(true);
       try {
-        const result = await dashboardService.getAdminStats();
+        const filters: any = { period: selectedPeriod };
+        if (selectedPeriod === 'custom' && customDateRange) {
+          filters.startDate = customDateRange[0].format('YYYY-MM-DD');
+          filters.endDate = customDateRange[1].format('YYYY-MM-DD');
+        }
+        const result = await dashboardService.getAdminStats(filters);
         setData(result);
         setLastUpdate(new Date());
+        // Reset realtime events when period changes
+        if (!isToday) {
+          setRealtimeEvents([]);
+        }
       } catch (err) {
         console.error("Failed to load admin dashboard:", err);
       } finally {
@@ -183,7 +221,7 @@ const SuperAdminDashboard: React.FC = () => {
       }
     };
     fetchData();
-  }, []);
+  }, [selectedPeriod, customDateRange, isToday]);
 
   if (loading) {
     return (
@@ -370,23 +408,57 @@ const SuperAdminDashboard: React.FC = () => {
     <div>
       {/* Kompakt Header - School Admin uslubida */}
       <Card size="small" style={{ marginBottom: 12 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-          {/* ✅ Real-time connection status */}
-          <Tooltip title={isConnected ? `Real-time ulanish faol${connectionStats ? ` (${connectionStats.total} ulanish)` : ''}` : "Real-time ulanish yo'q"}>
-            <div style={{ 
-              display: "flex", 
-              alignItems: "center", 
-              gap: 4,
-              padding: "2px 8px",
-              borderRadius: 4,
-              background: isConnected ? "#f6ffed" : "#fff2f0",
-              border: `1px solid ${isConnected ? "#b7eb8f" : "#ffccc7"}`
-            }}>
-              <Badge status={isConnected ? "success" : "error"} />
-              <WifiOutlined style={{ color: isConnected ? "#52c41a" : "#ff4d4f", fontSize: 12 }} />
-              {isConnected && <SyncOutlined spin style={{ color: "#52c41a", fontSize: 10 }} />}
-            </div>
-          </Tooltip>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          {/* Vaqt filterlari */}
+          <Segmented
+            size="small"
+            value={selectedPeriod}
+            onChange={(value) => {
+              setSelectedPeriod(value as PeriodType);
+              if (value !== 'custom') setCustomDateRange(null);
+            }}
+            options={PERIOD_OPTIONS}
+          />
+          
+          {/* Custom date range picker */}
+          {selectedPeriod === 'custom' || customDateRange ? (
+            <RangePicker
+              size="small"
+              value={customDateRange}
+              onChange={(dates) => {
+                if (dates && dates[0] && dates[1]) {
+                  setCustomDateRange([dates[0], dates[1]]);
+                  setSelectedPeriod('custom');
+                } else {
+                  setCustomDateRange(null);
+                  setSelectedPeriod('today');
+                }
+              }}
+              format="DD.MM.YYYY"
+              style={{ width: 220 }}
+            />
+          ) : null}
+
+          <div style={{ width: 1, height: 24, background: "#e8e8e8" }} />
+
+          {/* ✅ Real-time connection status (faqat bugun uchun) */}
+          {isToday && (
+            <Tooltip title={isConnected ? `Real-time ulanish faol${connectionStats ? ` (${connectionStats.total} ulanish)` : ''}` : "Real-time ulanish yo'q"}>
+              <div style={{ 
+                display: "flex", 
+                alignItems: "center", 
+                gap: 4,
+                padding: "2px 8px",
+                borderRadius: 4,
+                background: isConnected ? "#f6ffed" : "#fff2f0",
+                border: `1px solid ${isConnected ? "#b7eb8f" : "#ffccc7"}`
+              }}>
+                <Badge status={isConnected ? "success" : "error"} />
+                <WifiOutlined style={{ color: isConnected ? "#52c41a" : "#ff4d4f", fontSize: 12 }} />
+                {isConnected && <SyncOutlined spin style={{ color: "#52c41a", fontSize: 10 }} />}
+              </div>
+            </Tooltip>
+          )}
 
           {/* Vaqt */}
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>

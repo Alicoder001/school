@@ -16,7 +16,7 @@ model School {
   webhookSecretIn     String   @default(uuid())
   webhookSecretOut    String   @default(uuid())
   lateThresholdMinutes Int     @default(15)
-  absenceCutoffTime   String   @default("10:00")
+  absenceCutoffMinutes Int     @default(180)
   timezone            String   @default("Asia/Tashkent")
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt

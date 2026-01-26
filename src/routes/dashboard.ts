@@ -1,6 +1,6 @@
 import { FastifyInstance } from "fastify";
 import prisma from "../prisma";
-import { getLocalDateKey, getLocalDateOnly } from "../utils/date";
+import { getLocalDateKey, getLocalDateOnly, getDateRange, getDatesInRange, DateRangeType } from "../utils/date";
 
 // ✅ OPTIMIZED: SuperAdmin uchun barcha maktablar statistikasi
 export async function adminDashboardRoutes(fastify: FastifyInstance) {
@@ -170,16 +170,27 @@ export async function adminDashboardRoutes(fastify: FastifyInstance) {
   );
 }
 
-// ✅ OPTIMIZED: School Dashboard
+// ✅ OPTIMIZED: School Dashboard with Time Filters
 export default async function (fastify: FastifyInstance) {
   fastify.get(
     "/schools/:schoolId/dashboard",
     { preHandler: [(fastify as any).authenticate] } as any,
     async (request: any) => {
       const { schoolId } = request.params;
-      const { classId } = request.query as { classId?: string };
+      const { classId, period, startDate, endDate } = request.query as { 
+        classId?: string;
+        period?: DateRangeType;
+        startDate?: string;
+        endDate?: string;
+      };
+      
       const now = new Date();
       const today = getLocalDateOnly(now);
+      
+      // Vaqt oralig'ini hisoblash
+      const dateRange = getDateRange(period || 'today', startDate, endDate);
+      const isToday = period === 'today' || !period;
+      const isSingleDay = dateRange.startDate.getTime() === dateRange.endDate.getTime();
 
       // ✅ OPTIMIZATION 1: School va asosiy ma'lumotlarni parallel olish
       const studentFilter: any = { schoolId, isActive: true };
@@ -196,15 +207,21 @@ export default async function (fastify: FastifyInstance) {
       }
 
       // ✅ OPTIMIZATION 2: Barcha asosiy ma'lumotlarni parallel olish
+      // Vaqt oralig'iga qarab date filter
+      const dateFilter = isSingleDay 
+        ? { date: dateRange.startDate }
+        : { date: { gte: dateRange.startDate, lte: dateRange.endDate } };
+
       const [
         school,
         totalStudents,
-        todayAttendanceStats,
+        periodAttendanceStats,
         currentlyInSchoolCount,
         classes,
         classAttendanceStats,
-        weeklyAttendance,
+        trendAttendance,
         arrivedStudentIds,
+        totalAttendanceDays,
       ] = await Promise.all([
         // School timezone
         prisma.school.findUnique({ 
@@ -213,38 +230,37 @@ export default async function (fastify: FastifyInstance) {
         }),
         // Total students
         prisma.student.count({ where: studentFilter }),
-        // ✅ Bugungi attendance - bitta groupBy query
+        // ✅ Period attendance - vaqt oralig'i bo'yicha groupBy query
         prisma.dailyAttendance.groupBy({
           by: ['status'],
           where: { 
             schoolId, 
-            date: today,
+            ...dateFilter,
             ...(classId ? { student: { classId } } : {})
           },
           _count: true,
         }),
-        // Hozir maktabda
-        prisma.dailyAttendance.count({
+        // Hozir maktabda (faqat bugun uchun)
+        isToday ? prisma.dailyAttendance.count({
           where: { 
             schoolId, 
             date: today, 
             currentlyInSchool: true,
             ...(classId ? { student: { classId } } : {})
           },
-        }),
+        }) : Promise.resolve(0),
         // Classes with counts
         prisma.class.findMany({
           where: { schoolId },
           include: { _count: { select: { students: true } } },
         }),
-        // ✅ Class breakdown - bitta query bilan barcha classlar
+        // ✅ Class breakdown - vaqt oralig'i bo'yicha
         prisma.dailyAttendance.groupBy({
           by: ['status'],
-          where: { schoolId, date: today },
+          where: { schoolId, ...dateFilter },
           _count: true,
-          // Prisma raw query kerak class bo'yicha groupBy uchun
         }),
-        // ✅ Haftalik statistika - bitta query
+        // ✅ Trend statistika - vaqt oralig'iga qarab
         prisma.dailyAttendance.groupBy({
           by: ['date', 'status'],
           where: {
@@ -256,26 +272,38 @@ export default async function (fastify: FastifyInstance) {
           },
           _count: true,
         }),
-        // Kelgan studentlar ID lari
-        prisma.dailyAttendance.findMany({
+        // Kelgan studentlar ID lari (faqat bugun uchun)
+        isToday ? prisma.dailyAttendance.findMany({
           where: { schoolId, date: today },
           select: { studentId: true },
-        }),
+        }) : Promise.resolve([]),
+        // Vaqt oralig'idagi kunlar soni (o'rtacha hisoblash uchun)
+        isSingleDay ? Promise.resolve(1) : prisma.dailyAttendance.groupBy({
+          by: ['date'],
+          where: { schoolId, ...dateFilter },
+          _count: true,
+        }).then(res => res.length || 1),
       ]);
 
       const tz = school?.timezone || "UTC";
+      const daysCount = typeof totalAttendanceDays === 'number' ? totalAttendanceDays : 1;
 
-      // Today stats parsing
-      let presentToday = 0, lateToday = 0, absentToday = 0, excusedToday = 0;
-      todayAttendanceStats.forEach((stat) => {
-        if (stat.status === 'PRESENT') presentToday = stat._count;
-        else if (stat.status === 'LATE') lateToday = stat._count;
-        else if (stat.status === 'ABSENT') absentToday = stat._count;
-        else if (stat.status === 'EXCUSED') excusedToday = stat._count;
+      // Period stats parsing
+      let presentCount = 0, lateCount = 0, absentCount = 0, excusedCount = 0;
+      periodAttendanceStats.forEach((stat) => {
+        if (stat.status === 'PRESENT') presentCount = stat._count;
+        else if (stat.status === 'LATE') lateCount = stat._count;
+        else if (stat.status === 'ABSENT') absentCount = stat._count;
+        else if (stat.status === 'EXCUSED') excusedCount = stat._count;
       });
 
-      // ✅ OPTIMIZATION 3: Class breakdown - parallel emas, raw query bilan
-      // Avval student classId map yaratish
+      // Agar bir nechta kun bo'lsa, o'rtacha hisoblash
+      const presentToday = isSingleDay ? presentCount : Math.round(presentCount / daysCount);
+      const lateToday = isSingleDay ? lateCount : Math.round(lateCount / daysCount);
+      const absentToday = isSingleDay ? absentCount : Math.round(absentCount / daysCount);
+      const excusedToday = isSingleDay ? excusedCount : Math.round(excusedCount / daysCount);
+
+      // ✅ OPTIMIZATION 3: Class breakdown - vaqt oralig'iga qarab raw query
       const classBreakdownQuery = await prisma.$queryRaw<Array<{
         classId: string;
         status: string;
@@ -284,7 +312,9 @@ export default async function (fastify: FastifyInstance) {
         SELECT s."classId", da."status", COUNT(*)::bigint as count
         FROM "DailyAttendance" da
         JOIN "Student" s ON da."studentId" = s.id
-        WHERE da."schoolId" = ${schoolId} AND da."date" = ${today}
+        WHERE da."schoolId" = ${schoolId} 
+          AND da."date" >= ${dateRange.startDate}
+          AND da."date" <= ${dateRange.endDate}
         GROUP BY s."classId", da."status"
       `;
 
@@ -315,14 +345,14 @@ export default async function (fastify: FastifyInstance) {
         };
       });
 
-      // ✅ OPTIMIZATION 4: Haftalik statistikani map qilish
-      const weeklyMap = new Map<string, { present: number; late: number; absent: number }>();
-      weeklyAttendance.forEach((stat) => {
+      // ✅ OPTIMIZATION 4: Trend statistikani map qilish
+      const trendMap = new Map<string, { present: number; late: number; absent: number }>();
+      trendAttendance.forEach((stat) => {
         const dateKey = stat.date.toISOString().split('T')[0];
-        if (!weeklyMap.has(dateKey)) {
-          weeklyMap.set(dateKey, { present: 0, late: 0, absent: 0 });
+        if (!trendMap.has(dateKey)) {
+          trendMap.set(dateKey, { present: 0, late: 0, absent: 0 });
         }
-        const entry = weeklyMap.get(dateKey)!;
+        const entry = trendMap.get(dateKey)!;
         if (stat.status === 'PRESENT') entry.present = stat._count;
         else if (stat.status === 'LATE') entry.late = stat._count;
         else if (stat.status === 'ABSENT') entry.absent = stat._count;
@@ -330,7 +360,7 @@ export default async function (fastify: FastifyInstance) {
 
       const weeklyStats = weekDates.map((date) => {
         const dateKey = getLocalDateOnly(date).toISOString().split('T')[0];
-        const stats = weeklyMap.get(dateKey) || { present: 0, late: 0, absent: 0 };
+        const stats = trendMap.get(dateKey) || { present: 0, late: 0, absent: 0 };
         return {
           date: getLocalDateKey(date),
           dayName: ["Ya", "Du", "Se", "Ch", "Pa", "Ju", "Sh"][date.getDay()],
@@ -364,6 +394,14 @@ export default async function (fastify: FastifyInstance) {
       ]);
 
       return {
+        // Vaqt oralig'i ma'lumotlari
+        period: period || 'today',
+        periodLabel: dateRange.label,
+        startDate: dateRange.startDate.toISOString(),
+        endDate: dateRange.endDate.toISOString(),
+        daysCount,
+        
+        // Statistikalar
         totalStudents,
         presentToday,
         lateToday,
@@ -375,15 +413,22 @@ export default async function (fastify: FastifyInstance) {
           totalStudents > 0
             ? Math.round(((presentToday + lateToday) / totalStudents) * 100)
             : 0,
+        
+        // Jami sonlar (o'rtacha emas, vaqt oralig'idagi jami)
+        totalPresent: presentCount,
+        totalLate: lateCount,
+        totalAbsent: absentCount,
+        totalExcused: excusedCount,
+        
         currentTime: new Date().toISOString(),
         classBreakdown,
         weeklyStats,
-        notYetArrived: notYetArrived.map((s) => ({
+        notYetArrived: isToday ? notYetArrived.map((s) => ({
           id: s.id,
           name: s.name,
           className: s.class?.name || "-",
-        })),
-        notYetArrivedCount,
+        })) : [],
+        notYetArrivedCount: isToday ? notYetArrivedCount : 0,
       };
     },
   );

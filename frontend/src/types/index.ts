@@ -19,10 +19,9 @@ export interface School {
     email?: string;
     webhookSecretIn: string;
     webhookSecretOut: string;
-    lateThresholdMinutes: number;
-    absenceCutoffTime: string;
-    timezone: string;
-    createdAt: string;
+      lateThresholdMinutes: number;
+      absenceCutoffMinutes: number;
+      timezone: string;    createdAt: string;
     updatedAt: string;
     // Statistika
     _count?: {
@@ -149,16 +148,51 @@ export interface Holiday {
     createdAt: string;
 }
 
+// Vaqt filterlari turlari
+export type PeriodType = 'today' | 'yesterday' | 'week' | 'month' | 'year' | 'custom';
+
+// Students response with period stats
+export interface StudentsResponse extends PaginatedResponse<Student> {
+  period: PeriodType;
+  periodLabel: string;
+  startDate: string;
+  endDate: string;
+  isSingleDay: boolean;
+  stats: {
+    total: number;
+    present: number;
+    late: number;
+    absent: number;
+    excused: number;
+  };
+}
+
 // Dashboard Stats
 export interface DashboardStats {
+    // Vaqt oralig'i ma'lumotlari
+    period?: 'today' | 'yesterday' | 'week' | 'month' | 'year' | 'custom';
+    periodLabel?: string;
+    startDate?: string;
+    endDate?: string;
+    daysCount?: number;
+    
+    // Asosiy statistikalar (o'rtacha yoki bir kunlik)
     totalStudents: number;
     presentToday: number;
     lateToday: number;
     absentToday: number;
     excusedToday: number;
     presentPercentage: number;
-    // Yangi: Hozir maktabda bo'lganlar
+    
+    // Jami sonlar (vaqt oralig'idagi)
+    totalPresent?: number;
+    totalLate?: number;
+    totalAbsent?: number;
+    totalExcused?: number;
+    
+    // Hozir maktabda bo'lganlar (faqat bugun uchun)
     currentlyInSchool?: number;
+    
     morningStats?: { present: number; late: number; absent: number };
     afternoonStats?: { present: number; late: number; absent: number };
     classBreakdown?: Array<{

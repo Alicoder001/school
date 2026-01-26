@@ -1,16 +1,41 @@
 import api from './api';
-import type { DashboardStats, AttendanceEvent } from '../types';
+import type { DashboardStats, AttendanceEvent, PeriodType } from '../types';
+
+// Re-export PeriodType for convenience
+export type { PeriodType } from '../types';
+
+export interface DashboardFilters {
+    classId?: string;
+    period?: PeriodType;
+    startDate?: string;
+    endDate?: string;
+}
 
 export const dashboardService = {
-    async getStats(schoolId: string, classId?: string): Promise<DashboardStats> {
+    async getStats(schoolId: string, filters?: DashboardFilters): Promise<DashboardStats> {
+        const params: Record<string, string> = {};
+        
+        if (filters?.classId) params.classId = filters.classId;
+        if (filters?.period) params.period = filters.period;
+        if (filters?.startDate) params.startDate = filters.startDate;
+        if (filters?.endDate) params.endDate = filters.endDate;
+        
         const response = await api.get<DashboardStats>(`/schools/${schoolId}/dashboard`, {
-            params: classId ? { classId } : {}
+            params: Object.keys(params).length > 0 ? params : undefined
         });
         return response.data;
     },
 
-    async getAdminStats(): Promise<any> {
-        const response = await api.get('/admin/dashboard');
+    async getAdminStats(filters?: { period?: PeriodType; startDate?: string; endDate?: string }): Promise<any> {
+        const params: Record<string, string> = {};
+        
+        if (filters?.period) params.period = filters.period;
+        if (filters?.startDate) params.startDate = filters.startDate;
+        if (filters?.endDate) params.endDate = filters.endDate;
+        
+        const response = await api.get('/admin/dashboard', {
+            params: Object.keys(params).length > 0 ? params : undefined
+        });
         return response.data;
     },
 
