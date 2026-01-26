@@ -1,12 +1,246 @@
 import { FastifyInstance } from "fastify";
 import prisma from "../prisma";
-import { attendanceEmitter } from "../eventEmitter";
+import { attendanceEmitter, adminEmitter } from "../eventEmitter";
 import { MultipartFile } from "@fastify/multipart";
 import fs from "fs";
 import path from "path";
 import { getLocalDateKey, getLocalDateOnly } from "../utils/date";
 
 const UPLOADS_DIR = path.join(process.cwd(), "uploads");
+
+type NormalizedEvent = {
+  employeeNoString: string;
+  deviceID: string;
+  dateTime: string;
+  studentName?: string;
+  rawPayload: any;
+};
+
+const normalizeEvent = (accessEventJson: any): NormalizedEvent | null => {
+  const outerEvent = accessEventJson;
+  const innerEvent = accessEventJson.AccessControllerEvent || accessEventJson;
+
+  const subEventType = innerEvent.subEventType;
+  if (subEventType !== 75) {
+    return null;
+  }
+
+  const employeeNoString = innerEvent.employeeNoString;
+  const deviceID = outerEvent.deviceID || innerEvent.deviceID;
+  const dateTime = outerEvent.dateTime || innerEvent.dateTime;
+  const studentName = innerEvent.name;
+
+  if (!employeeNoString || !deviceID || !dateTime) return null;
+
+  return {
+    employeeNoString,
+    deviceID,
+    dateTime,
+    studentName,
+    rawPayload: accessEventJson,
+  };
+};
+
+// Optimized attendance handler with parallel queries and transactions
+const handleAttendanceEvent = async (
+  school: any,
+  direction: string,
+  accessEventJson: any,
+  savedPicturePath: string | null,
+) => {
+  const normalized = normalizeEvent(accessEventJson);
+  if (!normalized) {
+    return { ok: true, ignored: true };
+  }
+
+  const { employeeNoString, deviceID, dateTime, rawPayload } = normalized;
+  const eventTime = new Date(dateTime);
+  const eventType = direction === "in" ? "IN" : "OUT";
+  const dateOnly = getLocalDateOnly(new Date(dateTime));
+
+  // ✅ OPTIMIZATION 1: Parallel queries - device va student ni bir vaqtda olish
+  const [device, studentWithClass] = await Promise.all([
+    prisma.device.findFirst({
+      where: { deviceId: deviceID, schoolId: school.id },
+      select: { id: true }, // Faqat kerakli field
+    }),
+    prisma.student.findFirst({
+      where: { deviceStudentId: employeeNoString },
+      include: { class: true }, // Class ni ham bir queryda olish
+    }),
+  ]);
+
+  const student = studentWithClass;
+  const cls = studentWithClass?.class;
+
+  // ✅ OPTIMIZATION 2: AttendanceEvent yaratish va DailyAttendance ni parallel tekshirish
+  const [event, existing] = await Promise.all([
+    prisma.attendanceEvent.create({
+      data: {
+        studentId: student?.id,
+        schoolId: school.id,
+        deviceId: device?.id,
+        eventType,
+        timestamp: eventTime,
+        rawPayload: { ...rawPayload, _savedPicture: savedPicturePath },
+      },
+    }),
+    student
+      ? prisma.dailyAttendance.findUnique({
+          where: { studentId_date: { studentId: student.id, date: dateOnly } },
+        })
+      : null,
+  ]);
+
+  if (student) {
+    const MIN_SCAN_INTERVAL = 2 * 60 * 1000; // 2 daqiqa
+
+    if (existing) {
+      // Duplicate scan tekshirish
+      if (eventType === "IN" && existing.currentlyInSchool && existing.lastInTime) {
+        const timeSinceLastIn = eventTime.getTime() - new Date(existing.lastInTime).getTime();
+        if (timeSinceLastIn < MIN_SCAN_INTERVAL) {
+          return { ok: true, ignored: true, reason: "duplicate_scan" };
+        }
+      }
+      if (eventType === "OUT" && !existing.currentlyInSchool && existing.lastOutTime) {
+        const timeSinceLastOut = eventTime.getTime() - new Date(existing.lastOutTime).getTime();
+        if (timeSinceLastOut < MIN_SCAN_INTERVAL) {
+          return { ok: true, ignored: true, reason: "duplicate_scan" };
+        }
+      }
+
+      // Update data tayyorlash
+      const update: any = {
+        lastScanTime: eventTime,
+        scanCount: existing.scanCount + 1,
+      };
+
+      if (eventType === "IN") {
+        if (!existing.firstScanTime && cls) {
+          const [h, m] = cls.startTime.split(":").map(Number);
+          const diff = eventTime.getHours() * 60 + eventTime.getMinutes() - (h * 60 + m);
+          if (diff > school.lateThresholdMinutes) {
+            update.status = "LATE";
+            update.lateMinutes = Math.round(diff - school.lateThresholdMinutes);
+          } else {
+            update.status = "PRESENT";
+            update.lateMinutes = null;
+          }
+        }
+        if (!existing.firstScanTime) {
+          update.firstScanTime = eventTime;
+        }
+        update.lastInTime = eventTime;
+        update.currentlyInSchool = true;
+      } else {
+        update.lastOutTime = eventTime;
+        update.currentlyInSchool = false;
+        if (existing.lastInTime && existing.currentlyInSchool) {
+          const sessionMinutes = Math.round(
+            (eventTime.getTime() - new Date(existing.lastInTime).getTime()) / 60000
+          );
+          if (sessionMinutes > 0 && sessionMinutes < 720) {
+            update.totalTimeOnPremises = (existing.totalTimeOnPremises || 0) + sessionMinutes;
+          }
+        }
+      }
+
+      // ✅ OPTIMIZATION 3: Photo update va DailyAttendance update ni parallel
+      const updatePromises: Promise<any>[] = [
+        prisma.dailyAttendance.update({
+          where: { id: existing.id },
+          data: update,
+        }),
+      ];
+
+      if (savedPicturePath) {
+        updatePromises.push(
+          prisma.student.update({
+            where: { id: student.id },
+            data: { photoUrl: savedPicturePath },
+          }).catch(() => {}) // Ignore photo update errors
+        );
+      }
+
+      await Promise.all(updatePromises);
+    } else {
+      // Yangi DailyAttendance yaratish
+      let status: any = "PRESENT";
+      let lateMinutes: number | null = null;
+
+      if (eventType === "IN" && cls) {
+        const [h, m] = cls.startTime.split(":").map(Number);
+        const diff = eventTime.getHours() * 60 + eventTime.getMinutes() - (h * 60 + m);
+        if (diff > school.lateThresholdMinutes) {
+          status = "LATE";
+          lateMinutes = Math.round(diff - school.lateThresholdMinutes);
+        }
+      }
+
+      // ✅ OPTIMIZATION 4: Create va photo update parallel
+      const createPromises: Promise<any>[] = [
+        prisma.dailyAttendance.create({
+          data: {
+            studentId: student.id,
+            schoolId: school.id,
+            date: dateOnly,
+            status,
+            firstScanTime: eventType === "IN" ? eventTime : null,
+            lastScanTime: eventTime,
+            lateMinutes,
+            lastInTime: eventType === "IN" ? eventTime : null,
+            lastOutTime: eventType === "OUT" ? eventTime : null,
+            currentlyInSchool: eventType === "IN",
+            scanCount: 1,
+            notes: eventType === "OUT" ? "OUT before first IN" : null,
+          },
+        }),
+      ];
+
+      if (savedPicturePath) {
+        createPromises.push(
+          prisma.student.update({
+            where: { id: student.id },
+            data: { photoUrl: savedPicturePath },
+          }).catch(() => {})
+        );
+      }
+
+      await Promise.all(createPromises);
+    }
+  }
+
+  // ✅ OPTIMIZATION 5: Event emission - sinxron emas, fire-and-forget
+  const eventPayload = {
+    schoolId: school.id,
+    event: {
+      ...event,
+      student: student
+        ? {
+            id: student.id,
+            name: student.name,
+            class: cls ? { name: cls.name } : null,
+          }
+        : null,
+    },
+  };
+
+  // Emit to school-specific listeners
+  attendanceEmitter.emit("attendance", eventPayload);
+
+  // Emit to admin dashboard listeners
+  adminEmitter.emit("admin_update", {
+    type: "attendance_event",
+    schoolId: school.id,
+    schoolName: school.name,
+    data: {
+      event: eventPayload.event,
+    },
+  });
+
+  return { ok: true, event };
+};
 
 export default async function (fastify: FastifyInstance) {
   // Add content type parser for this route to accept JSON
@@ -159,41 +393,16 @@ export default async function (fastify: FastifyInstance) {
     );
     console.log("==============================");
 
-    // Hikvision sends nested structure: outer has dateTime/deviceID, inner has subEventType/employeeNoString
-    const outerEvent = accessEventJson;
-    const innerEvent = accessEventJson.AccessControllerEvent || accessEventJson;
-
-    const subEventType = innerEvent.subEventType;
-    console.log("subEventType:", subEventType);
-
-    if (subEventType !== 75) {
-      console.log(
-        "Ignoring non-face-recognition event, subEventType:",
-        subEventType,
-      );
+    const normalized = normalizeEvent(accessEventJson);
+    if (!normalized) {
       return reply.send({ ok: true, ignored: true });
     }
 
-    const employeeNoString = innerEvent.employeeNoString;
-    const deviceID = outerEvent.deviceID || innerEvent.deviceID;
-    const dateTime = outerEvent.dateTime || innerEvent.dateTime;
-    const studentName = innerEvent.name;
-
     console.log("Processing face recognition event:");
-    console.log("  - employeeNoString:", employeeNoString);
-    console.log("  - deviceID:", deviceID);
-    console.log("  - dateTime:", dateTime);
-    console.log("  - studentName:", studentName);
-
-    // find device (limit to same school)
-    const device = await prisma.device.findFirst({
-      where: { deviceId: deviceID, schoolId: school.id },
-    });
-
-    // find student by deviceStudentId
-    const student = await prisma.student.findFirst({
-      where: { deviceStudentId: employeeNoString },
-    });
+    console.log("  - employeeNoString:", normalized.employeeNoString);
+    console.log("  - deviceID:", normalized.deviceID);
+    console.log("  - dateTime:", normalized.dateTime);
+    console.log("  - studentName:", normalized.studentName);
 
     // save picture (if provided) - addToBody gives us Buffer or array
     let savedPicturePath: string | null = null;
@@ -223,190 +432,13 @@ export default async function (fastify: FastifyInstance) {
       }
     }
 
-    const event = await prisma.attendanceEvent.create({
-      data: {
-        studentId: student?.id,
-        schoolId: school.id,
-        deviceId: device?.id,
-        eventType: params.direction === "in" ? "IN" : "OUT",
-        timestamp: new Date(dateTime),
-        rawPayload: { ...accessEventJson, _savedPicture: savedPicturePath },
-      },
-    });
+    const result = await handleAttendanceEvent(
+      school,
+      params.direction,
+      accessEventJson,
+      savedPicturePath,
+    );
 
-    // Update or create DailyAttendance
-    console.log("Student found:", student?.id, student?.name);
-    if (student) {
-      console.log("Creating/updating DailyAttendance for student:", student.id);
-      const schoolClasses = await prisma.class.findMany({
-        where: { schoolId: school.id },
-      });
-      // find student's class
-      const cls = await prisma.class
-        .findUnique({ where: { id: student.classId ?? "" } })
-        .catch(() => null);
-
-      // Use local date key for consistent day grouping
-      const eventDate = new Date(dateTime);
-      const dateString = getLocalDateKey(eventDate);
-      const dateOnly = getLocalDateOnly(eventDate);
-
-      console.log("DEBUG WEBHOOK DATE:", {
-        dateTimeInput: dateTime,
-        eventDateIso: eventDate.toISOString(),
-        dateString,
-        dateOnlyIso: dateOnly.toISOString(),
-        studentId: student.id,
-      });
-
-      const existing = await prisma.dailyAttendance
-        .findUnique({
-          where: { studentId_date: { studentId: student.id, date: dateOnly } },
-        })
-        .catch(() => null);
-
-      // IN yoki OUT ekanligini aniqlash
-      const eventType = params.direction === "in" ? "IN" : "OUT";
-      const eventTime = new Date(dateTime);
-
-      if (existing) {
-        const update: any = {
-          lastScanTime: eventTime,
-          scanCount: existing.scanCount + 1,
-        };
-
-        // Takroriy scan filtri - 2 daqiqa ichida bir xil eventType bo'lsa, ignore
-        const MIN_SCAN_INTERVAL = 2 * 60 * 1000; // 2 daqiqa
-        
-        if (eventType === "IN") {
-          if (!existing.firstScanTime && cls) {
-            const [h, m] = cls.startTime.split(":").map(Number);
-            const diff =
-              eventTime.getHours() * 60 +
-              eventTime.getMinutes() -
-              (h * 60 + m);
-            if (diff > school.lateThresholdMinutes) {
-              update.status = "LATE";
-              update.lateMinutes = Math.round(diff - school.lateThresholdMinutes);
-            } else {
-              update.status = "PRESENT";
-              update.lateMinutes = null;
-            }
-          }
-
-          // KIRISH
-          // Agar allaqachon maktabda bo'lsa va 2 daqiqa ichida yana IN kelsa - ignore
-          if (existing.currentlyInSchool && existing.lastInTime) {
-            const timeSinceLastIn = eventTime.getTime() - new Date(existing.lastInTime).getTime();
-            if (timeSinceLastIn < MIN_SCAN_INTERVAL) {
-              console.log(`Ignoring duplicate IN scan (${Math.round(timeSinceLastIn/1000)}s since last IN)`);
-              return reply.send({ ok: true, ignored: true, reason: "duplicate_scan" });
-            }
-          }
-          
-          if (!existing.firstScanTime) {
-            update.firstScanTime = eventTime;
-          }
-          update.lastInTime = eventTime;
-          update.currentlyInSchool = true;
-        } else {
-          // CHIQISH
-          // Agar allaqachon tashqarida bo'lsa va 2 daqiqa ichida yana OUT kelsa - ignore
-          if (!existing.currentlyInSchool && existing.lastOutTime) {
-            const timeSinceLastOut = eventTime.getTime() - new Date(existing.lastOutTime).getTime();
-            if (timeSinceLastOut < MIN_SCAN_INTERVAL) {
-              console.log(`Ignoring duplicate OUT scan (${Math.round(timeSinceLastOut/1000)}s since last OUT)`);
-              return reply.send({ ok: true, ignored: true, reason: "duplicate_scan" });
-            }
-          }
-          
-          update.lastOutTime = eventTime;
-          update.currentlyInSchool = false;
-
-          // totalTimeOnPremises hisoblash (agar oldin kirgan bo'lsa va hozir maktabda bo'lsa)
-          if (existing.lastInTime && existing.currentlyInSchool) {
-            const sessionMinutes = Math.round(
-              (eventTime.getTime() - new Date(existing.lastInTime).getTime()) / 60000
-            );
-            // Faqat musbat qiymatni qo'shamiz (noto'g'ri scan'larni filtrlash)
-            if (sessionMinutes > 0 && sessionMinutes < 720) { // max 12 soat
-              update.totalTimeOnPremises = (existing.totalTimeOnPremises || 0) + sessionMinutes;
-              console.log(`Added ${sessionMinutes} minutes to totalTimeOnPremises`);
-            }
-          }
-        }
-
-        await prisma.dailyAttendance.update({
-          where: { id: existing.id },
-          data: update,
-        });
-      } else {
-        // Yangi DailyAttendance yaratish
-        // Faqat KIRISH bo'lsa yoki birinchi scan bo'lsa
-        
-        // Kech qolishni aniqlash (faqat IN uchun)
-        let status: any = "PRESENT";
-        let lateMinutes: number | null = null;
-        
-        if (eventType === "IN" && cls) {
-          const [h, m] = cls.startTime.split(":").map(Number);
-          const diff =
-            eventTime.getHours() * 60 +
-            eventTime.getMinutes() -
-            (h * 60 + m);
-          if (diff > school.lateThresholdMinutes) {
-            status = "LATE";
-            lateMinutes = Math.round(diff - school.lateThresholdMinutes);
-          }
-        } else if (eventType === "OUT") {
-          status = "PRESENT";
-          lateMinutes = null;
-        }
-
-        await prisma.dailyAttendance.create({
-          data: {
-            studentId: student.id,
-            schoolId: school.id,
-            date: dateOnly,
-            status,
-            firstScanTime: eventType === "IN" ? eventTime : null,
-            lastScanTime: eventTime,
-            lateMinutes,
-            lastInTime: eventType === "IN" ? eventTime : null,
-            lastOutTime: eventType === "OUT" ? eventTime : null,
-            currentlyInSchool: eventType === "IN",
-            scanCount: 1,
-            notes: eventType === "OUT" ? "OUT before first IN" : null,
-          },
-        });
-      }
-
-      // update student photoUrl if not set and picture saved
-      if (student && savedPicturePath) {
-        try {
-          await prisma.student.update({
-            where: { id: student.id },
-            data: { photoUrl: savedPicturePath },
-          });
-        } catch (err) {
-          // ignore
-        }
-      }
-    }
-
-    // Emit event for SSE clients
-    attendanceEmitter.emit('attendance', {
-      schoolId: school.id,
-      event: {
-        ...event,
-        student: student ? {
-          id: student.id,
-          name: student.name,
-          class: student.classId ? await prisma.class.findUnique({ where: { id: student.classId } }) : null
-        } : null
-      }
-    });
-
-    return reply.send({ ok: true, event });
+    return reply.send(result);
   });
 }

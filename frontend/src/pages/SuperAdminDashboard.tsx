@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import {
   Card,
   Tag,
@@ -8,6 +8,8 @@ import {
   Typography,
   Table,
   Popover,
+  Badge,
+  List,
 } from "antd";
 import {
   TeamOutlined,
@@ -18,6 +20,10 @@ import {
   CalendarOutlined,
   WarningOutlined,
   RightOutlined,
+  WifiOutlined,
+  SyncOutlined,
+  LoginOutlined,
+  LogoutOutlined,
 } from "@ant-design/icons";
 import {
   BarChart,
@@ -30,7 +36,9 @@ import {
 } from "recharts";
 import { useNavigate } from "react-router-dom";
 import { dashboardService } from "../services/dashboard";
+import { useAdminSSE } from "../hooks/useAdminSSE";
 import dayjs from "dayjs";
+import debounce from "lodash/debounce";
 
 const { Text } = Typography;
 
@@ -63,11 +71,99 @@ interface AdminDashboardData {
   weeklyStats: { date: string; dayName: string; present: number; late: number; absent: number }[];
 }
 
+// Real-time event interface
+interface RealtimeEvent {
+  id: string;
+  schoolId: string;
+  schoolName?: string;
+  studentName?: string;
+  eventType: 'IN' | 'OUT';
+  timestamp: string;
+  className?: string;
+}
+
 const SuperAdminDashboard: React.FC = () => {
   const navigate = useNavigate();
   const [data, setData] = useState<AdminDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [currentTime, setCurrentTime] = useState(dayjs());
+  const [realtimeEvents, setRealtimeEvents] = useState<RealtimeEvent[]>([]);
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+
+  // ✅ Debounced fetch - har bir eventda emas, 5 sekundda bir marta
+  const debouncedFetchData = useMemo(
+    () =>
+      debounce(async () => {
+        try {
+          const result = await dashboardService.getAdminStats();
+          setData(result);
+          setLastUpdate(new Date());
+        } catch (err) {
+          console.error("Failed to refresh admin dashboard:", err);
+        }
+      }, 5000),
+    []
+  );
+
+  // ✅ SSE event handler - local state update + debounced API call
+  const handleAttendanceEvent = useCallback((event: any) => {
+    const newEvent: RealtimeEvent = {
+      id: event.event?.id || Date.now().toString(),
+      schoolId: event.schoolId,
+      schoolName: event.schoolName,
+      studentName: event.event?.student?.name || 'Noma\'lum',
+      eventType: event.event?.eventType || 'IN',
+      timestamp: event.event?.timestamp || new Date().toISOString(),
+      className: event.event?.student?.class?.name,
+    };
+
+    // Add to realtime events (keep last 20)
+    setRealtimeEvents(prev => [newEvent, ...prev].slice(0, 20));
+
+    // ✅ Local state update - tezkor UI yangilanishi
+    if (data && event.schoolId) {
+      setData(prevData => {
+        if (!prevData) return prevData;
+
+        const updatedSchools = prevData.schools.map(school => {
+          if (school.id === event.schoolId) {
+            const isIn = event.event?.eventType === 'IN';
+            return {
+              ...school,
+              currentlyInSchool: isIn 
+                ? school.currentlyInSchool + 1 
+                : Math.max(0, school.currentlyInSchool - 1),
+            };
+          }
+          return school;
+        });
+
+        // Update totals
+        const isIn = event.event?.eventType === 'IN';
+        const updatedTotals = {
+          ...prevData.totals,
+          currentlyInSchool: isIn
+            ? prevData.totals.currentlyInSchool + 1
+            : Math.max(0, prevData.totals.currentlyInSchool - 1),
+        };
+
+        return {
+          ...prevData,
+          schools: updatedSchools,
+          totals: updatedTotals,
+        };
+      });
+    }
+
+    // Debounced full refresh
+    debouncedFetchData();
+  }, [data, debouncedFetchData]);
+
+  // ✅ SSE connection
+  const { isConnected, connectionStats } = useAdminSSE({
+    onAttendanceEvent: handleAttendanceEvent,
+    enabled: true,
+  });
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(dayjs()), 60000);
@@ -79,6 +175,7 @@ const SuperAdminDashboard: React.FC = () => {
       try {
         const result = await dashboardService.getAdminStats();
         setData(result);
+        setLastUpdate(new Date());
       } catch (err) {
         console.error("Failed to load admin dashboard:", err);
       } finally {
@@ -274,6 +371,23 @@ const SuperAdminDashboard: React.FC = () => {
       {/* Kompakt Header - School Admin uslubida */}
       <Card size="small" style={{ marginBottom: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+          {/* ✅ Real-time connection status */}
+          <Tooltip title={isConnected ? `Real-time ulanish faol${connectionStats ? ` (${connectionStats.total} ulanish)` : ''}` : "Real-time ulanish yo'q"}>
+            <div style={{ 
+              display: "flex", 
+              alignItems: "center", 
+              gap: 4,
+              padding: "2px 8px",
+              borderRadius: 4,
+              background: isConnected ? "#f6ffed" : "#fff2f0",
+              border: `1px solid ${isConnected ? "#b7eb8f" : "#ffccc7"}`
+            }}>
+              <Badge status={isConnected ? "success" : "error"} />
+              <WifiOutlined style={{ color: isConnected ? "#52c41a" : "#ff4d4f", fontSize: 12 }} />
+              {isConnected && <SyncOutlined spin style={{ color: "#52c41a", fontSize: 10 }} />}
+            </div>
+          </Tooltip>
+
           {/* Vaqt */}
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <ClockCircleOutlined style={{ fontSize: 16, color: "#1890ff" }} />
@@ -282,6 +396,11 @@ const SuperAdminDashboard: React.FC = () => {
               <CalendarOutlined style={{ marginRight: 4 }} />
               {currentTime.format("DD MMM, ddd")}
             </Text>
+            {lastUpdate && (
+              <Text type="secondary" style={{ fontSize: 10, marginLeft: 8 }}>
+                (yangilandi: {dayjs(lastUpdate).format("HH:mm:ss")})
+              </Text>
+            )}
           </div>
 
           <div style={{ width: 1, height: 24, background: "#e8e8e8" }} />
@@ -403,24 +522,114 @@ const SuperAdminDashboard: React.FC = () => {
         />
       </Card>
 
-      {/* Haftalik trend */}
-      <Card title="Haftalik trend" size="small" styles={{ body: { height: 200 } }}>
-        {weeklyStats.length > 0 ? (
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={weeklyStats}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="dayName" tick={{ fontSize: 12 }} />
-              <YAxis tick={{ fontSize: 12 }} />
-              <RechartsTooltip />
-              <Bar dataKey="present" fill="#52c41a" name="Kelgan" />
-              <Bar dataKey="late" fill="#faad14" name="Kech" />
-              <Bar dataKey="absent" fill="#ff4d4f" name="Kelmagan" />
-            </BarChart>
-          </ResponsiveContainer>
-        ) : (
-          <Empty description="Ma'lumot yo'q" />
-        )}
-      </Card>
+      {/* Haftalik trend va Real-time events */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 350px", gap: 12 }}>
+        {/* Haftalik trend */}
+        <Card title="Haftalik trend" size="small" styles={{ body: { height: 200 } }}>
+          {weeklyStats.length > 0 ? (
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={weeklyStats}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="dayName" tick={{ fontSize: 12 }} />
+                <YAxis tick={{ fontSize: 12 }} />
+                <RechartsTooltip />
+                <Bar dataKey="present" fill="#52c41a" name="Kelgan" />
+                <Bar dataKey="late" fill="#faad14" name="Kech" />
+                <Bar dataKey="absent" fill="#ff4d4f" name="Kelmagan" />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <Empty description="Ma'lumot yo'q" />
+          )}
+        </Card>
+
+        {/* ✅ Real-time events panel */}
+        <Card 
+          title={
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span>Jonli oqim</span>
+              {isConnected && (
+                <Badge 
+                  count={realtimeEvents.length} 
+                  style={{ backgroundColor: '#52c41a' }} 
+                  overflowCount={99}
+                />
+              )}
+            </div>
+          }
+          size="small" 
+          styles={{ body: { height: 200, overflow: "auto", padding: 0 } }}
+          extra={
+            isConnected ? (
+              <Tag color="success" style={{ margin: 0 }}>
+                <SyncOutlined spin /> Live
+              </Tag>
+            ) : (
+              <Tag color="error" style={{ margin: 0 }}>Offline</Tag>
+            )
+          }
+        >
+          {realtimeEvents.length > 0 ? (
+            <List
+              size="small"
+              dataSource={realtimeEvents}
+              renderItem={(event) => (
+                <List.Item 
+                  style={{ 
+                    padding: "6px 12px",
+                    cursor: "pointer",
+                    borderLeft: `3px solid ${event.eventType === 'IN' ? '#52c41a' : '#ff4d4f'}`,
+                    background: event.eventType === 'IN' ? '#f6ffed' : '#fff2f0',
+                  }}
+                  onClick={() => navigate(`/schools/${event.schoolId}/dashboard`)}
+                >
+                  <div style={{ width: "100%" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <Text strong style={{ fontSize: 12 }}>
+                        {event.eventType === 'IN' ? (
+                          <LoginOutlined style={{ color: '#52c41a', marginRight: 4 }} />
+                        ) : (
+                          <LogoutOutlined style={{ color: '#ff4d4f', marginRight: 4 }} />
+                        )}
+                        {event.studentName}
+                      </Text>
+                      <Text type="secondary" style={{ fontSize: 10 }}>
+                        {dayjs(event.timestamp).format("HH:mm:ss")}
+                      </Text>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginTop: 2 }}>
+                      <Text type="secondary" style={{ fontSize: 10 }}>
+                        {event.schoolName || 'Maktab'}
+                        {event.className && ` • ${event.className}`}
+                      </Text>
+                      <Tag 
+                        color={event.eventType === 'IN' ? 'success' : 'error'} 
+                        style={{ margin: 0, fontSize: 10, lineHeight: '16px', padding: '0 4px' }}
+                      >
+                        {event.eventType === 'IN' ? 'KIRDI' : 'CHIQDI'}
+                      </Tag>
+                    </div>
+                  </div>
+                </List.Item>
+              )}
+            />
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", flexDirection: "column", gap: 8 }}>
+              {isConnected ? (
+                <>
+                  <SyncOutlined spin style={{ fontSize: 24, color: "#1890ff" }} />
+                  <Text type="secondary" style={{ fontSize: 12 }}>Eventlarni kutmoqda...</Text>
+                </>
+              ) : (
+                <>
+                  <WifiOutlined style={{ fontSize: 24, color: "#ff4d4f" }} />
+                  <Text type="secondary" style={{ fontSize: 12 }}>Ulanish yo'q</Text>
+                </>
+              )}
+            </div>
+          )}
+        </Card>
+      </div>
     </div>
   );
 };

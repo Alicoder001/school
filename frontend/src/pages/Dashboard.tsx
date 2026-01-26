@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import {
   Row,
   Col,
@@ -23,6 +23,7 @@ import {
   LoginOutlined,
   LogoutOutlined,
   CalendarOutlined,
+  SyncOutlined,
 } from "@ant-design/icons";
 import {
   PieChart,
@@ -44,6 +45,7 @@ import { schoolsService } from "../services/schools";
 import type { DashboardStats, AttendanceEvent, School, Class } from "../types";
 import { classesService } from "../services/classes";
 import dayjs from "dayjs";
+import debounce from "lodash/debounce";
 
 const { Text } = Typography;
 
@@ -58,16 +60,31 @@ const Dashboard: React.FC = () => {
   const [currentTime, setCurrentTime] = useState(dayjs());
   const [classes, setClasses] = useState<Class[]>([]);
   const [selectedClassId, setSelectedClassId] = useState<string | undefined>(undefined);
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+  
+  // Ref to track pending events for batch processing
+  const pendingEventsRef = useRef<{ inCount: number; outCount: number }>({ inCount: 0, outCount: 0 });
 
   const fetchStats = useCallback(async () => {
     if (!schoolId) return;
     try {
       const statsData = await dashboardService.getStats(schoolId, selectedClassId);
       setStats(statsData);
+      setLastUpdate(new Date());
+      // Reset pending counts after full refresh
+      pendingEventsRef.current = { inCount: 0, outCount: 0 };
     } catch (err) {
       console.error("Failed to fetch stats:", err);
     }
   }, [schoolId, selectedClassId]);
+
+  // ✅ OPTIMIZATION: Debounced fetch - faqat 5 sekundda bir marta API chaqiriladi
+  const debouncedFetchStats = useMemo(
+    () => debounce(() => {
+      fetchStats();
+    }, 5000, { leading: false, trailing: true }),
+    [fetchStats]
+  );
 
   // Update current time every minute
   useEffect(() => {
@@ -77,16 +94,44 @@ const Dashboard: React.FC = () => {
     return () => clearInterval(timer);
   }, []);
 
+  // ✅ OPTIMIZED: SSE event handler with local state update
+  const handleSSEEvent = useCallback((event: any) => {
+    const typedEvent = event as unknown as AttendanceEvent;
+    
+    // Add new event to the top of the list
+    setEvents((prev) => [typedEvent, ...prev].slice(0, 10));
+    
+    // ✅ LOCAL STATE UPDATE - tezkor UI yangilanishi, API kutmasdan
+    setStats((prevStats) => {
+      if (!prevStats) return prevStats;
+      
+      const isIn = event.eventType === 'IN';
+      
+      // Update currentlyInSchool counter
+      const newCurrentlyInSchool = isIn
+        ? (prevStats.currentlyInSchool || 0) + 1
+        : Math.max(0, (prevStats.currentlyInSchool || 0) - 1);
+      
+      // Track for potential corrections after full refresh
+      if (isIn) {
+        pendingEventsRef.current.inCount++;
+      } else {
+        pendingEventsRef.current.outCount++;
+      }
+      
+      return {
+        ...prevStats,
+        currentlyInSchool: newCurrentlyInSchool,
+      };
+    });
+    
+    // ✅ Debounced full refresh - batches multiple events
+    debouncedFetchStats();
+  }, [debouncedFetchStats]);
+
   // SSE for real-time updates
   const { isConnected } = useAttendanceSSE(schoolId, {
-    onEvent: (event) => {
-      // Add new event to the top of the list
-      setEvents((prev) =>
-        [event as unknown as AttendanceEvent, ...prev].slice(0, 10),
-      );
-      // Refresh stats
-      fetchStats();
-    },
+    onEvent: handleSSEEvent,
   });
 
   useEffect(() => {
@@ -171,7 +216,13 @@ const Dashboard: React.FC = () => {
                 status={isConnected ? "success" : "error"}
                 text={isConnected ? "Live" : ""}
               />
+              {isConnected && <SyncOutlined spin style={{ color: "#52c41a", fontSize: 10, marginLeft: 4 }} />}
             </Tooltip>
+            {lastUpdate && (
+              <Text type="secondary" style={{ fontSize: 10, marginLeft: 8 }}>
+                ({dayjs(lastUpdate).format("HH:mm:ss")})
+              </Text>
+            )}
           </div>
 
           <div style={{ width: 1, height: 24, background: "#e8e8e8" }} />

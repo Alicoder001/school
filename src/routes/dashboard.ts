@@ -2,7 +2,7 @@ import { FastifyInstance } from "fastify";
 import prisma from "../prisma";
 import { getLocalDateKey, getLocalDateOnly } from "../utils/date";
 
-// SuperAdmin uchun barcha maktablar statistikasi
+// ✅ OPTIMIZED: SuperAdmin uchun barcha maktablar statistikasi
 export async function adminDashboardRoutes(fastify: FastifyInstance) {
   fastify.get(
     "/admin/dashboard",
@@ -14,46 +14,79 @@ export async function adminDashboardRoutes(fastify: FastifyInstance) {
       }
 
       const now = new Date();
+      const today = getLocalDateOnly(now);
 
-      // Barcha maktablar
+      // ✅ OPTIMIZATION 1: Bitta query bilan barcha maktablar + counts
       const schools = await prisma.school.findMany({
         include: {
           _count: { select: { students: true, classes: true, devices: true } },
         },
       });
 
-      // Har bir maktab uchun bugungi statistika
-      const schoolsWithStats = await Promise.all(
-        schools.map(async (school) => {
-          const today = getLocalDateOnly(now);
-          const [totalStudents, presentToday, lateToday, absentToday, currentlyInSchool] = await Promise.all([
-            prisma.student.count({ where: { schoolId: school.id, isActive: true } }),
-            prisma.dailyAttendance.count({ where: { schoolId: school.id, date: today, status: "PRESENT" } }),
-            prisma.dailyAttendance.count({ where: { schoolId: school.id, date: today, status: "LATE" } }),
-            prisma.dailyAttendance.count({ where: { schoolId: school.id, date: today, status: "ABSENT" } }),
-            prisma.dailyAttendance.count({ where: { schoolId: school.id, date: today, currentlyInSchool: true } }),
-          ]);
+      // ✅ OPTIMIZATION 2: Bitta aggregation query bilan barcha maktablarning bugungi statistikasi
+      const [attendanceStats, studentCounts, currentlyInSchoolStats] = await Promise.all([
+        // Barcha maktablar uchun attendance statistikasi - bitta query
+        prisma.dailyAttendance.groupBy({
+          by: ['schoolId', 'status'],
+          where: { date: today },
+          _count: true,
+        }),
+        // Barcha maktablar uchun active student count - bitta query
+        prisma.student.groupBy({
+          by: ['schoolId'],
+          where: { isActive: true },
+          _count: true,
+        }),
+        // Hozir maktabda bo'lganlar - bitta query
+        prisma.dailyAttendance.groupBy({
+          by: ['schoolId'],
+          where: { date: today, currentlyInSchool: true },
+          _count: true,
+        }),
+      ]);
 
-          const totalPresent = presentToday + lateToday;
-          const attendancePercent = totalStudents > 0 ? Math.round((totalPresent / totalStudents) * 100) : 0;
+      // Ma'lumotlarni map qilish - O(n) vaqt
+      const statsMap = new Map<string, { present: number; late: number; absent: number }>();
+      attendanceStats.forEach((stat) => {
+        if (!statsMap.has(stat.schoolId)) {
+          statsMap.set(stat.schoolId, { present: 0, late: 0, absent: 0 });
+        }
+        const entry = statsMap.get(stat.schoolId)!;
+        if (stat.status === 'PRESENT') entry.present = stat._count;
+        else if (stat.status === 'LATE') entry.late = stat._count;
+        else if (stat.status === 'ABSENT') entry.absent = stat._count;
+      });
 
-          return {
-            id: school.id,
-            name: school.name,
-            address: school.address,
-            totalStudents,
-            totalClasses: school._count.classes,
-            totalDevices: school._count.devices,
-            presentToday: totalPresent,
-            lateToday,
-            absentToday,
-            currentlyInSchool,
-            attendancePercent,
-          };
-        })
-      );
+      const studentCountMap = new Map<string, number>();
+      studentCounts.forEach((s) => studentCountMap.set(s.schoolId, s._count));
 
-      // Umumiy statistika
+      const currentlyInSchoolMap = new Map<string, number>();
+      currentlyInSchoolStats.forEach((s) => currentlyInSchoolMap.set(s.schoolId, s._count));
+
+      // Maktablar statistikasini yig'ish - O(n) vaqt, database query YO'Q
+      const schoolsWithStats = schools.map((school) => {
+        const stats = statsMap.get(school.id) || { present: 0, late: 0, absent: 0 };
+        const totalStudents = studentCountMap.get(school.id) || 0;
+        const currentlyInSchool = currentlyInSchoolMap.get(school.id) || 0;
+        const totalPresent = stats.present + stats.late;
+        const attendancePercent = totalStudents > 0 ? Math.round((totalPresent / totalStudents) * 100) : 0;
+
+        return {
+          id: school.id,
+          name: school.name,
+          address: school.address,
+          totalStudents,
+          totalClasses: school._count.classes,
+          totalDevices: school._count.devices,
+          presentToday: totalPresent,
+          lateToday: stats.late,
+          absentToday: stats.absent,
+          currentlyInSchool,
+          attendancePercent,
+        };
+      });
+
+      // Umumiy statistika - faqat JavaScript hisoblash
       const totals = schoolsWithStats.reduce(
         (acc, s) => ({
           totalSchools: acc.totalSchools + 1,
@@ -70,39 +103,62 @@ export async function adminDashboardRoutes(fastify: FastifyInstance) {
         ? Math.round((totals.presentToday / totals.totalStudents) * 100) 
         : 0;
 
-      // Oxirgi eventlar (barcha maktablardan)
-      const recentEvents = await prisma.attendanceEvent.findMany({
-        orderBy: { timestamp: "desc" },
-        take: 15,
-        include: {
-          student: { include: { class: true } },
-          device: true,
-          school: true,
-        },
-      });
-
-      // Haftalik trend (barcha maktablar)
-      const weeklyStats = [];
+      // ✅ OPTIMIZATION 3: Haftalik trend va recent events parallel
+      const weekDates: Date[] = [];
       for (let i = 6; i >= 0; i--) {
         const date = new Date(now);
         date.setDate(date.getDate() - i);
-        const dayStr = getLocalDateKey(date);
-        const dayDate = getLocalDateOnly(date);
-
-        const [present, late, absent] = await Promise.all([
-          prisma.dailyAttendance.count({ where: { date: dayDate, status: "PRESENT" } }),
-          prisma.dailyAttendance.count({ where: { date: dayDate, status: "LATE" } }),
-          prisma.dailyAttendance.count({ where: { date: dayDate, status: "ABSENT" } }),
-        ]);
-
-        weeklyStats.push({
-          date: dayStr,
-          dayName: ["Ya", "Du", "Se", "Ch", "Pa", "Ju", "Sh"][date.getDay()],
-          present: present + late,
-          late,
-          absent,
-        });
+        weekDates.push(date);
       }
+
+      const [recentEvents, weeklyAttendance] = await Promise.all([
+        // Oxirgi eventlar
+        prisma.attendanceEvent.findMany({
+          orderBy: { timestamp: "desc" },
+          take: 15,
+          include: {
+            student: { include: { class: true } },
+            device: true,
+            school: true,
+          },
+        }),
+        // ✅ OPTIMIZATION 4: Haftalik statistika bitta query bilan
+        prisma.dailyAttendance.groupBy({
+          by: ['date', 'status'],
+          where: {
+            date: {
+              gte: getLocalDateOnly(weekDates[0]),
+              lte: getLocalDateOnly(weekDates[6]),
+            },
+          },
+          _count: true,
+        }),
+      ]);
+
+      // Haftalik statistikani map qilish
+      const weeklyMap = new Map<string, { present: number; late: number; absent: number }>();
+      weeklyAttendance.forEach((stat) => {
+        const dateKey = stat.date.toISOString().split('T')[0];
+        if (!weeklyMap.has(dateKey)) {
+          weeklyMap.set(dateKey, { present: 0, late: 0, absent: 0 });
+        }
+        const entry = weeklyMap.get(dateKey)!;
+        if (stat.status === 'PRESENT') entry.present = stat._count;
+        else if (stat.status === 'LATE') entry.late = stat._count;
+        else if (stat.status === 'ABSENT') entry.absent = stat._count;
+      });
+
+      const weeklyStats = weekDates.map((date) => {
+        const dateKey = getLocalDateOnly(date).toISOString().split('T')[0];
+        const stats = weeklyMap.get(dateKey) || { present: 0, late: 0, absent: 0 };
+        return {
+          date: getLocalDateKey(date),
+          dayName: ["Ya", "Du", "Se", "Ch", "Pa", "Ju", "Sh"][date.getDay()],
+          present: stats.present + stats.late,
+          late: stats.late,
+          absent: stats.absent,
+        };
+      });
 
       return {
         totals: { ...totals, attendancePercent: overallPercent },
@@ -114,6 +170,7 @@ export async function adminDashboardRoutes(fastify: FastifyInstance) {
   );
 }
 
+// ✅ OPTIMIZED: School Dashboard
 export default async function (fastify: FastifyInstance) {
   fastify.get(
     "/schools/:schoolId/dashboard",
@@ -121,132 +178,190 @@ export default async function (fastify: FastifyInstance) {
     async (request: any) => {
       const { schoolId } = request.params;
       const { classId } = request.query as { classId?: string };
-      
-      const tz =
-        (await prisma.school.findUnique({ where: { id: schoolId } }))
-          ?.timezone || "UTC";
-      
-      // Sinf filter uchun student filter
-      const studentFilter: any = { schoolId, isActive: true };
-      const attendanceFilter: any = {};
-      if (classId) {
-        studentFilter.classId = classId;
-        attendanceFilter.student = { classId };
-      }
-      
-      // total students
-      const totalStudents = await prisma.student.count({
-        where: studentFilter,
-      });
       const now = new Date();
       const today = getLocalDateOnly(now);
-      const presentToday = await prisma.dailyAttendance.count({
-        where: { schoolId, date: today, status: "PRESENT", ...attendanceFilter },
-      });
-      const lateToday = await prisma.dailyAttendance.count({
-        where: { schoolId, date: today, status: "LATE", ...attendanceFilter },
-      });
-      const absentToday = await prisma.dailyAttendance.count({
-        where: { schoolId, date: today, status: "ABSENT", ...attendanceFilter },
-      });
-      const excusedToday = await prisma.dailyAttendance.count({
-        where: { schoolId, date: today, status: "EXCUSED", ...attendanceFilter },
-      });
 
-      // Hozir maktabda bo'lganlar soni
-      const currentlyInSchool = await prisma.dailyAttendance.count({
-        where: { schoolId, date: today, currentlyInSchool: true, ...attendanceFilter },
-      });
+      // ✅ OPTIMIZATION 1: School va asosiy ma'lumotlarni parallel olish
+      const studentFilter: any = { schoolId, isActive: true };
+      if (classId) {
+        studentFilter.classId = classId;
+      }
 
-      // Class breakdown - get stats per class
-      const classes = await prisma.class.findMany({
-        where: { schoolId },
-        include: {
-          _count: { select: { students: true } },
-        },
-      });
-
-      const classBreakdown = await Promise.all(
-        classes.map(async (cls) => {
-          const totalInClass = cls._count.students;
-          const presentInClass = await prisma.dailyAttendance.count({
-            where: {
-              schoolId,
-              date: today,
-              status: { in: ["PRESENT", "LATE"] },
-              student: { classId: cls.id },
-            },
-          });
-          const lateInClass = await prisma.dailyAttendance.count({
-            where: {
-              schoolId,
-              date: today,
-              status: "LATE",
-              student: { classId: cls.id },
-            },
-          });
-          return {
-            classId: cls.id,
-            className: cls.name,
-            total: totalInClass,
-            present: presentInClass,
-            late: lateInClass,
-          };
-        })
-      );
-
-      // Weekly stats (last 7 days)
-      const weeklyStats = [];
+      // Haftalik sanalar tayyorlash
+      const weekDates: Date[] = [];
       for (let i = 6; i >= 0; i--) {
         const d = new Date(now);
         d.setDate(d.getDate() - i);
-        const dayStr = getLocalDateKey(d);
-        const dayDate = getLocalDateOnly(d);
-        
-        const present = await prisma.dailyAttendance.count({
-          where: { schoolId, date: dayDate, status: { in: ["PRESENT", "LATE"] } },
-        });
-        const late = await prisma.dailyAttendance.count({
-          where: { schoolId, date: dayDate, status: "LATE" },
-        });
-        const absent = await prisma.dailyAttendance.count({
-          where: { schoolId, date: dayDate, status: "ABSENT" },
-        });
-        
-        weeklyStats.push({
-          date: dayStr,
-          dayName: ["Ya", "Du", "Se", "Ch", "Pa", "Ju", "Sh"][d.getDay()],
-          present,
-          late,
-          absent,
-        });
+        weekDates.push(d);
       }
 
-      // Not yet arrived students (students without attendance record today)
-      const studentsWithAttendance = await prisma.dailyAttendance.findMany({
-        where: { schoolId, date: today },
-        select: { studentId: true },
-      });
-      const arrivedIds = studentsWithAttendance.map((a) => a.studentId);
-      
-      const notYetArrived = await prisma.student.findMany({
-        where: {
-          schoolId,
-          isActive: true,
-          id: { notIn: arrivedIds },
-        },
-        take: 20,
-        include: { class: true },
-        orderBy: { name: "asc" },
+      // ✅ OPTIMIZATION 2: Barcha asosiy ma'lumotlarni parallel olish
+      const [
+        school,
+        totalStudents,
+        todayAttendanceStats,
+        currentlyInSchoolCount,
+        classes,
+        classAttendanceStats,
+        weeklyAttendance,
+        arrivedStudentIds,
+      ] = await Promise.all([
+        // School timezone
+        prisma.school.findUnique({ 
+          where: { id: schoolId },
+          select: { timezone: true }
+        }),
+        // Total students
+        prisma.student.count({ where: studentFilter }),
+        // ✅ Bugungi attendance - bitta groupBy query
+        prisma.dailyAttendance.groupBy({
+          by: ['status'],
+          where: { 
+            schoolId, 
+            date: today,
+            ...(classId ? { student: { classId } } : {})
+          },
+          _count: true,
+        }),
+        // Hozir maktabda
+        prisma.dailyAttendance.count({
+          where: { 
+            schoolId, 
+            date: today, 
+            currentlyInSchool: true,
+            ...(classId ? { student: { classId } } : {})
+          },
+        }),
+        // Classes with counts
+        prisma.class.findMany({
+          where: { schoolId },
+          include: { _count: { select: { students: true } } },
+        }),
+        // ✅ Class breakdown - bitta query bilan barcha classlar
+        prisma.dailyAttendance.groupBy({
+          by: ['status'],
+          where: { schoolId, date: today },
+          _count: true,
+          // Prisma raw query kerak class bo'yicha groupBy uchun
+        }),
+        // ✅ Haftalik statistika - bitta query
+        prisma.dailyAttendance.groupBy({
+          by: ['date', 'status'],
+          where: {
+            schoolId,
+            date: {
+              gte: getLocalDateOnly(weekDates[0]),
+              lte: getLocalDateOnly(weekDates[6]),
+            },
+          },
+          _count: true,
+        }),
+        // Kelgan studentlar ID lari
+        prisma.dailyAttendance.findMany({
+          where: { schoolId, date: today },
+          select: { studentId: true },
+        }),
+      ]);
+
+      const tz = school?.timezone || "UTC";
+
+      // Today stats parsing
+      let presentToday = 0, lateToday = 0, absentToday = 0, excusedToday = 0;
+      todayAttendanceStats.forEach((stat) => {
+        if (stat.status === 'PRESENT') presentToday = stat._count;
+        else if (stat.status === 'LATE') lateToday = stat._count;
+        else if (stat.status === 'ABSENT') absentToday = stat._count;
+        else if (stat.status === 'EXCUSED') excusedToday = stat._count;
       });
 
-      const notYetArrivedCount = await prisma.student.count({
-        where: {
-          schoolId,
-          isActive: true,
-          id: { notIn: arrivedIds },
-        },
+      // ✅ OPTIMIZATION 3: Class breakdown - parallel emas, raw query bilan
+      // Avval student classId map yaratish
+      const classBreakdownQuery = await prisma.$queryRaw<Array<{
+        classId: string;
+        status: string;
+        count: bigint;
+      }>>`
+        SELECT s."classId", da."status", COUNT(*)::bigint as count
+        FROM "DailyAttendance" da
+        JOIN "Student" s ON da."studentId" = s.id
+        WHERE da."schoolId" = ${schoolId} AND da."date" = ${today}
+        GROUP BY s."classId", da."status"
+      `;
+
+      // Class stats map
+      const classStatsMap = new Map<string, { present: number; late: number }>();
+      classBreakdownQuery.forEach((row) => {
+        if (!row.classId) return;
+        if (!classStatsMap.has(row.classId)) {
+          classStatsMap.set(row.classId, { present: 0, late: 0 });
+        }
+        const entry = classStatsMap.get(row.classId)!;
+        const count = Number(row.count);
+        if (row.status === 'PRESENT') entry.present += count;
+        else if (row.status === 'LATE') {
+          entry.present += count;
+          entry.late = count;
+        }
       });
+
+      const classBreakdown = classes.map((cls) => {
+        const stats = classStatsMap.get(cls.id) || { present: 0, late: 0 };
+        return {
+          classId: cls.id,
+          className: cls.name,
+          total: cls._count.students,
+          present: stats.present,
+          late: stats.late,
+        };
+      });
+
+      // ✅ OPTIMIZATION 4: Haftalik statistikani map qilish
+      const weeklyMap = new Map<string, { present: number; late: number; absent: number }>();
+      weeklyAttendance.forEach((stat) => {
+        const dateKey = stat.date.toISOString().split('T')[0];
+        if (!weeklyMap.has(dateKey)) {
+          weeklyMap.set(dateKey, { present: 0, late: 0, absent: 0 });
+        }
+        const entry = weeklyMap.get(dateKey)!;
+        if (stat.status === 'PRESENT') entry.present = stat._count;
+        else if (stat.status === 'LATE') entry.late = stat._count;
+        else if (stat.status === 'ABSENT') entry.absent = stat._count;
+      });
+
+      const weeklyStats = weekDates.map((date) => {
+        const dateKey = getLocalDateOnly(date).toISOString().split('T')[0];
+        const stats = weeklyMap.get(dateKey) || { present: 0, late: 0, absent: 0 };
+        return {
+          date: getLocalDateKey(date),
+          dayName: ["Ya", "Du", "Se", "Ch", "Pa", "Ju", "Sh"][date.getDay()],
+          present: stats.present + stats.late,
+          late: stats.late,
+          absent: stats.absent,
+        };
+      });
+
+      // ✅ OPTIMIZATION 5: Not yet arrived - parallel query
+      const arrivedIds = arrivedStudentIds.map((a) => a.studentId);
+      
+      const [notYetArrived, notYetArrivedCount] = await Promise.all([
+        prisma.student.findMany({
+          where: {
+            schoolId,
+            isActive: true,
+            id: { notIn: arrivedIds.length > 0 ? arrivedIds : ['none'] },
+          },
+          take: 20,
+          include: { class: true },
+          orderBy: { name: "asc" },
+        }),
+        prisma.student.count({
+          where: {
+            schoolId,
+            isActive: true,
+            id: { notIn: arrivedIds.length > 0 ? arrivedIds : ['none'] },
+          },
+        }),
+      ]);
 
       return {
         totalStudents,
@@ -254,7 +369,7 @@ export default async function (fastify: FastifyInstance) {
         lateToday,
         absentToday,
         excusedToday,
-        currentlyInSchool,
+        currentlyInSchool: currentlyInSchoolCount,
         timezone: tz,
         presentPercentage:
           totalStudents > 0
@@ -273,6 +388,7 @@ export default async function (fastify: FastifyInstance) {
     },
   );
 
+  // ✅ Events endpoint - allaqachon optimallashtirilgan
   fastify.get(
     "/schools/:schoolId/events",
     { preHandler: [(fastify as any).authenticate] } as any,
@@ -280,7 +396,6 @@ export default async function (fastify: FastifyInstance) {
       const { schoolId } = request.params;
       const { limit = 10 } = request.query;
 
-      // Fetch recent attendance events or daily attendance records
       const events = await prisma.attendanceEvent.findMany({
         where: { schoolId },
         take: Number(limit),

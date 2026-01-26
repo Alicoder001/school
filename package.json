@@ -11,6 +11,9 @@
     "db:seed": "ts-node prisma/seed.ts",
     "db:studio": "prisma studio"
   },
+  "prisma": {
+    "seed": "ts-node prisma/seed.ts"
+  },
   "dependencies": {
     "@fastify/cors": "^8.5.0",
     "@fastify/jwt": "^7.0.0",
