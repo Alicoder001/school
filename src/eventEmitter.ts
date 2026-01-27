@@ -43,9 +43,10 @@ export interface AttendanceEventPayload {
     studentId: string | null;
     eventType: 'IN' | 'OUT';
     timestamp: string;
-    student?: {
+      student?: {
       id: string;
       name: string;
+      classId?: string | null;
       class?: { name: string } | null;
     } | null;
   };

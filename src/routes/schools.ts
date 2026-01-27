@@ -2,6 +2,8 @@ import { FastifyInstance } from "fastify";
 import prisma from "../prisma";
 import { v4 as uuidv4 } from "uuid";
 import bcrypt from "bcryptjs";
+import { requireRoles, requireSchoolScope } from "../utils/authz";
+import { sendHttpError } from "../utils/httpErrors";
 
 export default async function (fastify: FastifyInstance) {
   fastify.get(
@@ -113,13 +115,19 @@ export default async function (fastify: FastifyInstance) {
     "/:id",
     { preHandler: [(fastify as any).authenticate] } as any,
     async (request: any, reply) => {
-      const { id } = request.params;
-      const user = request.user;
-      if (user.role === "SCHOOL_ADMIN" && user.schoolId !== id)
-        return reply.status(403).send({ error: "forbidden" });
-      const school = await prisma.school.findUnique({ where: { id } });
-      if (!school) return reply.status(404).send({ error: "not found" });
-      return school;
+      try {
+        const { id } = request.params;
+        const user = request.user;
+
+        requireRoles(user, ['SCHOOL_ADMIN', 'TEACHER', 'GUARD']);
+        requireSchoolScope(user, id);
+
+        const school = await prisma.school.findUnique({ where: { id } });
+        if (!school) return reply.status(404).send({ error: "not found" });
+        return school;
+      } catch (err) {
+        return sendHttpError(reply, err);
+      }
     },
   );
 
@@ -127,22 +135,14 @@ export default async function (fastify: FastifyInstance) {
     "/:id",
     { preHandler: [(fastify as any).authenticate] } as any,
     async (request: any, reply) => {
-      const { id } = request.params;
-      const user = request.user;
-      if (user.role === "SCHOOL_ADMIN" && user.schoolId !== id)
-        return reply.status(403).send({ error: "forbidden" });
-      const {
-        name,
-        address,
-        phone,
-        email,
-        lateThresholdMinutes,
-        absenceCutoffMinutes,
-        timezone,
-      } = request.body;
-      const school = await prisma.school.update({
-        where: { id },
-        data: {
+      try {
+        const { id } = request.params;
+        const user = request.user;
+
+        requireRoles(user, ['SCHOOL_ADMIN']);
+        requireSchoolScope(user, id);
+
+        const {
           name,
           address,
           phone,
@@ -150,20 +150,47 @@ export default async function (fastify: FastifyInstance) {
           lateThresholdMinutes,
           absenceCutoffMinutes,
           timezone,
-        },
-      });
-      return school;
+        } = request.body;
+        const school = await prisma.school.update({
+          where: { id },
+          data: {
+            name,
+            address,
+            phone,
+            email,
+            lateThresholdMinutes,
+            absenceCutoffMinutes,
+            timezone,
+          },
+        });
+        return school;
+      } catch (err) {
+        return sendHttpError(reply, err);
+      }
     },
   );
 
-  fastify.get("/:id/webhook-info", async (request: any, reply) => {
-    const { id } = request.params;
-    const school = await prisma.school.findUnique({ where: { id } });
-    if (!school) return reply.status(404).send({ error: "Not found" });
-    const base = `${request.protocol}://${request.hostname}`;
-    return {
-      in: `${base}/webhook/${school.id}/in?secret=${school.webhookSecretIn}`,
-      out: `${base}/webhook/${school.id}/out?secret=${school.webhookSecretOut}`,
-    };
-  });
+  fastify.get(
+    "/:id/webhook-info",
+    { preHandler: [(fastify as any).authenticate] } as any,
+    async (request: any, reply) => {
+      try {
+        const { id } = request.params;
+        const user = request.user;
+
+        requireRoles(user, ['SCHOOL_ADMIN']);
+        requireSchoolScope(user, id);
+
+        const school = await prisma.school.findUnique({ where: { id } });
+        if (!school) return reply.status(404).send({ error: "Not found" });
+        const base = `${request.protocol}://${request.hostname}`;
+        return {
+          in: `${base}/webhook/${school.id}/in?secret=${school.webhookSecretIn}`,
+          out: `${base}/webhook/${school.id}/out?secret=${school.webhookSecretOut}`,
+        };
+      } catch (err) {
+        return sendHttpError(reply, err);
+      }
+    },
+  );
 }

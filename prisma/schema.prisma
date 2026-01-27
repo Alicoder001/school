@@ -35,8 +35,12 @@ model User {
   password  String
   name      String
   role      Role     @default(SCHOOL_ADMIN)
-  schoolId  String?  
+  schoolId  String?
   school    School?  @relation(fields: [schoolId], references: [id])
+
+  // TEACHER -> Class assignment
+  teacherClasses TeacherClass[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -48,7 +52,22 @@ enum Role {
   SUPER_ADMIN
   SCHOOL_ADMIN
   TEACHER
+  GUARD
 }
+
+model TeacherClass {
+  id        String @id @default(uuid())
+  teacherId String
+  classId   String
+
+  teacher   User   @relation(fields: [teacherId], references: [id])
+  class     Class  @relation(fields: [classId], references: [id])
+
+  @@unique([teacherId, classId])
+  @@index([teacherId])
+  @@index([classId])
+}
+
 
 model Class {
   id         String   @id @default(uuid())
@@ -61,6 +80,8 @@ model Class {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
   students   Student[]
+
+  teacherClasses TeacherClass[]
 
   @@index([schoolId])
   @@index([schoolId, gradeLevel])

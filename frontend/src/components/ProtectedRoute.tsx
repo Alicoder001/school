@@ -5,10 +5,11 @@ import { Spin } from 'antd';
 
 interface ProtectedRouteProps {
     children: React.ReactNode;
-    requiredRole?: 'SUPER_ADMIN' | 'SCHOOL_ADMIN' | 'TEACHER';
+    requiredRole?: 'SUPER_ADMIN' | 'SCHOOL_ADMIN' | 'TEACHER' | 'GUARD';
+    requiredRoles?: Array<'SUPER_ADMIN' | 'SCHOOL_ADMIN' | 'TEACHER' | 'GUARD'>;
 }
 
-const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requiredRole }) => {
+const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requiredRole, requiredRoles }) => {
     const { isAuthenticated, loading, user } = useAuth();
     const location = useLocation();
 
@@ -24,7 +25,9 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requiredRole 
         return <Navigate to="/login" state={{ from: location }} replace />;
     }
 
-    if (requiredRole && user?.role !== requiredRole && user?.role !== 'SUPER_ADMIN') {
+    const roles = requiredRoles || (requiredRole ? [requiredRole] : undefined);
+
+    if (roles && user?.role !== 'SUPER_ADMIN' && !roles.includes(user?.role)) {
         if (user?.schoolId) {
             return <Navigate to={`/schools/${user.schoolId}/dashboard`} replace />;
         }

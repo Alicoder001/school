@@ -4,7 +4,7 @@ import { attendanceEmitter, adminEmitter } from "../eventEmitter";
 import { MultipartFile } from "@fastify/multipart";
 import fs from "fs";
 import path from "path";
-import { getLocalDateKey, getLocalDateOnly } from "../utils/date";
+import { getDateOnlyInZone, getTimePartsInZone } from "../utils/date";
 
 const UPLOADS_DIR = path.join(process.cwd(), "uploads");
 
@@ -56,7 +56,8 @@ const handleAttendanceEvent = async (
   const { employeeNoString, deviceID, dateTime, rawPayload } = normalized;
   const eventTime = new Date(dateTime);
   const eventType = direction === "in" ? "IN" : "OUT";
-  const dateOnly = getLocalDateOnly(new Date(dateTime));
+  const schoolTimeZone = school?.timezone || "Asia/Tashkent";
+  const dateOnly = getDateOnlyInZone(new Date(dateTime), schoolTimeZone);
 
   // ✅ OPTIMIZATION 1: Parallel queries - device va student ni bir vaqtda olish
   const [device, studentWithClass] = await Promise.all([
@@ -119,8 +120,18 @@ const handleAttendanceEvent = async (
       if (eventType === "IN") {
         if (!existing.firstScanTime && cls) {
           const [h, m] = cls.startTime.split(":").map(Number);
-          const diff = eventTime.getHours() * 60 + eventTime.getMinutes() - (h * 60 + m);
-          if (diff > school.lateThresholdMinutes) {
+          const timeParts = getTimePartsInZone(eventTime, schoolTimeZone);
+          const diff = timeParts.hours * 60 + timeParts.minutes - (h * 60 + m);
+          const afterAbsenceCutoff = diff >= school.absenceCutoffMinutes;
+
+          if (existing.status === "ABSENT") {
+            // Statusni ABSENT sifatida saqlab qolamiz (cutoffdan keyin kelgan bo'lsa ham)
+            update.status = "ABSENT";
+            update.lateMinutes = null;
+          } else if (afterAbsenceCutoff) {
+            update.status = "ABSENT";
+            update.lateMinutes = null;
+          } else if (diff > school.lateThresholdMinutes) {
             update.status = "LATE";
             update.lateMinutes = Math.round(diff - school.lateThresholdMinutes);
           } else {
@@ -171,8 +182,12 @@ const handleAttendanceEvent = async (
 
       if (eventType === "IN" && cls) {
         const [h, m] = cls.startTime.split(":").map(Number);
-        const diff = eventTime.getHours() * 60 + eventTime.getMinutes() - (h * 60 + m);
-        if (diff > school.lateThresholdMinutes) {
+        const timeParts = getTimePartsInZone(eventTime, schoolTimeZone);
+        const diff = timeParts.hours * 60 + timeParts.minutes - (h * 60 + m);
+        if (diff >= school.absenceCutoffMinutes) {
+          status = "ABSENT";
+          lateMinutes = null;
+        } else if (diff > school.lateThresholdMinutes) {
           status = "LATE";
           lateMinutes = Math.round(diff - school.lateThresholdMinutes);
         }
@@ -220,6 +235,7 @@ const handleAttendanceEvent = async (
         ? {
             id: student.id,
             name: student.name,
+            classId: cls ? cls.id : null,
             class: cls ? { name: cls.name } : null,
           }
         : null,

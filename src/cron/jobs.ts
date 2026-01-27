@@ -1,6 +1,13 @@
 import cron from 'node-cron';
 import prisma from '../prisma';
-import { getLocalDateOnly, addMinutesToTime } from '../utils/date';
+import {
+  addDaysUtc,
+  addMinutesToTime,
+  dateKeyToUtcDate,
+  getDateKeyInZone,
+  getDateOnlyInZone,
+  getTimePartsInZone,
+} from '../utils/date';
 
 export function registerJobs(server: any) {
   // ... (device health check qismi o'zgarishsiz qoladi)
@@ -38,8 +45,6 @@ export function registerJobs(server: any) {
   // ✅ OPTIMIZED: Mark Absent Job - sinflar bo'yicha ishlaydi
   cron.schedule('* * * * *', async () => {
     const now = new Date();
-    const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-    const today = getLocalDateOnly(now);
 
     try {
       // 1. Barcha maktablarni va ularning sinflarini olamiz
@@ -57,6 +62,11 @@ export function registerJobs(server: any) {
 
       for (const school of schools) {
         try {
+          const schoolTimeZone = school.timezone || 'Asia/Tashkent';
+          const timeParts = getTimePartsInZone(now, schoolTimeZone);
+          const currentTime = `${timeParts.hours.toString().padStart(2, '0')}:${timeParts.minutes.toString().padStart(2, '0')}`;
+          const today = getDateOnlyInZone(now, schoolTimeZone);
+
           // 2. Bayram kunini tekshirish
           const holidayCount = await prisma.holiday.count({
             where: { schoolId: school.id, date: today }
@@ -114,26 +124,38 @@ export function registerJobs(server: any) {
 
   // ✅ NEW: End of day cleanup - kunlik statistika yaratish (optional, performance uchun)
   // Har kuni yarim tunda ishga tushadi
-  cron.schedule('0 0 * * *', async () => {
+  cron.schedule('0 * * * *', async () => {
     try {
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
-      const yesterdayDate = getLocalDateOnly(yesterday);
-
-      // Kechagi kun uchun hali maktabda qolgan studentlarni OUT qilish
-      const updatedCount = await prisma.dailyAttendance.updateMany({
-        where: {
-          date: yesterdayDate,
-          currentlyInSchool: true
-        },
-        data: {
-          currentlyInSchool: false,
-          notes: 'Auto-closed at end of day'
-        }
+      const now = new Date();
+      const schools = await prisma.school.findMany({
+        select: { id: true, name: true, timezone: true },
       });
 
-      if (updatedCount.count > 0) {
-        server.log.info(`End of day: closed ${updatedCount.count} open attendance records`);
+      for (const school of schools) {
+        const tz = school.timezone || 'Asia/Tashkent';
+        const timeParts = getTimePartsInZone(now, tz);
+        if (timeParts.hours !== 0 || timeParts.minutes !== 0) continue;
+
+        const todayKey = getDateKeyInZone(now, tz);
+        const today = dateKeyToUtcDate(todayKey);
+        const yesterdayDate = addDaysUtc(today, -1);
+
+        // Kechagi kun uchun hali maktabda qolgan studentlarni OUT qilish
+        const updatedCount = await prisma.dailyAttendance.updateMany({
+          where: {
+            schoolId: school.id,
+            date: yesterdayDate,
+            currentlyInSchool: true,
+          },
+          data: {
+            currentlyInSchool: false,
+            notes: 'Auto-closed at end of day',
+          },
+        });
+
+        if (updatedCount.count > 0) {
+          server.log.info(`End of day (${school.name}): closed ${updatedCount.count} open attendance records`);
+        }
       }
     } catch (err) {
       server.log.error('End of day cleanup error:', err);

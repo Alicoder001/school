@@ -23,7 +23,7 @@ import dayjs from 'dayjs';
 const { Text } = Typography;
 
 const Devices: React.FC = () => {
-    const { schoolId } = useSchool();
+    const { schoolId, isSchoolAdmin, isSuperAdmin } = useSchool();
     const { message } = App.useApp();
     const [devices, setDevices] = useState<Device[]>([]);
     const [webhookInfo, setWebhookInfo] = useState<{ inUrl: string; outUrl: string } | null>(null);
@@ -45,8 +45,11 @@ const Devices: React.FC = () => {
         }
     };
 
+    const canManage = isSchoolAdmin || isSuperAdmin;
+
     const fetchWebhookInfo = async () => {
         if (!schoolId) return;
+        if (!canManage) return;
         try {
             const info = await schoolsService.getWebhookInfo(schoolId);
             setWebhookInfo(info);
@@ -173,7 +176,7 @@ const Devices: React.FC = () => {
                 </Tooltip>
             ) : <Text type="secondary">-</Text>
         },
-        {
+        ...(canManage ? [{
             title: '',
             key: 'actions',
             width: 80,
@@ -189,7 +192,7 @@ const Devices: React.FC = () => {
                     </Popconfirm>
                 </Space>
             ),
-        },
+        }] : []),
     ];
 
     return (
@@ -237,56 +240,58 @@ const Devices: React.FC = () => {
 
             <Row gutter={[12, 12]}>
                 {/* Webhook konfiguratsiya */}
-                <Col xs={24} lg={8}>
-                    <Card 
-                        title={<><ApiOutlined /> Webhook URL</>} 
-                        size="small"
-                        styles={{ body: { padding: 12 } }}
-                    >
-                        {webhookInfo ? (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                                <div>
-                                    <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 4 }}>
-                                        <LoginOutlined style={{ color: '#52c41a' }} /> Kirish webhook:
+                {canManage && (
+                    <Col xs={24} lg={8}>
+                        <Card 
+                            title={<><ApiOutlined /> Webhook URL</>} 
+                            size="small"
+                            styles={{ body: { padding: 12 } }}
+                        >
+                            {webhookInfo ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                    <div>
+                                        <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 4 }}>
+                                            <LoginOutlined style={{ color: '#52c41a' }} /> Kirish webhook:
+                                        </Text>
+                                        <Input.Group compact>
+                                            <Input value={webhookInfo.inUrl} readOnly style={{ width: 'calc(100% - 32px)' }} size="small" />
+                                            <Tooltip title="Nusxalash">
+                                                <Button icon={<CopyOutlined />} size="small" onClick={() => copyToClipboard(webhookInfo.inUrl)} />
+                                            </Tooltip>
+                                        </Input.Group>
+                                    </div>
+                                    <div>
+                                        <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 4 }}>
+                                            <LogoutOutlined style={{ color: '#1890ff' }} /> Chiqish webhook:
+                                        </Text>
+                                        <Input.Group compact>
+                                            <Input value={webhookInfo.outUrl} readOnly style={{ width: 'calc(100% - 32px)' }} size="small" />
+                                            <Tooltip title="Nusxalash">
+                                                <Button icon={<CopyOutlined />} size="small" onClick={() => copyToClipboard(webhookInfo.outUrl)} />
+                                            </Tooltip>
+                                        </Input.Group>
+                                    </div>
+                                    <Text type="secondary" style={{ fontSize: 10 }}>
+                                        Bu URL'larni Hikvision qurilmangizning HTTP Listening sozlamalariga kiriting.
                                     </Text>
-                                    <Input.Group compact>
-                                        <Input value={webhookInfo.inUrl} readOnly style={{ width: 'calc(100% - 32px)' }} size="small" />
-                                        <Tooltip title="Nusxalash">
-                                            <Button icon={<CopyOutlined />} size="small" onClick={() => copyToClipboard(webhookInfo.inUrl)} />
-                                        </Tooltip>
-                                    </Input.Group>
                                 </div>
-                                <div>
-                                    <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 4 }}>
-                                        <LogoutOutlined style={{ color: '#1890ff' }} /> Chiqish webhook:
-                                    </Text>
-                                    <Input.Group compact>
-                                        <Input value={webhookInfo.outUrl} readOnly style={{ width: 'calc(100% - 32px)' }} size="small" />
-                                        <Tooltip title="Nusxalash">
-                                            <Button icon={<CopyOutlined />} size="small" onClick={() => copyToClipboard(webhookInfo.outUrl)} />
-                                        </Tooltip>
-                                    </Input.Group>
-                                </div>
-                                <Text type="secondary" style={{ fontSize: 10 }}>
-                                    Bu URL'larni Hikvision qurilmangizning HTTP Listening sozlamalariga kiriting.
-                                </Text>
-                            </div>
-                        ) : (
-                            <Text type="secondary">Yuklanmoqda...</Text>
-                        )}
-                    </Card>
-                </Col>
+                            ) : (
+                                <Text type="secondary">Yuklanmoqda...</Text>
+                            )}
+                        </Card>
+                    </Col>
+                )}
 
                 {/* Qurilmalar jadvali */}
                 <Col xs={24} lg={16}>
                     <Card 
                         title="Qurilmalar ro'yxati"
                         size="small"
-                        extra={
+                        extra={canManage ? (
                             <Button type="primary" icon={<PlusOutlined />} size="small" onClick={handleAdd}>
                                 Qo'shish
                             </Button>
-                        }
+                        ) : null}
                     >
                         <Table 
                             dataSource={devices} 
@@ -300,7 +305,8 @@ const Devices: React.FC = () => {
                 </Col>
             </Row>
 
-            <Modal
+            {canManage && (
+                <Modal
                 title={editingId ? 'Qurilmani tahrirlash' : 'Yangi qurilma'}
                 open={modalOpen}
                 onCancel={() => setModalOpen(false)}
@@ -327,7 +333,8 @@ const Devices: React.FC = () => {
                         <Input placeholder="Masalan: 1-qavat, asosiy kirish" />
                     </Form.Item>
                 </Form>
-            </Modal>
+                </Modal>
+            )}
         </div>
     );
 };

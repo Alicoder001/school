@@ -7,6 +7,41 @@ export function getLocalDateOnly(date: Date): Date {
   return new Date(`${key}T00:00:00.000Z`);
 }
 
+export function getDateKeyInZone(date: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone }).format(date);
+}
+
+export function dateKeyToUtcDate(dateKey: string): Date {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day));
+}
+
+export function addDaysUtc(date: Date, days: number): Date {
+  const next = new Date(date);
+  next.setUTCDate(next.getUTCDate() + days);
+  return next;
+}
+
+export function getDateOnlyInZone(date: Date, timeZone: string): Date {
+  const key = getDateKeyInZone(date, timeZone);
+  return dateKeyToUtcDate(key);
+}
+
+export function getTimePartsInZone(
+  date: Date,
+  timeZone: string,
+): { hours: number; minutes: number } {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone,
+  }).formatToParts(date);
+  const hours = Number(parts.find((p) => p.type === "hour")?.value ?? "0");
+  const minutes = Number(parts.find((p) => p.type === "minute")?.value ?? "0");
+  return { hours, minutes };
+}
+
 // Vaqt filterlari uchun date range hisoblash
 export type DateRangeType = 'today' | 'yesterday' | 'week' | 'month' | 'year' | 'custom';
 
@@ -92,6 +127,58 @@ export function getDateRange(
         endDate: today,
         label: 'Bugun',
       };
+  }
+}
+
+export function getDateRangeInZone(
+  type: DateRangeType,
+  timeZone: string,
+  customStart?: string,
+  customEnd?: string,
+): DateRange {
+  const now = new Date();
+  const todayKey = getDateKeyInZone(now, timeZone);
+  const today = dateKeyToUtcDate(todayKey);
+
+  switch (type) {
+    case 'today':
+      return { startDate: today, endDate: today, label: 'Bugun' };
+
+    case 'yesterday': {
+      const yesterday = addDaysUtc(today, -1);
+      return { startDate: yesterday, endDate: yesterday, label: 'Kecha' };
+    }
+
+    case 'week': {
+      const weekStart = addDaysUtc(today, -6);
+      return { startDate: weekStart, endDate: today, label: 'Oxirgi 7 kun' };
+    }
+
+    case 'month': {
+      const [year, month] = todayKey.split("-").map(Number);
+      const monthStart = new Date(Date.UTC(year, month - 1, 1));
+      return { startDate: monthStart, endDate: today, label: 'Shu oy' };
+    }
+
+    case 'year': {
+      const [year] = todayKey.split("-").map(Number);
+      const yearStart = new Date(Date.UTC(year, 0, 1));
+      return { startDate: yearStart, endDate: today, label: 'Shu yil' };
+    }
+
+    case 'custom': {
+      if (customStart && customEnd) {
+        return {
+          startDate: dateKeyToUtcDate(customStart),
+          endDate: dateKeyToUtcDate(customEnd),
+          label: `${customStart} - ${customEnd}`,
+        };
+      }
+      return { startDate: today, endDate: today, label: 'Bugun' };
+    }
+
+    default:
+      return { startDate: today, endDate: today, label: 'Bugun' };
   }
 }
 

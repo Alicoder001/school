@@ -53,17 +53,35 @@ const Layout: React.FC = () => {
             ];
         }
 
-        // Maktab paneli (SuperAdmin yoki oddiy admin)
+        // Maktab paneli (SuperAdmin yoki oddiy admin/teacher/guard)
         const prefix = schoolId ? `/schools/${schoolId}` : '';
+        const userRole = user?.role;
+
+        // Base items for all school users
         const items = [
             { key: `${prefix}/dashboard`, icon: <DashboardOutlined />, label: 'Dashboard' },
             { key: `${prefix}/students`, icon: <TeamOutlined />, label: "O'quvchilar" },
             { key: `${prefix}/attendance`, icon: <CalendarOutlined />, label: 'Davomat' },
             { key: `${prefix}/classes`, icon: <BookOutlined />, label: 'Sinflar' },
-            { key: `${prefix}/devices`, icon: <ApiOutlined />, label: 'Qurilmalar' },
-            { key: `${prefix}/holidays`, icon: <CalendarOutlined />, label: 'Bayramlar' },
-            { key: `${prefix}/settings`, icon: <SettingOutlined />, label: 'Sozlamalar' },
         ];
+
+        // GUARD: read-only monitoring, no write/admin features
+        if (userRole === 'GUARD') {
+            items.push({ key: `${prefix}/devices`, icon: <ApiOutlined />, label: 'Qurilmalar' });
+        }
+
+        // TEACHER: read assigned classes, no device/holiday/settings
+        if (userRole === 'TEACHER') {
+            // teacher sees dashboard, students (own classes), attendance (own), classes (own)
+            // no devices, holidays, settings
+        }
+
+        // SCHOOL_ADMIN: full access
+        if (userRole === 'SCHOOL_ADMIN' || isSuperAdmin) {
+            items.push({ key: `${prefix}/devices`, icon: <ApiOutlined />, label: 'Qurilmalar' });
+            items.push({ key: `${prefix}/holidays`, icon: <CalendarOutlined />, label: 'Bayramlar' });
+            items.push({ key: `${prefix}/settings`, icon: <SettingOutlined />, label: 'Sozlamalar' });
+        }
         
         // SuperAdmin uchun "Orqaga" tugmasi
         if (isSuperAdmin && isViewingSchool) {

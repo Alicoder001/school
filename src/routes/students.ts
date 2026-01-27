@@ -1,7 +1,9 @@
 import { FastifyInstance } from "fastify";
 import prisma from "../prisma";
 import ExcelJS from "exceljs";
-import { getLocalDateOnly, getDateRange, DateRangeType } from "../utils/date";
+import { getDateRangeInZone, DateRangeType } from "../utils/date";
+import { requireRoles, requireSchoolScope, requireStudentSchoolScope, requireTeacherClassScope } from "../utils/authz";
+import { sendHttpError } from "../utils/httpErrors";
 
 export default async function (fastify: FastifyInstance) {
   // Students list with period-based attendance stats
@@ -9,29 +11,51 @@ export default async function (fastify: FastifyInstance) {
     "/schools/:schoolId/students",
     { preHandler: [(fastify as any).authenticate] } as any,
     async (request: any, reply) => {
-      const { schoolId } = request.params;
-      const { page = 1, search = "", classId, period, startDate, endDate } = request.query as any;
-      const take = 50;
-      const skip = (Number(page) - 1) * take;
+      try {
+        const { schoolId } = request.params;
+        const { page = 1, search = "", classId, period, startDate, endDate } = request.query as any;
+        const take = 50;
+        const skip = (Number(page) - 1) * take;
 
-      const user = request.user;
-      if (user.role !== "SUPER_ADMIN" && user.schoolId !== schoolId)
-        return reply.status(403).send({ error: "forbidden" });
+        const user = request.user;
+        requireRoles(user, ['SCHOOL_ADMIN', 'TEACHER', 'GUARD']);
+        requireSchoolScope(user, schoolId);
 
-      // Vaqt oralig'ini hisoblash
-      const dateRange = getDateRange(period || 'today', startDate, endDate);
-      const isSingleDay = dateRange.startDate.getTime() === dateRange.endDate.getTime();
+        // Vaqt oralig'ini hisoblash
+        const school = await prisma.school.findUnique({
+          where: { id: schoolId },
+          select: { timezone: true },
+        });
+        const tz = school?.timezone || 'Asia/Tashkent';
+        const dateRange = getDateRangeInZone(period || 'today', tz, startDate, endDate);
+        const isSingleDay = dateRange.startDate.getTime() === dateRange.endDate.getTime();
 
-      const where: any = {
-        schoolId,
-        isActive: true,
-      };
+        const where: any = {
+          schoolId,
+          isActive: true,
+        };
 
-      if (search) {
-        where.name = { contains: search, mode: "insensitive" };
-      }
-      if (classId) {
-        where.classId = classId;
+        if (search) {
+          where.name = { contains: search, mode: "insensitive" };
+        }
+
+        if (user.role === 'TEACHER') {
+          const rows = await prisma.teacherClass.findMany({ where: { teacherId: user.sub }, select: { classId: true } });
+          const allowedClassIds = rows.map((r) => r.classId);
+
+        if (classId) {
+          // teacher requested specific class -> must be in allowed
+          if (!allowedClassIds.includes(classId)) {
+            return reply.status(403).send({ error: 'forbidden' });
+          }
+          where.classId = classId;
+        } else {
+          where.classId = { in: allowedClassIds.length ? allowedClassIds : ['__none__'] };
+        }
+      } else {
+        if (classId) {
+          where.classId = classId;
+        }
       }
 
       const [students, total] = await Promise.all([
@@ -157,6 +181,9 @@ export default async function (fastify: FastifyInstance) {
         isSingleDay,
         stats: overallStats,
       };
+      } catch (err) {
+        return sendHttpError(reply, err);
+      }
     },
   );
 
@@ -164,15 +191,21 @@ export default async function (fastify: FastifyInstance) {
     "/schools/:schoolId/students",
     { preHandler: [(fastify as any).authenticate] } as any,
     async (request: any, reply) => {
-      const { schoolId } = request.params;
-      const body = request.body;
-      const user = request.user;
-      if (user.role !== "SUPER_ADMIN" && user.schoolId !== schoolId)
-        return reply.status(403).send({ error: "forbidden" });
-      const student = await prisma.student.create({
-        data: { ...body, schoolId },
-      });
-      return student;
+      try {
+        const { schoolId } = request.params;
+        const body = request.body;
+        const user = request.user;
+
+        requireRoles(user, ['SCHOOL_ADMIN']);
+        requireSchoolScope(user, schoolId);
+
+        const student = await prisma.student.create({
+          data: { ...body, schoolId },
+        });
+        return student;
+      } catch (err) {
+        return sendHttpError(reply, err);
+      }
     },
   );
 
@@ -180,12 +213,14 @@ export default async function (fastify: FastifyInstance) {
     "/schools/:schoolId/students/export",
     { preHandler: [(fastify as any).authenticate] } as any,
     async (request: any, reply) => {
-      const { schoolId } = request.params;
-      const user = request.user;
-      if (user.role !== "SUPER_ADMIN" && user.schoolId !== schoolId)
-        return reply.status(403).send({ error: "forbidden" });
+      try {
+        const { schoolId } = request.params;
+        const user = request.user;
 
-      const students = await prisma.student.findMany({
+        requireRoles(user, ['SCHOOL_ADMIN']);
+        requireSchoolScope(user, schoolId);
+
+        const students = await prisma.student.findMany({
         where: { schoolId, isActive: true },
         include: { class: true },
         orderBy: { name: "asc" },
@@ -222,6 +257,9 @@ export default async function (fastify: FastifyInstance) {
 
       const buffer = await wb.xlsx.writeBuffer();
       return reply.send(buffer);
+      } catch (err) {
+        return sendHttpError(reply, err);
+      }
     },
   );
 
@@ -229,10 +267,12 @@ export default async function (fastify: FastifyInstance) {
     "/schools/:schoolId/students/import",
     { preHandler: [(fastify as any).authenticate] } as any,
     async (request: any, reply) => {
-      const { schoolId } = request.params;
-      const user = request.user;
-      if (user.role !== "SUPER_ADMIN" && user.schoolId !== schoolId)
-        return reply.status(403).send({ error: "forbidden" });
+      try {
+        const { schoolId } = request.params;
+        const user = request.user;
+
+        requireRoles(user, ['SCHOOL_ADMIN']);
+        requireSchoolScope(user, schoolId);
 
       const files = request.body.file;
       if (!files || files.length === 0) {
@@ -307,6 +347,9 @@ export default async function (fastify: FastifyInstance) {
       }
 
       return { imported: importedCount };
+      } catch (err) {
+        return sendHttpError(reply, err);
+      }
     },
   );
 
@@ -314,13 +357,26 @@ export default async function (fastify: FastifyInstance) {
     "/students/:id",
     { preHandler: [(fastify as any).authenticate] } as any,
     async (request: any, reply) => {
-      const { id } = request.params;
-      const student = await prisma.student.findUnique({
-        where: { id },
-        include: { class: true },
-      });
-      if (!student) return reply.status(404).send({});
-      return student;
+      try {
+        const { id } = request.params;
+        const user = request.user;
+
+        requireRoles(user, ['SCHOOL_ADMIN', 'TEACHER', 'GUARD']);
+        const student = await requireStudentSchoolScope(user, id);
+
+        if (user.role === 'TEACHER' && student.classId) {
+          await requireTeacherClassScope(user, student.classId);
+        }
+
+        const fullStudent = await prisma.student.findUnique({
+          where: { id },
+          include: { class: true },
+        });
+        if (!fullStudent) return reply.status(404).send({});
+        return fullStudent;
+      } catch (err) {
+        return sendHttpError(reply, err);
+      }
     },
   );
 
@@ -328,13 +384,25 @@ export default async function (fastify: FastifyInstance) {
     "/students/:id/attendance",
     { preHandler: [(fastify as any).authenticate] } as any,
     async (request: any, reply) => {
-      const { id } = request.params;
-      const where: any = { studentId: id };
-      const attendance = await prisma.dailyAttendance.findMany({
-        where,
-        orderBy: { date: "desc" },
-      });
-      return attendance;
+      try {
+        const { id } = request.params;
+        const user = request.user;
+
+        requireRoles(user, ['SCHOOL_ADMIN', 'TEACHER', 'GUARD']);
+        const student = await requireStudentSchoolScope(user, id);
+
+        if (user.role === 'TEACHER' && student.classId) {
+          await requireTeacherClassScope(user, student.classId);
+        }
+
+        const attendance = await prisma.dailyAttendance.findMany({
+          where: { studentId: id },
+          orderBy: { date: "desc" },
+        });
+        return attendance;
+      } catch (err) {
+        return sendHttpError(reply, err);
+      }
     },
   );
 
@@ -343,27 +411,37 @@ export default async function (fastify: FastifyInstance) {
     "/students/:id/events",
     { preHandler: [(fastify as any).authenticate] } as any,
     async (request: any, reply) => {
-      const { id } = request.params;
-      const { date } = request.query as { date?: string };
-      
-      const where: any = { studentId: id };
-      
-      // Agar sana berilgan bo'lsa, faqat o'sha kunniki
-      if (date) {
-        const startOfDay = new Date(`${date}T00:00:00Z`);
-        const endOfDay = new Date(`${date}T23:59:59Z`);
-        where.timestamp = { gte: startOfDay, lte: endOfDay };
+      try {
+        const { id } = request.params;
+        const user = request.user;
+        const { date } = request.query as { date?: string };
+
+        requireRoles(user, ['SCHOOL_ADMIN', 'TEACHER', 'GUARD']);
+        const student = await requireStudentSchoolScope(user, id);
+
+        if (user.role === 'TEACHER' && student.classId) {
+          await requireTeacherClassScope(user, student.classId);
+        }
+
+        const where: any = { studentId: id };
+        if (date) {
+          const startOfDay = new Date(`${date}T00:00:00Z`);
+          const endOfDay = new Date(`${date}T23:59:59Z`);
+          where.timestamp = { gte: startOfDay, lte: endOfDay };
+        }
+
+        const events = await prisma.attendanceEvent.findMany({
+          where,
+          orderBy: { timestamp: "desc" },
+          take: 100,
+          include: {
+            device: true,
+          },
+        });
+        return events;
+      } catch (err) {
+        return sendHttpError(reply, err);
       }
-      
-      const events = await prisma.attendanceEvent.findMany({
-        where,
-        orderBy: { timestamp: "desc" },
-        take: 100,
-        include: {
-          device: true,
-        },
-      });
-      return events;
     },
   );
 
@@ -371,10 +449,19 @@ export default async function (fastify: FastifyInstance) {
     "/students/:id",
     { preHandler: [(fastify as any).authenticate] } as any,
     async (request: any, reply) => {
-      const { id } = request.params;
-      const data = request.body;
-      const student = await prisma.student.update({ where: { id }, data });
-      return student;
+      try {
+        const { id } = request.params;
+        const user = request.user;
+        const data = request.body;
+
+        requireRoles(user, ['SCHOOL_ADMIN']);
+        await requireStudentSchoolScope(user, id);
+
+        const student = await prisma.student.update({ where: { id }, data });
+        return student;
+      } catch (err) {
+        return sendHttpError(reply, err);
+      }
     },
   );
 
@@ -382,12 +469,21 @@ export default async function (fastify: FastifyInstance) {
     "/students/:id",
     { preHandler: [(fastify as any).authenticate] } as any,
     async (request: any, reply) => {
-      const { id } = request.params;
-      const student = await prisma.student.update({
-        where: { id },
-        data: { isActive: false },
-      });
-      return student;
+      try {
+        const { id } = request.params;
+        const user = request.user;
+
+        requireRoles(user, ['SCHOOL_ADMIN']);
+        await requireStudentSchoolScope(user, id);
+
+        const student = await prisma.student.update({
+          where: { id },
+          data: { isActive: false },
+        });
+        return student;
+      } catch (err) {
+        return sendHttpError(reply, err);
+      }
     },
   );
 }

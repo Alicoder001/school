@@ -18,6 +18,7 @@ import holidaysRoutes from "./src/routes/holidays";
 import attendanceRoutes from "./src/routes/attendance";
 import dashboardRoutes, { adminDashboardRoutes } from "./src/routes/dashboard";
 import sseRoutes from "./src/routes/sse";
+import usersRoutes from "./src/routes/users";
 import { registerJobs } from "./src/cron/jobs";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
@@ -54,6 +55,7 @@ server.decorate("authenticate", async function (request: any, reply: any) {
 server.register(authRoutes, { prefix: "/auth" });
 server.register(webhookRoutes, { prefix: "/" });
 server.register(schoolsRoutes, { prefix: "/schools" });
+server.register(usersRoutes, { prefix: "/" });
 server.register(classesRoutes, { prefix: "/" });
 server.register(studentsRoutes, { prefix: "/" });
 server.register(devicesRoutes, { prefix: "/" });

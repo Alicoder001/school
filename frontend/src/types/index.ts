@@ -1,5 +1,5 @@
 // User roles
-export type Role = 'SUPER_ADMIN' | 'SCHOOL_ADMIN' | 'TEACHER';
+export type Role = 'SUPER_ADMIN' | 'SCHOOL_ADMIN' | 'TEACHER' | 'GUARD';
 
 // Attendance status
 export type AttendanceStatus = 'PRESENT' | 'LATE' | 'ABSENT' | 'EXCUSED';

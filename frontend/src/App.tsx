@@ -45,7 +45,7 @@ function App() {
                 <Route
                   path="dashboard"
                   element={
-                    <ProtectedRoute requiredRole="SUPER_ADMIN">
+                    <ProtectedRoute requiredRoles={['SUPER_ADMIN']}>
                       <SuperAdminDashboard />
                     </ProtectedRoute>
                   }
@@ -55,7 +55,7 @@ function App() {
                 <Route
                   path="schools"
                   element={
-                    <ProtectedRoute requiredRole="SUPER_ADMIN">
+                    <ProtectedRoute requiredRoles={['SUPER_ADMIN']}>
                       <Schools />
                     </ProtectedRoute>
                   }
@@ -63,25 +63,95 @@ function App() {
                 <Route
                   path="settings"
                   element={
-                    <ProtectedRoute requiredRole="SUPER_ADMIN">
+                    <ProtectedRoute requiredRoles={['SUPER_ADMIN']}>
                       <Settings />
                     </ProtectedRoute>
                   }
                 />
 
                 {/* School-specific routes */}
-                <Route path="schools/:schoolId/dashboard" element={<Dashboard />} />
-                <Route path="schools/:schoolId/students" element={<Students />} />
-                <Route path="schools/:schoolId/attendance" element={<Attendance />} />
-                <Route path="schools/:schoolId/classes" element={<Classes />} />
-                <Route path="schools/:schoolId/classes/:classId" element={<ClassDetail />} />
-                <Route path="schools/:schoolId/devices" element={<Devices />} />
-                <Route path="schools/:schoolId/holidays" element={<Holidays />} />
-                <Route path="schools/:schoolId/settings" element={<Settings />} />
+                <Route
+                  path="schools/:schoolId/dashboard"
+                  element={
+                    <ProtectedRoute requiredRoles={['SCHOOL_ADMIN', 'TEACHER', 'GUARD']}>
+                      <Dashboard />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="schools/:schoolId/students"
+                  element={
+                    <ProtectedRoute requiredRoles={['SCHOOL_ADMIN', 'TEACHER', 'GUARD']}>
+                      <Students />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="schools/:schoolId/attendance"
+                  element={
+                    <ProtectedRoute requiredRoles={['SCHOOL_ADMIN', 'TEACHER', 'GUARD']}>
+                      <Attendance />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="schools/:schoolId/classes"
+                  element={
+                    <ProtectedRoute requiredRoles={['SCHOOL_ADMIN', 'TEACHER', 'GUARD']}>
+                      <Classes />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="schools/:schoolId/classes/:classId"
+                  element={
+                    <ProtectedRoute requiredRoles={['SCHOOL_ADMIN', 'TEACHER', 'GUARD']}>
+                      <ClassDetail />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="schools/:schoolId/devices"
+                  element={
+                    <ProtectedRoute requiredRoles={['SCHOOL_ADMIN', 'GUARD']}>
+                      <Devices />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="schools/:schoolId/holidays"
+                  element={
+                    <ProtectedRoute requiredRoles={['SCHOOL_ADMIN']}>
+                      <Holidays />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="schools/:schoolId/settings"
+                  element={
+                    <ProtectedRoute requiredRoles={['SCHOOL_ADMIN']}>
+                      <Settings />
+                    </ProtectedRoute>
+                  }
+                />
 
                 {/* Student detail (no school prefix needed) */}
-                <Route path="students/:id" element={<StudentDetail />} />
-                <Route path="classes/:classId" element={<ClassDetail />} />
+                <Route
+                  path="students/:id"
+                  element={
+                    <ProtectedRoute requiredRoles={['SCHOOL_ADMIN', 'TEACHER', 'GUARD']}>
+                      <StudentDetail />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="classes/:classId"
+                  element={
+                    <ProtectedRoute requiredRoles={['SCHOOL_ADMIN', 'TEACHER', 'GUARD']}>
+                      <ClassDetail />
+                    </ProtectedRoute>
+                  }
+                />
               </Route>
 
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
