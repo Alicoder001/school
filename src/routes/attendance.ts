@@ -13,6 +13,7 @@ export default async function (fastify: FastifyInstance) {
       try {
         const { schoolId } = request.params;
         const user = request.user;
+        const { classId, status } = request.query as any;
         const school = await prisma.school.findUnique({
           where: { id: schoolId },
           select: { timezone: true },
@@ -28,7 +29,18 @@ export default async function (fastify: FastifyInstance) {
         if (user.role === 'TEACHER') {
           const rows = await prisma.teacherClass.findMany({ where: { teacherId: user.sub }, select: { classId: true } });
           const classIds = rows.map((r) => r.classId);
-          where.student = { classId: { in: classIds.length ? classIds : ['__none__'] } };
+          if (classId) {
+            if (!classIds.includes(classId)) return reply.status(403).send({ error: 'forbidden' });
+            where.student = { classId };
+          } else {
+            where.student = { classId: { in: classIds.length ? classIds : ['__none__'] } };
+          }
+        } else if (classId) {
+          where.student = { classId };
+        }
+
+        if (status) {
+          where.status = status;
         }
 
         const records = await prisma.dailyAttendance.findMany({
@@ -51,7 +63,7 @@ export default async function (fastify: FastifyInstance) {
       try {
         const { schoolId } = request.params;
         const user = request.user;
-        const { startDate, endDate, classId } = request.query as any;
+        const { startDate, endDate, classId, status } = request.query as any;
 
         requireRoles(user, ['SCHOOL_ADMIN', 'TEACHER', 'GUARD']);
         requireSchoolScope(user, schoolId);
@@ -80,6 +92,10 @@ export default async function (fastify: FastifyInstance) {
           where.student = { classId: { in: classIds.length ? classIds : ['__none__'] } };
         }
 
+        if (status) {
+          where.status = status;
+        }
+
         const records = await prisma.dailyAttendance.findMany({
           where,
           include: {
@@ -101,7 +117,7 @@ export default async function (fastify: FastifyInstance) {
       try {
         const { schoolId } = request.params;
         const user = request.user;
-        const { startDate, endDate, classId } = request.body as any;
+        const { startDate, endDate, classId, status } = request.body as any;
 
         requireRoles(user, ['SCHOOL_ADMIN', 'TEACHER', 'GUARD']);
         requireSchoolScope(user, schoolId);
@@ -123,6 +139,10 @@ export default async function (fastify: FastifyInstance) {
           const rows = await prisma.teacherClass.findMany({ where: { teacherId: user.sub }, select: { classId: true } });
           const classIds = rows.map((r) => r.classId);
           where.student = { classId: { in: classIds.length ? classIds : ['__none__'] } };
+        }
+
+        if (status) {
+          where.status = status;
         }
 
         const records = await prisma.dailyAttendance.findMany({

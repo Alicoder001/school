@@ -84,6 +84,7 @@ export interface Student {
     updatedAt: string;
     // Today's attendance (populated by list endpoint)
     todayStatus?: AttendanceStatus | null;
+    todayEffectiveStatus?: AttendanceStatus | 'PENDING' | null;
     todayFirstScan?: string | null;
     // Expanded attendance (populated when fetching with attendance)
     attendance?: DailyAttendance[];
@@ -164,6 +165,7 @@ export interface StudentsResponse extends PaginatedResponse<Student> {
     late: number;
     absent: number;
     excused: number;
+    pending?: number;
   };
 }
 

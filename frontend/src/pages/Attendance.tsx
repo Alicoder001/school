@@ -22,6 +22,7 @@ import { attendanceService } from "../services/attendance";
 import { classesService } from "../services/classes";
 import type { DailyAttendance, Class, AttendanceStatus } from "../types";
 import { getAssetUrl } from "../config";
+import { useAuth } from "../hooks/useAuth";
 import dayjs from "dayjs";
 
 const { RangePicker } = DatePicker;
@@ -29,6 +30,7 @@ const { RangePicker } = DatePicker;
 const Attendance: React.FC = () => {
   const { message } = App.useApp();
   const { schoolId } = useSchool();
+  const { user } = useAuth();
   const [records, setRecords] = useState<DailyAttendance[]>([]);
   const [classes, setClasses] = useState<Class[]>([]);
   const [loading, setLoading] = useState(true);
@@ -41,6 +43,9 @@ const Attendance: React.FC = () => {
   const [searchText, setSearchText] = useState("");
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [bulkLoading, setBulkLoading] = useState(false);
+  const isSchoolAdmin = user?.role === "SCHOOL_ADMIN" || user?.role === "SUPER_ADMIN";
+  const isTeacher = user?.role === "TEACHER";
+  const canEdit = isSchoolAdmin || isTeacher;
 
   const fetchData = useCallback(async () => {
     if (!schoolId) return;
@@ -103,6 +108,8 @@ const Attendance: React.FC = () => {
 
   const handleStatusChange = async (id: string, status: AttendanceStatus) => {
     try {
+      if (!canEdit) return;
+      if (isTeacher && status !== "EXCUSED") return;
       await attendanceService.update(id, { status });
       message.success("Status updated");
       fetchData();
@@ -175,20 +182,30 @@ const Attendance: React.FC = () => {
       title: "Status",
       dataIndex: "status",
       key: "status",
-      render: (status: AttendanceStatus, record: DailyAttendance) => (
-        <Select
-          value={status}
-          size="small"
-          style={{ width: 100 }}
-          onChange={(val) => handleStatusChange(record.id, val)}
-          options={[
-            { value: "PRESENT", label: <Tag color="green">Present</Tag> },
-            { value: "LATE", label: <Tag color="orange">Late</Tag> },
-            { value: "ABSENT", label: <Tag color="red">Absent</Tag> },
-            { value: "EXCUSED", label: <Tag color="gray">Excused</Tag> },
-          ]}
-        />
-      ),
+      render: (status: AttendanceStatus, record: DailyAttendance) => {
+        if (!canEdit) {
+          return (
+            <Tag color={status === "PRESENT" ? "green" : status === "LATE" ? "orange" : status === "ABSENT" ? "red" : "gray"}>
+              {status}
+            </Tag>
+          );
+        }
+        const options = [
+          { value: "PRESENT", label: <Tag color="green">Present</Tag>, disabled: isTeacher },
+          { value: "LATE", label: <Tag color="orange">Late</Tag>, disabled: isTeacher },
+          { value: "ABSENT", label: <Tag color="red">Absent</Tag>, disabled: isTeacher },
+          { value: "EXCUSED", label: <Tag color="gray">Excused</Tag>, disabled: false },
+        ];
+        return (
+          <Select
+            value={status}
+            size="small"
+            style={{ width: 100 }}
+            onChange={(val) => handleStatusChange(record.id, val)}
+            options={options}
+          />
+        );
+      },
     },
     {
       title: "First Scan",
@@ -320,7 +337,7 @@ const Attendance: React.FC = () => {
         <Button icon={<DownloadOutlined />} onClick={handleExport}>
           Export
         </Button>
-        {selectedRowKeys.length > 0 && (
+        {isSchoolAdmin && selectedRowKeys.length > 0 && (
           <Button
             type="primary"
             loading={bulkLoading}

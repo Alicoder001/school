@@ -1,7 +1,7 @@
 import { FastifyInstance } from "fastify";
 import prisma from "../prisma";
 import ExcelJS from "exceljs";
-import { getDateRangeInZone, DateRangeType } from "../utils/date";
+import { getDateOnlyInZone, getDateRangeInZone, getTimePartsInZone, DateRangeType } from "../utils/date";
 import { requireRoles, requireSchoolScope, requireStudentSchoolScope, requireTeacherClassScope } from "../utils/authz";
 import { sendHttpError } from "../utils/httpErrors";
 
@@ -24,11 +24,14 @@ export default async function (fastify: FastifyInstance) {
         // Vaqt oralig'ini hisoblash
         const school = await prisma.school.findUnique({
           where: { id: schoolId },
-          select: { timezone: true },
+          select: { timezone: true, absenceCutoffMinutes: true },
         });
         const tz = school?.timezone || 'Asia/Tashkent';
+        const absenceCutoffMinutes = school?.absenceCutoffMinutes ?? 180;
         const dateRange = getDateRangeInZone(period || 'today', tz, startDate, endDate);
         const isSingleDay = dateRange.startDate.getTime() === dateRange.endDate.getTime();
+        const today = getDateOnlyInZone(new Date(), tz);
+        const isToday = isSingleDay && dateRange.startDate.getTime() === today.getTime();
 
         const where: any = {
           schoolId,
@@ -134,11 +137,30 @@ export default async function (fastify: FastifyInstance) {
       // Add attendance stats to each student
       const studentsWithStatus = students.map((s) => {
         const stats = studentStatsMap.get(s.id);
+        let todayEffectiveStatus: any = null;
+        if (isToday) {
+          if (stats?.lastStatus) {
+            todayEffectiveStatus = stats.lastStatus;
+          } else {
+            const startTime = s.class?.startTime;
+            if (!startTime) {
+              todayEffectiveStatus = 'PENDING';
+            } else {
+              const [sh, sm] = startTime.split(':').map(Number);
+              const timeParts = getTimePartsInZone(new Date(), tz);
+              const nowMinutes = timeParts.hours * 60 + timeParts.minutes;
+              const startMinutes = sh * 60 + sm;
+              const cutoffMinutes = startMinutes + absenceCutoffMinutes;
+              todayEffectiveStatus = nowMinutes < cutoffMinutes ? 'PENDING' : 'ABSENT';
+            }
+          }
+        }
         return {
           ...s,
           // Bitta kun uchun - to'g'ridan-to'g'ri status
           todayStatus: isSingleDay ? stats?.lastStatus || null : null,
           todayFirstScan: isSingleDay ? stats?.lastFirstScan || null : null,
+          todayEffectiveStatus: isSingleDay ? todayEffectiveStatus : null,
           // Ko'p kunlik statistika
           periodStats: !isSingleDay ? {
             presentCount: stats?.presentCount || 0,
@@ -168,6 +190,9 @@ export default async function (fastify: FastifyInstance) {
         excused: isSingleDay
           ? studentsWithStatus.filter(s => s.todayStatus === 'EXCUSED').length
           : studentsWithStatus.reduce((sum, s) => sum + (s.periodStats?.excusedCount || 0), 0),
+        pending: isSingleDay
+          ? studentsWithStatus.filter(s => s.todayEffectiveStatus === 'PENDING').length
+          : 0,
       };
 
       return { 

@@ -121,10 +121,12 @@ const Students: React.FC = () => {
       return responseData.stats;
     }
     // Fallback
-    const present = students.filter(s => s.todayStatus === 'PRESENT').length;
-    const late = students.filter(s => s.todayStatus === 'LATE').length;
-    const absent = students.filter(s => s.todayStatus === 'ABSENT').length;
-    return { total, present, late, absent, excused: 0 };
+    const present = students.filter(s => (s.todayEffectiveStatus || s.todayStatus) === 'PRESENT').length;
+    const late = students.filter(s => (s.todayEffectiveStatus || s.todayStatus) === 'LATE').length;
+    const absent = students.filter(s => (s.todayEffectiveStatus || s.todayStatus) === 'ABSENT').length;
+    const excused = students.filter(s => (s.todayEffectiveStatus || s.todayStatus) === 'EXCUSED').length;
+    const pending = students.filter(s => (s.todayEffectiveStatus || s.todayStatus) === 'PENDING').length;
+    return { total, present, late, absent, excused, pending };
   }, [responseData, students, total]);
   
   const isSingleDay = responseData?.isSingleDay ?? true;
@@ -231,11 +233,27 @@ const Students: React.FC = () => {
       key: "status",
       width: 140,
       render: (_: any, record: Student) => {
-        if (!record.todayStatus) {
+        const effectiveStatus = record.todayEffectiveStatus || record.todayStatus;
+        if (!effectiveStatus) {
           return <Tag color="default">—</Tag>;
         }
         const statusConfig: Record<string, { color: string; text: string; icon: React.ReactNode }> = {
           PRESENT: { color: "green", text: "Kelgan", icon: <CheckCircleOutlined /> },
+          LATE: { color: "orange", text: "Kech", icon: <ClockCircleOutlined /> },
+          ABSENT: { color: "red", text: "Kelmagan", icon: <CloseCircleOutlined /> },
+          EXCUSED: { color: "gray", text: "Sababli", icon: null },
+          PENDING: { color: "default", text: "Kutilmoqda", icon: null },
+        };
+        const config = statusConfig[effectiveStatus] || { color: "default", text: effectiveStatus, icon: null };
+        const time = record.todayFirstScan 
+          ? new Date(record.todayFirstScan).toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" })
+          : "";
+        return (
+          <Tag color={config.color} icon={config.icon}>
+            {config.text} {time && ()}
+          </Tag>
+        );
+      },
           LATE: { color: "orange", text: "Kech", icon: <ClockCircleOutlined /> },
           ABSENT: { color: "red", text: "Kelmagan", icon: <CloseCircleOutlined /> },
           EXCUSED: { color: "gray", text: "Sababli", icon: null },

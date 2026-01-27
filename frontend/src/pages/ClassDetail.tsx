@@ -237,7 +237,8 @@ const ClassDetail: React.FC = () => {
   const studentsWithEffectiveStatus = useMemo(() => {
     return students.map(student => ({
       ...student,
-      effectiveStatus: getEffectiveStatus(student.todayStatus, absenceCutoffMinutes, classStartTime),
+      effectiveStatus: (student.todayEffectiveStatus as EffectiveStatus | null)
+        ?? getEffectiveStatus(student.todayStatus, absenceCutoffMinutes, classStartTime),
     }));
   }, [students, absenceCutoffMinutes, classStartTime]);
 
