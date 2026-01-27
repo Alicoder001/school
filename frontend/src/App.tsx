@@ -1,27 +1,28 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { ConfigProvider, App as AppAntd } from 'antd';
-import { AuthProvider } from './context/AuthContext';
-import ProtectedRoute from './components/ProtectedRoute';
-import Layout from './components/Layout';
-import Login from './pages/Login';
-import Dashboard from './pages/Dashboard';
-import SuperAdminDashboard from './pages/SuperAdminDashboard';
-import Students from './pages/Students';
-import StudentDetail from './pages/StudentDetail';
-import Attendance from './pages/Attendance';
-import Classes from './pages/Classes';
-import ClassDetail from './pages/ClassDetail';
-import Devices from './pages/Devices';
-import Holidays from './pages/Holidays';
-import Settings from './pages/Settings';
-import Schools from './pages/Schools';
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { ConfigProvider, App as AppAntd } from "antd";
+import { AuthProvider } from "./context/AuthContext";
+import ProtectedRoute from "./components/ProtectedRoute";
+import Layout from "./components/Layout";
+import Login from "./pages/Login";
+import Dashboard from "./pages/Dashboard";
+import SuperAdminDashboard from "./pages/SuperAdminDashboard";
+import Students from "./pages/Students";
+import StudentDetail from "./pages/StudentDetail";
+import Attendance from "./pages/Attendance";
+import Classes from "./pages/Classes";
+import ClassDetail from "./pages/ClassDetail";
+import Devices from "./pages/Devices";
+import Holidays from "./pages/Holidays";
+import Settings from "./pages/Settings";
+import Schools from "./pages/Schools";
+import Users from "./pages/Users";
 
 function App() {
   return (
     <ConfigProvider
       theme={{
         token: {
-          colorPrimary: '#1890ff',
+          colorPrimary: "#1890ff",
           borderRadius: 6,
         },
       }}
@@ -45,7 +46,7 @@ function App() {
                 <Route
                   path="dashboard"
                   element={
-                    <ProtectedRoute requiredRoles={['SUPER_ADMIN']}>
+                    <ProtectedRoute requiredRoles={["SUPER_ADMIN"]}>
                       <SuperAdminDashboard />
                     </ProtectedRoute>
                   }
@@ -55,7 +56,7 @@ function App() {
                 <Route
                   path="schools"
                   element={
-                    <ProtectedRoute requiredRoles={['SUPER_ADMIN']}>
+                    <ProtectedRoute requiredRoles={["SUPER_ADMIN"]}>
                       <Schools />
                     </ProtectedRoute>
                   }
@@ -63,7 +64,7 @@ function App() {
                 <Route
                   path="settings"
                   element={
-                    <ProtectedRoute requiredRoles={['SUPER_ADMIN']}>
+                    <ProtectedRoute requiredRoles={["SUPER_ADMIN"]}>
                       <Settings />
                     </ProtectedRoute>
                   }
@@ -73,7 +74,9 @@ function App() {
                 <Route
                   path="schools/:schoolId/dashboard"
                   element={
-                    <ProtectedRoute requiredRoles={['SCHOOL_ADMIN', 'TEACHER', 'GUARD']}>
+                    <ProtectedRoute
+                      requiredRoles={["SCHOOL_ADMIN", "TEACHER", "GUARD"]}
+                    >
                       <Dashboard />
                     </ProtectedRoute>
                   }
@@ -81,7 +84,9 @@ function App() {
                 <Route
                   path="schools/:schoolId/students"
                   element={
-                    <ProtectedRoute requiredRoles={['SCHOOL_ADMIN', 'TEACHER', 'GUARD']}>
+                    <ProtectedRoute
+                      requiredRoles={["SCHOOL_ADMIN", "TEACHER", "GUARD"]}
+                    >
                       <Students />
                     </ProtectedRoute>
                   }
@@ -89,7 +94,9 @@ function App() {
                 <Route
                   path="schools/:schoolId/attendance"
                   element={
-                    <ProtectedRoute requiredRoles={['SCHOOL_ADMIN', 'TEACHER', 'GUARD']}>
+                    <ProtectedRoute
+                      requiredRoles={["SCHOOL_ADMIN", "TEACHER", "GUARD"]}
+                    >
                       <Attendance />
                     </ProtectedRoute>
                   }
@@ -97,7 +104,9 @@ function App() {
                 <Route
                   path="schools/:schoolId/classes"
                   element={
-                    <ProtectedRoute requiredRoles={['SCHOOL_ADMIN', 'TEACHER', 'GUARD']}>
+                    <ProtectedRoute
+                      requiredRoles={["SCHOOL_ADMIN", "TEACHER", "GUARD"]}
+                    >
                       <Classes />
                     </ProtectedRoute>
                   }
@@ -105,7 +114,9 @@ function App() {
                 <Route
                   path="schools/:schoolId/classes/:classId"
                   element={
-                    <ProtectedRoute requiredRoles={['SCHOOL_ADMIN', 'TEACHER', 'GUARD']}>
+                    <ProtectedRoute
+                      requiredRoles={["SCHOOL_ADMIN", "TEACHER", "GUARD"]}
+                    >
                       <ClassDetail />
                     </ProtectedRoute>
                   }
@@ -113,7 +124,7 @@ function App() {
                 <Route
                   path="schools/:schoolId/devices"
                   element={
-                    <ProtectedRoute requiredRoles={['SCHOOL_ADMIN', 'GUARD']}>
+                    <ProtectedRoute requiredRoles={["SCHOOL_ADMIN", "GUARD"]}>
                       <Devices />
                     </ProtectedRoute>
                   }
@@ -121,15 +132,25 @@ function App() {
                 <Route
                   path="schools/:schoolId/holidays"
                   element={
-                    <ProtectedRoute requiredRoles={['SCHOOL_ADMIN']}>
+                    <ProtectedRoute requiredRoles={["SCHOOL_ADMIN"]}>
                       <Holidays />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="schools/:schoolId/users"
+                  element={
+                    <ProtectedRoute
+                      requiredRoles={["SCHOOL_ADMIN", "SUPER_ADMIN"]}
+                    >
+                      <Users />
                     </ProtectedRoute>
                   }
                 />
                 <Route
                   path="schools/:schoolId/settings"
                   element={
-                    <ProtectedRoute requiredRoles={['SCHOOL_ADMIN']}>
+                    <ProtectedRoute requiredRoles={["SCHOOL_ADMIN"]}>
                       <Settings />
                     </ProtectedRoute>
                   }
@@ -139,7 +160,9 @@ function App() {
                 <Route
                   path="students/:id"
                   element={
-                    <ProtectedRoute requiredRoles={['SCHOOL_ADMIN', 'TEACHER', 'GUARD']}>
+                    <ProtectedRoute
+                      requiredRoles={["SCHOOL_ADMIN", "TEACHER", "GUARD"]}
+                    >
                       <StudentDetail />
                     </ProtectedRoute>
                   }
@@ -147,7 +170,9 @@ function App() {
                 <Route
                   path="classes/:classId"
                   element={
-                    <ProtectedRoute requiredRoles={['SCHOOL_ADMIN', 'TEACHER', 'GUARD']}>
+                    <ProtectedRoute
+                      requiredRoles={["SCHOOL_ADMIN", "TEACHER", "GUARD"]}
+                    >
                       <ClassDetail />
                     </ProtectedRoute>
                   }

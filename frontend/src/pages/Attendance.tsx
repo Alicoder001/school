@@ -14,8 +14,14 @@ import {
   Badge,
   Tooltip,
   Input,
+  Modal,
+  Form,
 } from "antd";
-import { DownloadOutlined, WifiOutlined, SearchOutlined } from "@ant-design/icons";
+import {
+  DownloadOutlined,
+  WifiOutlined,
+  SearchOutlined,
+} from "@ant-design/icons";
 import { useSchool } from "../hooks/useSchool";
 import { useAttendanceSSE } from "../hooks/useAttendanceSSE";
 import { attendanceService } from "../services/attendance";
@@ -43,7 +49,15 @@ const Attendance: React.FC = () => {
   const [searchText, setSearchText] = useState("");
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [bulkLoading, setBulkLoading] = useState(false);
-  const isSchoolAdmin = user?.role === "SCHOOL_ADMIN" || user?.role === "SUPER_ADMIN";
+
+  const [excuseModalOpen, setExcuseModalOpen] = useState(false);
+  const [selectedRecord, setSelectedRecord] = useState<DailyAttendance | null>(
+    null,
+  );
+  const [excuseForm] = Form.useForm();
+
+  const isSchoolAdmin =
+    user?.role === "SCHOOL_ADMIN" || user?.role === "SUPER_ADMIN";
   const isTeacher = user?.role === "TEACHER";
   const canEdit = isSchoolAdmin || isTeacher;
 
@@ -84,7 +98,9 @@ const Attendance: React.FC = () => {
   const { isConnected } = useAttendanceSSE(schoolId, {
     onEvent: () => {
       // Only auto-refresh if viewing today's data
-      const isToday = dateRange[0].isSame(dayjs(), 'day') && dateRange[1].isSame(dayjs(), 'day');
+      const isToday =
+        dateRange[0].isSame(dayjs(), "day") &&
+        dateRange[1].isSame(dayjs(), "day");
       if (isToday) {
         fetchData();
       }
@@ -104,17 +120,59 @@ const Attendance: React.FC = () => {
   useEffect(() => {
     fetchData();
     fetchClasses();
-  }, [schoolId, dateRange, classFilter, statusFilter]);
+  }, [schoolId, fetchData]);
 
-  const handleStatusChange = async (id: string, status: AttendanceStatus) => {
+  const handleStatusChange = async (
+    record: DailyAttendance,
+    status: AttendanceStatus,
+  ) => {
+    if (!canEdit) return;
+
+    if (status === "EXCUSED") {
+      setSelectedRecord(record);
+      excuseForm.resetFields();
+      setExcuseModalOpen(true);
+      return;
+    }
+
     try {
-      if (!canEdit) return;
       if (isTeacher && status !== "EXCUSED") return;
-      await attendanceService.update(id, { status });
+
+      if (record.id) {
+        await attendanceService.update(record.id, { status });
+      } else {
+        // No record ID, use studentId and date
+        await attendanceService.upsert(schoolId!, {
+          studentId: record.studentId,
+          date: dayjs(record.date).toISOString(),
+          status,
+        });
+      }
+
       message.success("Holat yangilandi");
       fetchData();
     } catch (err) {
       message.error("Yangilashda xatolik");
+    }
+  };
+
+  const handleExcuseOk = async () => {
+    try {
+      if (!selectedRecord || !schoolId) return;
+      const values = await excuseForm.validateFields();
+
+      await attendanceService.upsert(schoolId, {
+        studentId: selectedRecord.studentId,
+        date: dayjs(selectedRecord.date).toISOString(),
+        status: "EXCUSED",
+        notes: values.notes,
+      });
+
+      message.success("Sababli deb belgilandi");
+      setExcuseModalOpen(false);
+      fetchData();
+    } catch (err) {
+      message.error("Xatolik yuz berdi");
     }
   };
 
@@ -144,8 +202,8 @@ const Attendance: React.FC = () => {
   const filteredRecords = useMemo(() => {
     if (!searchText.trim()) return records;
     const search = searchText.toLowerCase();
-    return records.filter((r) => 
-      r.student?.name?.toLowerCase().includes(search)
+    return records.filter((r) =>
+      r.student?.name?.toLowerCase().includes(search),
     );
   }, [records, searchText]);
 
@@ -185,27 +243,71 @@ const Attendance: React.FC = () => {
       render: (status: AttendanceStatus, record: DailyAttendance) => {
         if (!canEdit) {
           return (
-            <Tag color={status === "PRESENT" ? "green" : status === "LATE" ? "orange" : status === "ABSENT" ? "red" : "gray"}>
-              {status === "PRESENT" ? "Kelgan" : status === "LATE" ? "Kech" : status === "ABSENT" ? "Kelmagan" : "Sababli"}
+            <Tag
+              color={
+                status === "PRESENT"
+                  ? "green"
+                  : status === "LATE"
+                    ? "orange"
+                    : status === "ABSENT"
+                      ? "red"
+                      : status === "EXCUSED"
+                        ? "gray"
+                        : "default"
+              }
+            >
+              {status === "PRESENT"
+                ? "Kelgan"
+                : status === "LATE"
+                  ? "Kech"
+                  : status === "ABSENT"
+                    ? "Kelmagan"
+                    : status === "EXCUSED"
+                      ? "Sababli"
+                      : "Kutilmoqda"}
             </Tag>
           );
         }
         const options = [
-          { value: "PRESENT", label: <Tag color="green">Kelgan</Tag>, disabled: isTeacher },
-          { value: "LATE", label: <Tag color="orange">Kech</Tag>, disabled: isTeacher },
-          { value: "ABSENT", label: <Tag color="red">Kelmagan</Tag>, disabled: isTeacher },
-          { value: "EXCUSED", label: <Tag color="gray">Sababli</Tag>, disabled: false },
+          {
+            value: "PRESENT",
+            label: <Tag color="green">Kelgan</Tag>,
+            disabled: isTeacher,
+          },
+          {
+            value: "LATE",
+            label: <Tag color="orange">Kech</Tag>,
+            disabled: isTeacher,
+          },
+          {
+            value: "ABSENT",
+            label: <Tag color="red">Kelmagan</Tag>,
+            disabled: isTeacher,
+          },
+          {
+            value: "EXCUSED",
+            label: <Tag color="gray">Sababli</Tag>,
+            disabled: false,
+          },
         ];
         return (
           <Select
-            value={status}
+            value={status === "PENDING" ? undefined : status}
+            placeholder="Kutilmoqda"
             size="small"
             style={{ width: 100 }}
-            onChange={(val) => handleStatusChange(record.id, val)}
+            onChange={(val) => handleStatusChange(record, val)}
             options={options}
+            allowClear={false}
           />
         );
       },
+    },
+    {
+      title: "Izoh",
+      dataIndex: "notes",
+      key: "notes",
+      render: (notes: string) => notes || "-",
     },
     {
       title: "Birinchi skan",
@@ -227,16 +329,37 @@ const Attendance: React.FC = () => {
     },
   ];
 
+  const rowSelection = {
+    selectedRowKeys,
+    onChange: (keys: React.Key[]) => setSelectedRowKeys(keys),
+  };
+
   return (
     <div>
       {/* Connection Status Indicator */}
-      <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Tooltip title={isConnected ? 'Jonli ulangan' : 'Jonli ulanish yo\'q'}>
+      <div
+        style={{
+          marginBottom: 12,
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+        }}
+      >
+        <Tooltip title={isConnected ? "Jonli ulangan" : "Jonli ulanish yo'q"}>
           <Badge
-            status={isConnected ? 'success' : 'error'}
+            status={isConnected ? "success" : "error"}
             text={
-              <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
-                <WifiOutlined style={{ color: isConnected ? '#52c41a' : '#ff4d4f' }} />
+              <span
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
+                  fontSize: 12,
+                }}
+              >
+                <WifiOutlined
+                  style={{ color: isConnected ? "#52c41a" : "#ff4d4f" }}
+                />
               </span>
             }
           />
@@ -287,20 +410,40 @@ const Attendance: React.FC = () => {
         {/* Quick Date Buttons */}
         <Button.Group>
           <Button
-            type={dateRange[0].isSame(dayjs(), 'day') && dateRange[1].isSame(dayjs(), 'day') ? 'primary' : 'default'}
+            type={
+              dateRange[0].isSame(dayjs(), "day") &&
+              dateRange[1].isSame(dayjs(), "day")
+                ? "primary"
+                : "default"
+            }
             onClick={() => setDateRange([dayjs(), dayjs()])}
           >
             Bugun
           </Button>
           <Button
-            type={dateRange[0].isSame(dayjs().subtract(1, 'day'), 'day') && dateRange[1].isSame(dayjs().subtract(1, 'day'), 'day') ? 'primary' : 'default'}
-            onClick={() => setDateRange([dayjs().subtract(1, 'day'), dayjs().subtract(1, 'day')])}
+            type={
+              dateRange[0].isSame(dayjs().subtract(1, "day"), "day") &&
+              dateRange[1].isSame(dayjs().subtract(1, "day"), "day")
+                ? "primary"
+                : "default"
+            }
+            onClick={() =>
+              setDateRange([
+                dayjs().subtract(1, "day"),
+                dayjs().subtract(1, "day"),
+              ])
+            }
           >
             Kecha
           </Button>
           <Button
-            type={dateRange[0].isSame(dayjs().startOf('week'), 'day') && dateRange[1].isSame(dayjs(), 'day') ? 'primary' : 'default'}
-            onClick={() => setDateRange([dayjs().startOf('week'), dayjs()])}
+            type={
+              dateRange[0].isSame(dayjs().startOf("week"), "day") &&
+              dateRange[1].isSame(dayjs(), "day")
+                ? "primary"
+                : "default"
+            }
+            onClick={() => setDateRange([dayjs().startOf("week"), dayjs()])}
           >
             Bu hafta
           </Button>
@@ -345,13 +488,13 @@ const Attendance: React.FC = () => {
               try {
                 const result = await attendanceService.bulkUpdate(
                   selectedRowKeys as string[],
-                  'EXCUSED'
+                  "EXCUSED",
                 );
                 message.success(`${result.updated} ta yozuv "Sababli" qilindi`);
                 setSelectedRowKeys([]);
                 fetchData();
               } catch (err) {
-                message.error('Xatolik yuz berdi');
+                message.error("Xatolik yuz berdi");
               } finally {
                 setBulkLoading(false);
               }
@@ -365,14 +508,33 @@ const Attendance: React.FC = () => {
       <Table
         dataSource={filteredRecords}
         columns={columns}
-        rowKey="id"
+        rowKey={(record) => record.id || `temp-${record.studentId}`}
         loading={loading}
         size="middle"
-        rowSelection={{
-          selectedRowKeys,
-          onChange: (keys) => setSelectedRowKeys(keys),
-        }}
+        rowSelection={isSchoolAdmin ? rowSelection : undefined}
       />
+
+      <Modal
+        title="Sababli deb belgilash"
+        open={excuseModalOpen}
+        onOk={handleExcuseOk}
+        onCancel={() => setExcuseModalOpen(false)}
+        okText="Saqlash"
+        cancelText="Bekor"
+      >
+        <Form form={excuseForm} layout="vertical">
+          <Form.Item
+            name="notes"
+            label="Sabab (izoh)"
+            rules={[{ required: true, message: "Iltimos, sababni kiriting" }]}
+          >
+            <Input.TextArea
+              rows={4}
+              placeholder="Masalan: Kasallik tufayli kelmadi"
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 };

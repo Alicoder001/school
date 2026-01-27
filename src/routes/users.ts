@@ -1,26 +1,32 @@
-import { FastifyInstance } from 'fastify';
-import prisma from '../prisma';
-import bcrypt from 'bcryptjs';
-import { requireRoles, requireSchoolScope } from '../utils/authz';
-import { sendHttpError } from '../utils/httpErrors';
+import { FastifyInstance } from "fastify";
+import prisma from "../prisma";
+import bcrypt from "bcryptjs";
+import { requireRoles, requireSchoolScope } from "../utils/authz";
+import { sendHttpError } from "../utils/httpErrors";
 
 export default async function (fastify: FastifyInstance) {
   // List users in a school (SCHOOL_ADMIN, SUPER_ADMIN)
   fastify.get(
-    '/schools/:schoolId/users',
+    "/schools/:schoolId/users",
     { preHandler: [(fastify as any).authenticate] } as any,
     async (request: any, reply) => {
       try {
         const { schoolId } = request.params;
         const user = request.user;
 
-        requireRoles(user, ['SCHOOL_ADMIN']);
+        requireRoles(user, ["SCHOOL_ADMIN"]);
         requireSchoolScope(user, schoolId);
 
         const users = await prisma.user.findMany({
           where: { schoolId },
-          select: { id: true, name: true, email: true, role: true, createdAt: true },
-          orderBy: { name: 'asc' },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            role: true,
+            createdAt: true,
+          },
+          orderBy: { name: "asc" },
         });
 
         return users;
@@ -32,7 +38,7 @@ export default async function (fastify: FastifyInstance) {
 
   // Create user (teacher/guard) in a school
   fastify.post(
-    '/schools/:schoolId/users',
+    "/schools/:schoolId/users",
     { preHandler: [(fastify as any).authenticate] } as any,
     async (request: any, reply) => {
       try {
@@ -40,12 +46,12 @@ export default async function (fastify: FastifyInstance) {
         const user = request.user;
         const { name, email, password, role } = request.body as any;
 
-        requireRoles(user, ['SCHOOL_ADMIN']);
+        requireRoles(user, ["SCHOOL_ADMIN"]);
         requireSchoolScope(user, schoolId);
 
         // Only allow creating TEACHER/GUARD
-        if (!['TEACHER', 'GUARD'].includes(role)) {
-          return reply.status(400).send({ error: 'Invalid role' });
+        if (!["TEACHER", "GUARD"].includes(role)) {
+          return reply.status(400).send({ error: "Invalid role" });
         }
 
         // Email validation
@@ -57,11 +63,17 @@ export default async function (fastify: FastifyInstance) {
         // Check existing
         const existing = await prisma.user.findUnique({ where: { email } });
         if (existing) {
-          return reply.status(400).send({ error: "Bu email allaqachon ro'yxatdan o'tgan" });
+          return reply
+            .status(400)
+            .send({ error: "Bu email allaqachon ro'yxatdan o'tgan" });
         }
 
         if (!password || password.length < 6) {
-          return reply.status(400).send({ error: 'Parol kamida 6 ta belgidan iborat bo\'lishi kerak' });
+          return reply
+            .status(400)
+            .send({
+              error: "Parol kamida 6 ta belgidan iborat bo'lishi kerak",
+            });
         }
 
         const hashedPassword = await bcrypt.hash(password, 10);
@@ -82,8 +94,10 @@ export default async function (fastify: FastifyInstance) {
           role: newUser.role,
         };
       } catch (err: any) {
-        if (err.code === 'P2002') {
-          return reply.status(400).send({ error: 'Bu email allaqachon mavjud' });
+        if (err.code === "P2002") {
+          return reply
+            .status(400)
+            .send({ error: "Bu email allaqachon mavjud" });
         }
         return sendHttpError(reply, err);
       }
@@ -92,19 +106,22 @@ export default async function (fastify: FastifyInstance) {
 
   // Delete user
   fastify.delete(
-    '/schools/:schoolId/users/:userId',
+    "/schools/:schoolId/users/:userId",
     { preHandler: [(fastify as any).authenticate] } as any,
     async (request: any, reply) => {
       try {
         const { schoolId, userId } = request.params;
         const user = request.user;
 
-        requireRoles(user, ['SCHOOL_ADMIN']);
+        requireRoles(user, ["SCHOOL_ADMIN"]);
         requireSchoolScope(user, schoolId);
 
-        const targetUser = await prisma.user.findUnique({ where: { id: userId }, select: { schoolId: true } });
+        const targetUser = await prisma.user.findUnique({
+          where: { id: userId },
+          select: { schoolId: true },
+        });
         if (!targetUser || targetUser.schoolId !== schoolId) {
-          return reply.status(404).send({ error: 'not found' });
+          return reply.status(404).send({ error: "not found" });
         }
 
         await prisma.user.delete({ where: { id: userId } });
@@ -115,9 +132,56 @@ export default async function (fastify: FastifyInstance) {
     },
   );
 
+  // Update user
+  fastify.put(
+    "/schools/:schoolId/users/:userId",
+    { preHandler: [(fastify as any).authenticate] } as any,
+    async (request: any, reply) => {
+      try {
+        const { schoolId, userId } = request.params;
+        const user = request.user;
+        const { name, password } = request.body as any;
+
+        requireRoles(user, ["SCHOOL_ADMIN"]);
+        requireSchoolScope(user, schoolId);
+
+        const targetUser = await prisma.user.findUnique({
+          where: { id: userId },
+          select: { schoolId: true },
+        });
+        if (!targetUser || targetUser.schoolId !== schoolId) {
+          return reply.status(404).send({ error: "not found" });
+        }
+
+        const updateData: any = {};
+        if (name) updateData.name = name;
+        if (password) {
+          if (password.length < 6) {
+            return reply
+              .status(400)
+              .send({
+                error: "Parol kamida 6 ta belgidan iborat bo'lishi kerak",
+              });
+          }
+          updateData.password = await bcrypt.hash(password, 10);
+        }
+
+        const updated = await prisma.user.update({
+          where: { id: userId },
+          data: updateData,
+          select: { id: true, name: true, email: true, role: true },
+        });
+
+        return updated;
+      } catch (err) {
+        return sendHttpError(reply, err);
+      }
+    },
+  );
+
   // Assign teacher to class
   fastify.post(
-    '/schools/:schoolId/teachers/:teacherId/classes',
+    "/schools/:schoolId/teachers/:teacherId/classes",
     { preHandler: [(fastify as any).authenticate] } as any,
     async (request: any, reply) => {
       try {
@@ -125,7 +189,7 @@ export default async function (fastify: FastifyInstance) {
         const user = request.user;
         const { classId } = request.body as any;
 
-        requireRoles(user, ['SCHOOL_ADMIN']);
+        requireRoles(user, ["SCHOOL_ADMIN"]);
         requireSchoolScope(user, schoolId);
 
         // Verify teacher belongs to school
@@ -133,14 +197,21 @@ export default async function (fastify: FastifyInstance) {
           where: { id: teacherId },
           select: { role: true, schoolId: true },
         });
-        if (!teacher || teacher.schoolId !== schoolId || teacher.role !== 'TEACHER') {
-          return reply.status(400).send({ error: 'Invalid teacher' });
+        if (
+          !teacher ||
+          teacher.schoolId !== schoolId ||
+          teacher.role !== "TEACHER"
+        ) {
+          return reply.status(400).send({ error: "Invalid teacher" });
         }
 
         // Verify class belongs to school
-        const cls = await prisma.class.findUnique({ where: { id: classId }, select: { schoolId: true } });
+        const cls = await prisma.class.findUnique({
+          where: { id: classId },
+          select: { schoolId: true },
+        });
         if (!cls || cls.schoolId !== schoolId) {
-          return reply.status(400).send({ error: 'Invalid class' });
+          return reply.status(400).send({ error: "Invalid class" });
         }
 
         const assignment = await prisma.teacherClass.create({
@@ -149,8 +220,8 @@ export default async function (fastify: FastifyInstance) {
 
         return assignment;
       } catch (err: any) {
-        if (err.code === 'P2002') {
-          return reply.status(400).send({ error: 'Already assigned' });
+        if (err.code === "P2002") {
+          return reply.status(400).send({ error: "Already assigned" });
         }
         return sendHttpError(reply, err);
       }
@@ -159,14 +230,14 @@ export default async function (fastify: FastifyInstance) {
 
   // Unassign teacher from class
   fastify.delete(
-    '/schools/:schoolId/teachers/:teacherId/classes/:classId',
+    "/schools/:schoolId/teachers/:teacherId/classes/:classId",
     { preHandler: [(fastify as any).authenticate] } as any,
     async (request: any, reply) => {
       try {
         const { schoolId, teacherId, classId } = request.params;
         const user = request.user;
 
-        requireRoles(user, ['SCHOOL_ADMIN']);
+        requireRoles(user, ["SCHOOL_ADMIN"]);
         requireSchoolScope(user, schoolId);
 
         // Verify teacher belongs to school
@@ -175,7 +246,7 @@ export default async function (fastify: FastifyInstance) {
           select: { role: true, schoolId: true },
         });
         if (!teacher || teacher.schoolId !== schoolId) {
-          return reply.status(400).send({ error: 'Invalid teacher' });
+          return reply.status(400).send({ error: "Invalid teacher" });
         }
 
         await prisma.teacherClass.deleteMany({
@@ -191,26 +262,30 @@ export default async function (fastify: FastifyInstance) {
 
   // Get teacher's assigned classes
   fastify.get(
-    '/schools/:schoolId/teachers/:teacherId/classes',
+    "/schools/:schoolId/teachers/:teacherId/classes",
     { preHandler: [(fastify as any).authenticate] } as any,
     async (request: any, reply) => {
       try {
         const { schoolId, teacherId } = request.params;
         const user = request.user;
 
-        requireRoles(user, ['SCHOOL_ADMIN', 'TEACHER']);
+        requireRoles(user, ["SCHOOL_ADMIN", "TEACHER"]);
         requireSchoolScope(user, schoolId);
 
-        if (user.role === 'TEACHER' && user.sub !== teacherId) {
-          return reply.status(403).send({ error: 'forbidden' });
+        if (user.role === "TEACHER" && user.sub !== teacherId) {
+          return reply.status(403).send({ error: "forbidden" });
         }
 
         const teacher = await prisma.user.findUnique({
           where: { id: teacherId },
           select: { role: true, schoolId: true },
         });
-        if (!teacher || teacher.schoolId !== schoolId || teacher.role !== 'TEACHER') {
-          return reply.status(404).send({ error: 'not found' });
+        if (
+          !teacher ||
+          teacher.schoolId !== schoolId ||
+          teacher.role !== "TEACHER"
+        ) {
+          return reply.status(404).send({ error: "not found" });
         }
 
         const assignments = await prisma.teacherClass.findMany({

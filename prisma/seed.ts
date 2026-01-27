@@ -111,6 +111,7 @@ async function main() {
     await prisma.holiday.deleteMany();
     await prisma.student.deleteMany();
     await prisma.device.deleteMany();
+    await prisma.teacherClass.deleteMany();
     await prisma.class.deleteMany();
     await prisma.user.deleteMany();
     await prisma.school.deleteMany();
@@ -224,7 +225,9 @@ async function main() {
   const schoolIndexOffset = config.includeBaseSeed ? 1 : 0;
   for (let schoolIndex = 1; schoolIndex <= config.schools; schoolIndex++) {
     const schoolNumber = schoolIndex + schoolIndexOffset;
-    console.log(`Creating school ${schoolNumber}/${config.schools + schoolIndexOffset}...`);
+    console.log(
+      `Creating school ${schoolNumber}/${config.schools + schoolIndexOffset}...`,
+    );
 
     const school = await prisma.school.create({
       data: {

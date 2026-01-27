@@ -184,16 +184,12 @@ export default async function (fastify: FastifyInstance) {
           if (isSingleDay) {
             if (isToday) {
               // Use centralized utility for consistent status calculation
-              const debugInput = {
+              todayEffectiveStatus = computeAttendanceStatus({
                 dbStatus: stats?.lastStatus || null,
                 classStartTime: s.class?.startTime || null,
                 absenceCutoffMinutes,
                 nowMinutes,
-              };
-              console.log(
-                `[DEBUG] Student ${s.name}: classStartTime=${debugInput.classStartTime}, nowMinutes=${nowMinutes}, cutoff=${absenceCutoffMinutes}, dbStatus=${debugInput.dbStatus}`,
-              );
-              todayEffectiveStatus = computeAttendanceStatus(debugInput);
+              });
             } else {
               // Past date with no record => absent, future date => pending
               todayEffectiveStatus =
@@ -295,6 +291,19 @@ export default async function (fastify: FastifyInstance) {
 
         requireRoles(user, ["SCHOOL_ADMIN"]);
         requireSchoolScope(user, schoolId);
+
+        // ✅ classId majburiy
+        if (!body.classId) {
+          return reply.status(400).send({ error: "Sinf tanlanishi shart" });
+        }
+
+        // Sinf mavjudligini tekshirish
+        const classExists = await prisma.class.findFirst({
+          where: { id: body.classId, schoolId },
+        });
+        if (!classExists) {
+          return reply.status(400).send({ error: "Bunday sinf topilmadi" });
+        }
 
         const student = await prisma.student.create({
           data: { ...body, schoolId },

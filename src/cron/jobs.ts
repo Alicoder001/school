@@ -1,92 +1,85 @@
-import cron from 'node-cron';
-import prisma from '../prisma';
+import cron from "node-cron";
+import prisma from "../prisma";
 import {
   addDaysUtc,
-  addMinutesToTime,
   dateKeyToUtcDate,
   getDateKeyInZone,
   getDateOnlyInZone,
   getTimePartsInZone,
-} from '../utils/date';
+} from "../utils/date";
 
 export function registerJobs(server: any) {
-  // ... (device health check qismi o'zgarishsiz qoladi)
-  cron.schedule('*/30 * * * *', async () => {
+  // Device health check - har 30 daqiqada
+  cron.schedule("*/30 * * * *", async () => {
     const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
-    
+
     try {
-      // ✅ OPTIMIZATION: Bitta query bilan inactive qilish
       await prisma.device.updateMany({
         where: {
-          OR: [
-            { lastSeenAt: null },
-            { lastSeenAt: { lt: twoHoursAgo } }
-          ],
-          isActive: true
+          OR: [{ lastSeenAt: null }, { lastSeenAt: { lt: twoHoursAgo } }],
+          isActive: true,
         },
-        data: { isActive: false }
+        data: { isActive: false },
       });
 
-      // ✅ OPTIMIZATION: Bitta query bilan active qilish
       await prisma.device.updateMany({
         where: {
           lastSeenAt: { gte: twoHoursAgo },
-          isActive: false
+          isActive: false,
         },
-        data: { isActive: true }
+        data: { isActive: true },
       });
 
-      server.log.info('Device health check completed');
+      server.log.info("Device health check completed");
     } catch (err) {
-      server.log.error('Device health check error:', err);
+      server.log.error("Device health check error:", err);
     }
   });
 
-  // ✅ OPTIMIZED: Mark Absent Job - sinflar bo'yicha ishlaydi
-  cron.schedule('* * * * *', async () => {
+  // ✅ FIXED: Mark Absent Job - cutoff O'TGAN barcha sinflar uchun
+  // Har daqiqada ishga tushadi
+  cron.schedule("* * * * *", async () => {
     const now = new Date();
 
     try {
-      // 1. Barcha maktablarni va ularning sinflarini olamiz
       const schools = await prisma.school.findMany({
         include: {
           classes: {
             select: {
               id: true,
               startTime: true,
-              name: true
-            }
-          }
-        }
+              name: true,
+            },
+          },
+        },
       });
 
       for (const school of schools) {
         try {
-          const schoolTimeZone = school.timezone || 'Asia/Tashkent';
+          const schoolTimeZone = school.timezone || "Asia/Tashkent";
           const timeParts = getTimePartsInZone(now, schoolTimeZone);
-          const currentTime = `${timeParts.hours.toString().padStart(2, '0')}:${timeParts.minutes.toString().padStart(2, '0')}`;
+          const currentMinutes = timeParts.hours * 60 + timeParts.minutes;
           const today = getDateOnlyInZone(now, schoolTimeZone);
 
-          // 2. Bayram kunini tekshirish
+          // Bayram kunini tekshirish
           const holidayCount = await prisma.holiday.count({
-            where: { schoolId: school.id, date: today }
+            where: { schoolId: school.id, date: today },
           });
 
           if (holidayCount > 0) continue;
 
-          // 3. Ushbu maktabda aynan hozir cutoff vaqti kelgan sinflarni aniqlaymiz
-          const classesToProcess = school.classes.filter(cls => 
-            addMinutesToTime(cls.startTime, school.absenceCutoffMinutes) === currentTime
-          );
+          // ✅ FIX: Cutoff O'TGAN barcha sinflarni topish (aynan shu daqiqada emas!)
+          const classesToProcess = school.classes.filter((cls) => {
+            const [h, m] = cls.startTime.split(":").map(Number);
+            const cutoffMinutes = h * 60 + m + school.absenceCutoffMinutes;
+            return currentMinutes >= cutoffMinutes;
+          });
 
           if (classesToProcess.length === 0) continue;
 
-          const classIds = classesToProcess.map(c => c.id);
-          
-          server.log.info(`Processing ${classIds.length} classes for ${school.name} at cutoff ${currentTime}`);
+          const classIds = classesToProcess.map((c) => c.id);
 
-          // 4. Bitta query bilan ushbu sinflardagi kelmagan o'quvchilarni belgilash
-          // Postgresql 'ANY' operatori orqali classIds arrayini uzatamiz
+          // Kelmagan o'quvchilarni ABSENT qilish (faqat hali DailyAttendance yo'q bo'lganlar)
           const result = await prisma.$executeRaw`
             INSERT INTO "DailyAttendance" ("id", "studentId", "schoolId", "date", "status", "createdAt", "updatedAt", "currentlyInSchool", "scanCount")
             SELECT 
@@ -111,20 +104,24 @@ export function registerJobs(server: any) {
           `;
 
           if (result > 0) {
-            server.log.info(`Marked ${result} students as ABSENT in classes: ${classesToProcess.map(c => c.name).join(', ')}`);
+            server.log.info(
+              `Marked ${result} students as ABSENT in classes: ${classesToProcess.map((c) => c.name).join(", ")}`,
+            );
           }
         } catch (schoolErr) {
-          server.log.error(`Error processing school ${school.name}:`, schoolErr);
+          server.log.error(
+            `Error processing school ${school.name}:`,
+            schoolErr,
+          );
         }
       }
     } catch (err) {
-      server.log.error('Mark absent job error:', err);
+      server.log.error("Mark absent job error:", err);
     }
   });
 
-  // ✅ NEW: End of day cleanup - kunlik statistika yaratish (optional, performance uchun)
-  // Har kuni yarim tunda ishga tushadi
-  cron.schedule('0 * * * *', async () => {
+  // End of day cleanup - har soatda, faqat yarim tunda ishlaydi
+  cron.schedule("0 * * * *", async () => {
     try {
       const now = new Date();
       const schools = await prisma.school.findMany({
@@ -132,7 +129,7 @@ export function registerJobs(server: any) {
       });
 
       for (const school of schools) {
-        const tz = school.timezone || 'Asia/Tashkent';
+        const tz = school.timezone || "Asia/Tashkent";
         const timeParts = getTimePartsInZone(now, tz);
         if (timeParts.hours !== 0 || timeParts.minutes !== 0) continue;
 
@@ -149,36 +146,38 @@ export function registerJobs(server: any) {
           },
           data: {
             currentlyInSchool: false,
-            notes: 'Auto-closed at end of day',
+            notes: "Auto-closed at end of day",
           },
         });
 
         if (updatedCount.count > 0) {
-          server.log.info(`End of day (${school.name}): closed ${updatedCount.count} open attendance records`);
+          server.log.info(
+            `End of day (${school.name}): closed ${updatedCount.count} open attendance records`,
+          );
         }
       }
     } catch (err) {
-      server.log.error('End of day cleanup error:', err);
+      server.log.error("End of day cleanup error:", err);
     }
   });
 
-  // ✅ NEW: Weekly cleanup - eski eventlarni arxivlash yoki o'chirish (optional)
-  // Har haftaning dushanbasi soat 3:00 da
-  cron.schedule('0 3 * * 1', async () => {
+  // Weekly cleanup - eski eventlarni o'chirish
+  cron.schedule("0 3 * * 1", async () => {
     try {
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-      // 30 kundan eski raw eventlarni o'chirish (DailyAttendance saqlanadi)
       const deletedEvents = await prisma.attendanceEvent.deleteMany({
         where: {
-          timestamp: { lt: thirtyDaysAgo }
-        }
+          timestamp: { lt: thirtyDaysAgo },
+        },
       });
 
-      server.log.info(`Weekly cleanup: deleted ${deletedEvents.count} old attendance events`);
+      server.log.info(
+        `Weekly cleanup: deleted ${deletedEvents.count} old attendance events`,
+      );
     } catch (err) {
-      server.log.error('Weekly cleanup error:', err);
+      server.log.error("Weekly cleanup error:", err);
     }
   });
 }
