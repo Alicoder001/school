@@ -3,10 +3,11 @@ import { Card, Space } from "antd";
 import { CheckCircleOutlined, ClockCircleOutlined } from "@ant-design/icons";
 import PageHeader, { Divider } from "./PageHeader";
 import { StatGroup, StatItem } from "./StatItem";
+import { uiGalleryContainerStyle } from "./styles";
 
 const UiGallery: React.FC = () => {
   return (
-    <Space direction="vertical" size={16} style={{ width: "100%" }}>
+    <Space direction="vertical" size={16} style={uiGalleryContainerStyle}>
       <Card title="Shared UI – PageHeader + StatItem" size="small">
         <PageHeader showTime showLiveStatus isConnected>
           <StatGroup>

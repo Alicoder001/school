@@ -43,18 +43,12 @@ import {
   STATUS_COLORS,
   EFFECTIVE_STATUS_OPTIONS,
 } from "../entities/attendance";
+import { PERIOD_OPTIONS_WITH_CUSTOM } from "../shared/constants/periodOptions";
 
 const { RangePicker } = DatePicker;
 const AUTO_REFRESH_MS = 60000;
 
-const PERIOD_OPTIONS = [
-  { label: "Bugun", value: "today" },
-  { label: "Kecha", value: "yesterday" },
-  { label: "Hafta", value: "week" },
-  { label: "Oy", value: "month" },
-  { label: "Yil", value: "year" },
-  { label: "Tanlash", value: "custom" },
-];
+const PERIOD_OPTIONS = PERIOD_OPTIONS_WITH_CUSTOM;
 
 const Attendance: React.FC = () => {
   const { message } = App.useApp();

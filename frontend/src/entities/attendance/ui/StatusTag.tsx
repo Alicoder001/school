@@ -7,6 +7,7 @@ import {
   EVENT_TYPE_TAG,
   STATUS_COLORS,
 } from "../../../shared/attendance";
+import { getEventTagStyle, getStatusTagStyle } from "../../../shared/ui";
 
 // Status konfiguratsiyasi (shared mapping)
 const STATUS_CONFIG = ATTENDANCE_STATUS_TAG;
@@ -31,10 +32,7 @@ const StatusTag: React.FC<StatusTagProps> = ({
   if (!config) return <Tag>-</Tag>;
 
   const timeStr = time ? dayjs(time).format("HH:mm") : "";
-  const style =
-    size === "small"
-      ? { fontSize: 11, padding: "0 6px", margin: 0 }
-      : { margin: 0 };
+  const style = getStatusTagStyle(size);
 
   return (
     <Tag color={config.color} icon={showIcon ? config.icon : undefined} style={style}>
@@ -64,10 +62,7 @@ const EventTag: React.FC<EventTagProps> = ({
   const config = EVENT_CONFIG[eventType];
   if (!config) return <Tag>-</Tag>;
 
-  const style =
-    size === "small"
-      ? { fontSize: 10, padding: "0 4px", margin: 0 }
-      : { margin: 0 };
+  const style = getEventTagStyle(size);
 
   return (
     <Tag color={config.color} icon={showIcon ? config.icon : undefined} style={style}>

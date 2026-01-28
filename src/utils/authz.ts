@@ -98,6 +98,26 @@ export async function getTeacherAllowedClassIds(userId: string): Promise<string[
   return rows.map((r) => r.classId);
 }
 
+export async function getTeacherClassFilter(params: {
+  teacherId: string;
+  requestedClassId?: string | null;
+}): Promise<{ allowedClassIds: string[]; classFilter: string | { in: string[] } }> {
+  const { teacherId, requestedClassId } = params;
+  const allowedClassIds = await getTeacherAllowedClassIds(teacherId);
+
+  if (requestedClassId) {
+    if (!allowedClassIds.includes(requestedClassId)) {
+      throw new ForbiddenError('forbidden');
+    }
+    return { allowedClassIds, classFilter: requestedClassId };
+  }
+
+  return {
+    allowedClassIds,
+    classFilter: { in: allowedClassIds.length ? allowedClassIds : ['__none__'] },
+  };
+}
+
 export async function requireTeacherClassScope(user: any, classId: string) {
   if (isSuperAdmin(user)) return;
   if (user?.role !== 'TEACHER') return; // Only enforce class-scope for teachers

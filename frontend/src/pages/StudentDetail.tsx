@@ -51,17 +51,11 @@ import {
   getAttendanceStatsForStudentDetail,
   STATUS_COLORS,
 } from "../entities/attendance";
+import { PERIOD_OPTIONS } from "../shared/constants/periodOptions";
+import { isWithinPeriod } from "../shared/utils/dateFilters";
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
-
-const PERIOD_OPTIONS = [
-  { label: "Bugun", value: "today" },
-  { label: "Kecha", value: "yesterday" },
-  { label: "Hafta", value: "week" },
-  { label: "Oy", value: "month" },
-  { label: "Yil", value: "year" },
-];
 
 const StudentDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -86,35 +80,13 @@ const StudentDetail: React.FC = () => {
 
   // Filterlangan ma'lumotlarni hisoblash
   const filteredAttendance = attendance.filter((a) => {
-    let match = true;
-
-    // Status filtri
-    if (statusFilter) {
-      match = match && a.status === statusFilter;
-    }
-
-    // Vaqt filtri
-    const recordDate = dayjs(a.date);
-    const today = dayjs().startOf("day");
-
-    if (selectedPeriod === "today") {
-      match = match && recordDate.isSame(today, "day");
-    } else if (selectedPeriod === "yesterday") {
-      match = match && recordDate.isSame(today.subtract(1, "day"), "day");
-    } else if (selectedPeriod === "week") {
-      match = match && recordDate.isAfter(today.subtract(7, "day"));
-    } else if (selectedPeriod === "month") {
-      match = match && recordDate.isSame(today, "month");
-    } else if (selectedPeriod === "year") {
-      match = match && recordDate.isSame(today, "year");
-    } else if (selectedPeriod === "custom" && customDateRange) {
-      match =
-        match &&
-        recordDate.isAfter(customDateRange[0].subtract(1, "day")) &&
-        recordDate.isBefore(customDateRange[1].add(1, "day"));
-    }
-
-    return match;
+    const statusMatch = statusFilter ? a.status === statusFilter : true;
+    const periodMatch = isWithinPeriod({
+      date: a.date,
+      period: selectedPeriod,
+      customRange: customDateRange,
+    });
+    return statusMatch && periodMatch;
   });
 
   const fetchData = useCallback(async () => {

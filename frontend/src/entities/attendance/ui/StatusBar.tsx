@@ -1,6 +1,11 @@
 import React from "react";
 import { Tooltip, Typography } from "antd";
 import { STATUS_BAR_COLORS } from "../../../shared/attendance";
+import {
+  statusBarContainerStyle,
+  statusBarTotalStyle,
+  getStatusBarSegmentStyle,
+} from "../../../shared/ui";
 
 const { Text } = Typography;
 
@@ -80,22 +85,11 @@ const StatusBar: React.FC<StatusBarProps> = ({
 
   return (
     <Tooltip title={tooltip}>
-      <div
-        style={{
-          display: "flex",
-          height,
-          borderRadius: 4,
-          overflow: "hidden",
-          background: "#f0f0f0",
-        }}
-      >
+      <div style={{ ...statusBarContainerStyle, height }}>
         {segments.map((seg) => (
           <div
             key={seg.key}
-            style={{
-              width: `${(seg.value / total) * 100}%`,
-              background: seg.color,
-            }}
+            style={getStatusBarSegmentStyle(seg.value, total, seg.color)}
           />
         ))}
       </div>
@@ -138,7 +132,7 @@ function renderTooltip(params: {
           <Text>Sababli:</Text> <Text strong>{excused}</Text>
         </div>
       )}
-      <div style={{ marginTop: 6 }}>
+      <div style={statusBarTotalStyle}>
         <Text type="secondary">Jami: {total}</Text>
       </div>
     </div>

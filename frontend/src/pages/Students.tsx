@@ -46,19 +46,14 @@ import {
   EFFECTIVE_STATUS_META,
   STATUS_COLORS,
 } from "../entities/attendance";
+import { PERIOD_OPTIONS as SHARED_PERIOD_OPTIONS } from "../shared/constants/periodOptions";
 
 const { Text } = Typography;
 const { RangePicker } = DatePicker;
 const AUTO_REFRESH_MS = 60000;
 
-// Vaqt filterlari opsiyalari
-const PERIOD_OPTIONS = [
-  { label: "Bugun", value: "today" },
-  { label: "Kecha", value: "yesterday" },
-  { label: "Hafta", value: "week" },
-  { label: "Oy", value: "month" },
-  { label: "Yil", value: "year" },
-];
+// Vaqt filterlari opsiyalari (shared)
+const PERIOD_OPTIONS = SHARED_PERIOD_OPTIONS;
 
 const Students: React.FC = () => {
   const { schoolId } = useSchool();

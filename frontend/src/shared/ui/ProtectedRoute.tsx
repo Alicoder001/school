@@ -2,6 +2,7 @@ import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { Spin } from 'antd';
+import { protectedRouteContainerStyle } from './styles';
 
 interface ProtectedRouteProps {
     children: React.ReactNode;
@@ -15,7 +16,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requiredRole,
 
     if (loading) {
         return (
-            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+            <div style={protectedRouteContainerStyle}>
                 <Spin size="large" />
             </div>
         );

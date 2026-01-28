@@ -21,6 +21,9 @@ Maqsad: kod bazani DRY/KISS/SOLID tamoyillariga moslashtirish, hisoblash/label/s
 - Minimal UI docs: `shared/ui/README.md` va `UiGallery` demo komponenti qo'shildi.
 - UI komponentlarda DRY/KISS/SOLID: umumiy style konstantalar ajratildi.
 - UI tavsiyalariga ko'ra: Layout menu helper, `shared/ui/styles.ts` va StatusBar tooltip helper qo'shildi.
+- UI inline style'lar maksimal darajada `shared/ui/styles.ts` ga ko'chirildi.
+- StatusTag/StatusBar va Layout qolgan inline style'lari ham `shared/ui/styles.ts` helperlariga ko'chirildi.
+- DRY refaktor: period options va date filter helperlar `shared/constants/periodOptions.ts` va `shared/utils/dateFilters.ts` ga ko'chirildi; backend teacher class scope filtri helper bilan birlashtirildi.
 
 ## 1. Audit va xaritalash (1-2 kun)
 - Barcha status va statistika hisoblanadigan joylarni ro'yxatlash.

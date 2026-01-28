@@ -3,6 +3,7 @@ import prisma from "../../../prisma";
 import ExcelJS from "exceljs";
 import { addDaysUtc, getDateOnlyInZone } from "../../../utils/date";
 import {
+  getTeacherClassFilter,
   requireRoles,
   requireSchoolScope,
   requireAttendanceTeacherScope,
@@ -40,20 +41,11 @@ export default async function (fastify: FastifyInstance) {
         // 1. Get students filter
         const studentWhere: any = { schoolId, isActive: true };
         if (user.role === "TEACHER") {
-          const rows = await prisma.teacherClass.findMany({
-            where: { teacherId: user.sub },
-            select: { classId: true },
+          const { classFilter } = await getTeacherClassFilter({
+            teacherId: user.sub,
+            requestedClassId: classId,
           });
-          const classIds = rows.map((r) => r.classId);
-          if (classId) {
-            if (!classIds.includes(classId))
-              return reply.status(403).send({ error: "forbidden" });
-            studentWhere.classId = classId;
-          } else {
-            studentWhere.classId = {
-              in: classIds.length ? classIds : ["__none__"],
-            };
-          }
+          studentWhere.classId = classFilter;
         } else if (classId) {
           studentWhere.classId = classId;
         }

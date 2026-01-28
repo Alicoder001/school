@@ -3,10 +3,16 @@ import { Card, Badge, Tooltip, Typography } from 'antd';
 import { ClockCircleOutlined, CalendarOutlined, WifiOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import {
+    calendarIconStyle,
+    getLiveIconStyle,
     headerContainerStyle,
     headerMainContentStyle,
     headerTimeRowStyle,
     liveStatusTextStyle,
+    pageHeaderCardStyle,
+    timeIconStyle,
+    timeSubTextStyle,
+    timeTextStyle,
     uiDividerStyle,
 } from './styles';
 
@@ -41,16 +47,16 @@ const PageHeader: React.FC<PageHeaderProps> = ({
     }, [showTime]);
 
     return (
-        <Card size="small" style={{ marginBottom: 12 }}>
+        <Card size="small" style={pageHeaderCardStyle}>
             <div style={headerContainerStyle}>
                 {/* Vaqt */}
                 {showTime && (
                     <>
                         <div style={headerTimeRowStyle}>
-                            <ClockCircleOutlined style={{ fontSize: 16, color: '#1890ff' }} />
-                            <Text strong style={{ fontSize: 16 }}>{currentTime.format('HH:mm')}</Text>
-                            <Text type="secondary" style={{ fontSize: 12 }}>
-                                <CalendarOutlined style={{ marginRight: 4 }} />
+                            <ClockCircleOutlined style={timeIconStyle} />
+                            <Text strong style={timeTextStyle}>{currentTime.format('HH:mm')}</Text>
+                            <Text type="secondary" style={timeSubTextStyle}>
+                                <CalendarOutlined style={calendarIconStyle} />
                                 {currentTime.format('DD MMM, ddd')}
                             </Text>
                         </div>
@@ -66,7 +72,7 @@ const PageHeader: React.FC<PageHeaderProps> = ({
                                 status={isConnected ? 'success' : 'error'}
                                 text={
                                     <span style={liveStatusTextStyle}>
-                                        <WifiOutlined style={{ color: isConnected ? '#52c41a' : '#ff4d4f' }} />
+                                        <WifiOutlined style={getLiveIconStyle(isConnected)} />
                                         {isConnected ? 'Jonli' : 'Oflayn'}
                                     </span>
                                 }

@@ -1,6 +1,13 @@
 import React from 'react';
 import { Tooltip, Typography } from 'antd';
-import { flexRowWrap, statGroupDividerStyle } from './styles';
+import {
+    flexRowWrap,
+    getStatItemContainerStyle,
+    getStatItemIconStyle,
+    getStatItemValueStyle,
+    statGroupDividerStyle,
+    statItemLabelStyle,
+} from './styles';
 
 const { Text } = Typography;
 
@@ -34,22 +41,16 @@ const StatItem: React.FC<StatItemProps> = ({
 }) => {
     const content = (
         <div
-            style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                cursor: onClick ? 'pointer' : 'default',
-                ...(highlight && {
-                    background: `${color}10`,
-                    padding: '4px 10px',
-                    borderRadius: 6,
-                }),
-            }}
+            style={getStatItemContainerStyle({
+                color,
+                highlight,
+                clickable: Boolean(onClick),
+            })}
             onClick={onClick}
         >
-            <span style={{ color, display: 'flex', alignItems: 'center' }}>{icon}</span>
-            <Text strong style={{ fontSize: 16, color }}>{value}</Text>
-            <Text type="secondary" style={{ fontSize: 11 }}>{label}</Text>
+            <span style={getStatItemIconStyle(color)}>{icon}</span>
+            <Text strong style={getStatItemValueStyle(color)}>{value}</Text>
+            <Text type="secondary" style={statItemLabelStyle}>{label}</Text>
         </div>
     );
 

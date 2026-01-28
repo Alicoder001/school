@@ -12,6 +12,7 @@ import {
   requireSchoolScope,
   requireStudentSchoolScope,
   requireTeacherClassScope,
+  getTeacherClassFilter,
 } from "../../../utils/authz";
 import { sendHttpError } from "../../../utils/httpErrors";
 import {
@@ -73,23 +74,11 @@ export default async function (fastify: FastifyInstance) {
         }
 
         if (user.role === "TEACHER") {
-          const rows = await prisma.teacherClass.findMany({
-            where: { teacherId: user.sub },
-            select: { classId: true },
+          const { classFilter } = await getTeacherClassFilter({
+            teacherId: user.sub,
+            requestedClassId: classId,
           });
-          const allowedClassIds = rows.map((r) => r.classId);
-
-          if (classId) {
-            // teacher requested specific class -> must be in allowed
-            if (!allowedClassIds.includes(classId)) {
-              return reply.status(403).send({ error: "forbidden" });
-            }
-            where.classId = classId;
-          } else {
-            where.classId = {
-              in: allowedClassIds.length ? allowedClassIds : ["__none__"],
-            };
-          }
+          where.classId = classFilter;
         } else {
           if (classId) {
             where.classId = classId;

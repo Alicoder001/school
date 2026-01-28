@@ -17,30 +17,23 @@ import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
 import { useSchool } from "../../hooks/useSchool";
 import { buildMenuItems } from "./layoutMenu";
+import {
+  fullHeightLayoutStyle,
+  getContentStyle,
+  getHeaderStyle,
+  getLogoContainerStyle,
+  getLogoTitleStyle,
+  getAvatarStyle,
+  getSiderStyle,
+  menuNoBorderStyle,
+} from "./styles";
 
 const { Header, Sider, Content } = AntLayout;
 
-const headerStyle = {
-  padding: "0 24px",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-} as const;
 const headerRightStyle = {
   display: "flex",
   alignItems: "center",
   gap: 16,
-} as const;
-const logoContainerStyle = {
-  height: 64,
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-} as const;
-const contentStyle = {
-  margin: 24,
-  padding: 24,
-  minHeight: 280,
 } as const;
 
 const Layout: React.FC = () => {
@@ -79,30 +72,23 @@ const Layout: React.FC = () => {
   });
 
   return (
-    <AntLayout style={{ minHeight: "100vh" }}>
+    <AntLayout style={fullHeightLayoutStyle}>
       <Sider
         trigger={null}
         collapsible
         collapsed={collapsed}
         breakpoint="lg"
         onBreakpoint={(broken) => setCollapsed(broken)}
-        style={{
-          background: themeToken.colorBgContainer,
-          borderRight: `1px solid ${themeToken.colorBorderSecondary}`,
-        }}
+        style={getSiderStyle(themeToken)}
       >
         <div
-          style={{
-            ...logoContainerStyle,
-            borderBottom: `1px solid ${themeToken.colorBorderSecondary}`,
-          }}
+          style={getLogoContainerStyle(themeToken)}
         >
           <h2
-            style={{
-              margin: 0,
+            style={getLogoTitleStyle({
+              collapsed,
               color: themeToken.colorPrimary,
-              fontSize: collapsed ? 16 : 18,
-            }}
+            })}
           >
             {collapsed ? "AS" : "Davomat"}
           </h2>
@@ -112,16 +98,12 @@ const Layout: React.FC = () => {
           selectedKeys={[location.pathname]}
           items={menuItems}
           onClick={({ key }) => navigate(key)}
-          style={{ borderRight: 0 }}
+          style={menuNoBorderStyle}
         />
       </Sider>
       <AntLayout>
         <Header
-          style={{
-            background: themeToken.colorBgContainer,
-            borderBottom: `1px solid ${themeToken.colorBorderSecondary}`,
-            ...headerStyle,
-          }}
+          style={getHeaderStyle(themeToken)}
         >
           <Button
             type="text"
@@ -137,20 +119,13 @@ const Layout: React.FC = () => {
             <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
               <Avatar
                 icon={<UserOutlined />}
-                style={{
-                  cursor: "pointer",
-                  background: themeToken.colorPrimary,
-                }}
+                style={getAvatarStyle(themeToken.colorPrimary)}
               />
             </Dropdown>
           </div>
         </Header>
         <Content
-          style={{
-            background: themeToken.colorBgContainer,
-            borderRadius: themeToken.borderRadius,
-            ...contentStyle,
-          }}
+          style={getContentStyle(themeToken)}
         >
           <Outlet />
         </Content>
