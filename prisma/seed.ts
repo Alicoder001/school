@@ -215,7 +215,7 @@ async function main() {
       },
       {
         name: "Abduvahob Abdurazzoqov",
-        deviceStudentId: "5",
+        deviceStudentId: "6",
         schoolId: baseSchool.id,
         classId: baseClass2.id,
       },
