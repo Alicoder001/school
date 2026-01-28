@@ -34,18 +34,32 @@ export const HeaderMetaProvider: React.FC<{ children: React.ReactNode }> = ({
   const [meta, setMetaState] = useState<HeaderMeta>(defaultMeta);
 
   const setMeta = useCallback((next: Partial<HeaderMeta>) => {
-    setMetaState((prev) => ({ ...prev, ...next }));
+    setMetaState((prev) => {
+      const updated = { ...prev, ...next };
+      const unchanged =
+        updated.showTime === prev.showTime &&
+        updated.showLiveStatus === prev.showLiveStatus &&
+        updated.isConnected === prev.isConnected &&
+        updated.lastUpdated === prev.lastUpdated &&
+        updated.refresh === prev.refresh;
+      return unchanged ? prev : updated;
+    });
   }, []);
 
   const setRefresh = useCallback(
     (refresh?: (() => void | Promise<void>) | null) => {
-      setMetaState((prev) => ({ ...prev, refresh: refresh ?? null }));
+      setMetaState((prev) => {
+        const next = refresh ?? null;
+        return prev.refresh === next ? prev : { ...prev, refresh: next };
+      });
     },
     [],
   );
 
   const setLastUpdated = useCallback((date: Date | null) => {
-    setMetaState((prev) => ({ ...prev, lastUpdated: date }));
+    setMetaState((prev) =>
+      prev.lastUpdated === date ? prev : { ...prev, lastUpdated: date },
+    );
   }, []);
 
   const reset = useCallback(() => {

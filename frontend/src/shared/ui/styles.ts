@@ -151,6 +151,8 @@ export function getHeaderStyle(themeToken: any): CSSProperties {
     position: "sticky",
     top: 0,
     zIndex: 10,
+    height: 64,
+    lineHeight: "normal",
   };
 }
 

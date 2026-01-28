@@ -20,6 +20,7 @@ import dashboardRoutes, { adminDashboardRoutes } from "./src/routes/dashboard";
 import sseRoutes from "./src/routes/sse";
 import usersRoutes from "./src/routes/users";
 import camerasRoutes from "./src/routes/cameras";
+import searchRoutes from "./src/routes/search";
 import { registerJobs } from "./src/cron/jobs";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
@@ -69,6 +70,7 @@ server.register(dashboardRoutes, { prefix: "/" });
 server.register(adminDashboardRoutes, { prefix: "/" });
 server.register(sseRoutes, { prefix: "/" });
 server.register(camerasRoutes, { prefix: "/" });
+server.register(searchRoutes, { prefix: "/" });
 
 const start = async () => {
   try {

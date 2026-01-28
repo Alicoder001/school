@@ -137,6 +137,19 @@ export interface Camera {
     updatedAt: string;
 }
 
+export type SearchItem = {
+    id: string;
+    title: string;
+    subtitle?: string | null;
+    route: string;
+};
+
+export type SearchGroup = {
+    key: string;
+    label: string;
+    items: SearchItem[];
+};
+
 // Attendance Event
 export interface AttendanceEvent {
     id: string;

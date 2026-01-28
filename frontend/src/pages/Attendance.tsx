@@ -135,7 +135,7 @@ const Attendance: React.FC = () => {
     },
   });
 
-  const fetchClasses = async () => {
+  const fetchClasses = useCallback(async () => {
     if (!schoolId) return;
     try {
       const data = await classesService.getAll(schoolId);
@@ -143,12 +143,12 @@ const Attendance: React.FC = () => {
     } catch (err) {
       console.error(err);
     }
-  };
+  }, [schoolId]);
 
   useEffect(() => {
     fetchData();
     fetchClasses();
-  }, [schoolId, fetchData]);
+  }, [fetchData, fetchClasses]);
 
   const handleRefresh = useCallback(async () => {
     await Promise.all([fetchData(), fetchClasses()]);

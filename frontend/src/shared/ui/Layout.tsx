@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Layout as AntLayout,
   Menu,
@@ -9,6 +9,10 @@ import {
   Badge,
   Tooltip,
   Typography,
+  Spin,
+  Input,
+  Empty,
+  Skeleton,
 } from "antd";
 import {
   MenuFoldOutlined,
@@ -42,6 +46,8 @@ import {
   liveStatusTextStyle,
 } from "./styles";
 import dayjs from "dayjs";
+import { searchService } from "../../services/search";
+import type { SearchGroup } from "../../types";
 
 const { Header, Sider, Content } = AntLayout;
 const { Text } = Typography;
@@ -58,6 +64,19 @@ const headerMetaLeftStyle = {
   display: "flex",
   alignItems: "center",
   gap: 12,
+  marginLeft: 12,
+} as const;
+
+const headerSearchWrapStyle = {
+  width: 240,
+  position: "relative",
+} as const;
+
+const headerLeftStyle = {
+  display: "flex",
+  alignItems: "center",
+  gap: 12,
+  height: "100%",
 } as const;
 
 const headerRightActionsStyle = {
@@ -112,6 +131,7 @@ type BackState = {
   backTo?: string;
   schoolName?: string;
 };
+console.log("salom");
 
 const LayoutInner: React.FC = () => {
   const [collapsed, setCollapsed] = useState(false);
@@ -122,6 +142,13 @@ const LayoutInner: React.FC = () => {
   const { token: themeToken } = theme.useToken();
   const { meta, setLastUpdated } = useHeaderMeta();
   const [currentTime, setCurrentTime] = useState(dayjs());
+  const [searchValue, setSearchValue] = useState("");
+  const [searchGroups, setSearchGroups] = useState<SearchGroup[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const searchTimerRef = useRef<number | null>(null);
+  const searchRequestIdRef = useRef(0);
+  const lastInputRef = useRef("");
 
   // URL'dan schoolId ni olish (SuperAdmin maktab panelida bo'lganda)
   const urlSchoolId = location.pathname.match(/\/schools\/([^\/]+)/)?.[1];
@@ -148,6 +175,84 @@ const LayoutInner: React.FC = () => {
     }
     setLastUpdated(new Date());
   };
+
+  const highlightMatch = (text: string, query: string) => {
+    if (!query.trim()) return text;
+    const lower = text.toLowerCase();
+    const q = query.toLowerCase();
+    const idx = lower.indexOf(q);
+    if (idx === -1) return text;
+    const before = text.slice(0, idx);
+    const match = text.slice(idx, idx + query.length);
+    const after = text.slice(idx + query.length);
+    return (
+      <>
+        {before}
+        <span style={{ background: "#fff59d", padding: "0 2px" }}>{match}</span>
+        {after}
+      </>
+    );
+  };
+
+  useEffect(() => {
+    if (searchTimerRef.current) {
+      window.clearTimeout(searchTimerRef.current);
+    }
+    const trimmed = searchValue.trim();
+    if (trimmed.length < 2) {
+      setSearchQuery("");
+      setSearchGroups([]);
+      setSearchLoading(false);
+      return;
+    }
+    setSearchLoading(true);
+    searchTimerRef.current = window.setTimeout(() => {
+      setSearchQuery(trimmed);
+    }, 350);
+    return () => {
+      if (searchTimerRef.current) {
+        window.clearTimeout(searchTimerRef.current);
+      }
+    };
+  }, [searchValue]);
+
+  useEffect(() => {
+    if (!searchQuery) return;
+    const requestId = ++searchRequestIdRef.current;
+    const run = async () => {
+      try {
+        const data = await searchService.search(searchQuery);
+        if (requestId !== searchRequestIdRef.current) return;
+        setSearchGroups(data.groups || []);
+      } catch (err) {
+        if (requestId !== searchRequestIdRef.current) return;
+        console.error(err);
+        setSearchGroups([]);
+      } finally {
+        if (requestId === searchRequestIdRef.current) {
+          setSearchLoading(false);
+        }
+      }
+    };
+    run();
+  }, [searchQuery]);
+
+  const searchOptions = searchGroups.map((group) => ({
+    label: <Text type="secondary">{group.label}</Text>,
+    options: group.items.map((item) => ({
+      value: item.route,
+      label: (
+        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <span>{highlightMatch(item.title, searchValue)}</span>
+          {item.subtitle && (
+            <Text type="secondary" style={{ fontSize: 11 }}>
+              {highlightMatch(item.subtitle, searchValue)}
+            </Text>
+          )}
+        </div>
+      ),
+    })),
+  }));
 
   const userMenuItems = [
     {
@@ -176,7 +281,9 @@ const LayoutInner: React.FC = () => {
         onBreakpoint={(broken) => setCollapsed(broken)}
         style={getSiderStyle(themeToken)}
       >
-        <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+        <div
+          style={{ display: "flex", flexDirection: "column", height: "100%" }}
+        >
           <div style={getLogoContainerStyle(themeToken)}>
             <h2
               style={getLogoTitleStyle({
@@ -191,7 +298,14 @@ const LayoutInner: React.FC = () => {
                   : user?.school?.name || "Dashboard"}
             </h2>
           </div>
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+          <div
+            style={{
+              flex: 1,
+              display: "flex",
+              flexDirection: "column",
+              minHeight: 0,
+            }}
+          >
             <Menu
               mode="inline"
               selectedKeys={[location.pathname]}
@@ -204,7 +318,9 @@ const LayoutInner: React.FC = () => {
               style={{ ...menuNoBorderStyle, flex: 1, minHeight: 0 }}
             />
           </div>
-          <div style={{ ...siderUserWrapStyle, width: "100%", marginTop: "auto" }}>
+          <div
+            style={{ ...siderUserWrapStyle, width: "100%", marginTop: "auto" }}
+          >
             <Dropdown menu={{ items: userMenuItems }} placement="topLeft">
               <Avatar
                 icon={<UserOutlined />}
@@ -229,23 +345,93 @@ const LayoutInner: React.FC = () => {
         </div>
       </Sider>
       <AntLayout>
-        <Header
-          style={getHeaderStyle(themeToken)}
-        >
-          <Button
-            type="text"
-            icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-            onClick={() => setCollapsed(!collapsed)}
-          />
+        <Header style={getHeaderStyle(themeToken)}>
+          <div style={headerLeftStyle}>
+            <Button
+              type="text"
+              icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+              onClick={() => setCollapsed(!collapsed)}
+            />
+            <div style={headerSearchWrapStyle}>
+              <Input
+                size="small"
+                style={{ height: 32, lineHeight: "32px" }}
+                allowClear
+                placeholder="Qidirish..."
+                value={searchValue}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  if (lastInputRef.current === next) return;
+                  lastInputRef.current = next;
+                  setSearchValue(next);
+                }}
+                suffix={searchLoading ? <Spin size="small" /> : null}
+              />
+              {searchValue.trim().length > 0 && (
+                <div
+                  style={{
+                    position: "absolute",
+                    marginTop: 6,
+                    background: "#fff",
+                    border: "1px solid #f0f0f0",
+                    borderRadius: 6,
+                    boxShadow: "0 6px 16px rgba(0,0,0,0.08)",
+                    width: "100%",
+                    zIndex: 1000,
+                    maxHeight: 320,
+                    overflow: "auto",
+                    padding: 8,
+                  }}
+                >
+                  {searchLoading ? (
+                    <Skeleton active title={false} paragraph={{ rows: 3 }} />
+                  ) : searchOptions.length === 0 ? (
+                    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                  ) : (
+                    searchGroups.map((group) => (
+                      <div key={group.key} style={{ marginBottom: 8 }}>
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                          {group.label}
+                        </Text>
+                        <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 6 }}>
+                          {group.items.map((item) => (
+                            <div
+                              key={item.id}
+                              style={{ cursor: "pointer" }}
+                              onClick={() => {
+                                setSearchValue("");
+                                navigate(item.route);
+                              }}
+                            >
+                              <div>{highlightMatch(item.title, searchValue)}</div>
+                              {item.subtitle && (
+                                <Text type="secondary" style={{ fontSize: 11 }}>
+                                  {highlightMatch(item.subtitle, searchValue)}
+                                </Text>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
           <div style={headerMiddleStyle}>
             <div style={headerMetaLeftStyle}>
               {meta.showLiveStatus && (
-                <Tooltip title={meta.isConnected ? "Real vaqt ulangan" : "Oflayn"}>
+                <Tooltip
+                  title={meta.isConnected ? "Real vaqt ulangan" : "Oflayn"}
+                >
                   <Badge
                     status={meta.isConnected ? "success" : "error"}
                     text={
                       <span style={liveStatusTextStyle}>
-                        <WifiOutlined style={getLiveIconStyle(meta.isConnected)} />
+                        <WifiOutlined
+                          style={getLiveIconStyle(meta.isConnected)}
+                        />
                         {meta.isConnected ? "Jonli" : "Oflayn"}
                       </span>
                     }
@@ -273,7 +459,9 @@ const LayoutInner: React.FC = () => {
               <div style={timeStackStyle}>
                 <div style={timeRowStyle}>
                   <ClockCircleOutlined style={timeIconStyle} />
-                  <Text strong style={timeTextStyle}>{currentTime.format("HH:mm")}</Text>
+                  <Text strong style={timeTextStyle}>
+                    {currentTime.format("HH:mm")}
+                  </Text>
                 </div>
                 <Text type="secondary" style={timeSubTextStyle}>
                   <span style={timeSubRowStyle}>
@@ -284,11 +472,8 @@ const LayoutInner: React.FC = () => {
               </div>
             )}
           </div>
-          <div />
         </Header>
-        <Content
-          style={getContentStyle(themeToken)}
-        >
+        <Content style={getContentStyle(themeToken)}>
           <Outlet />
         </Content>
       </AntLayout>
