@@ -66,7 +66,7 @@ const handleAttendanceEvent = async (
       select: { id: true }, // Faqat kerakli field
     }),
     prisma.student.findFirst({
-      where: { deviceStudentId: employeeNoString },
+      where: { deviceStudentId: employeeNoString, schoolId: school.id },
       include: { class: true }, // Class ni ham bir queryda olish
     }),
   ]);
@@ -140,7 +140,7 @@ const handleAttendanceEvent = async (
           } else if (afterAbsenceCutoff) {
             update.status = "ABSENT";
             update.lateMinutes = null;
-          } else if (diff > school.lateThresholdMinutes) {
+          } else if (diff >= school.lateThresholdMinutes) {
             update.status = "LATE";
             update.lateMinutes = Math.round(diff - school.lateThresholdMinutes);
           } else {
@@ -196,7 +196,7 @@ const handleAttendanceEvent = async (
         if (diff >= school.absenceCutoffMinutes) {
           status = "ABSENT";
           lateMinutes = null;
-        } else if (diff > school.lateThresholdMinutes) {
+        } else if (diff >= school.lateThresholdMinutes) {
           status = "LATE";
           lateMinutes = Math.round(diff - school.lateThresholdMinutes);
         }
