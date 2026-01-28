@@ -33,7 +33,7 @@ import type {
 } from "../types";
 import { getAssetUrl } from "../config";
 import { useAuth } from "../hooks/useAuth";
-import { PageHeader, StatItem, StatGroup } from "../shared/ui";
+import { PageHeader, StatItem, StatGroup, useHeaderMeta } from "../shared/ui";
 import dayjs from "dayjs";
 import {
   ATTENDANCE_STATUS_TAG,
@@ -78,6 +78,7 @@ const Attendance: React.FC = () => {
     user?.role === "SCHOOL_ADMIN" || user?.role === "SUPER_ADMIN";
   const isTeacher = user?.role === "TEACHER";
   const canEdit = isSchoolAdmin || isTeacher;
+  const { setMeta } = useHeaderMeta();
 
   const fetchData = useCallback(async (silent = false) => {
     if (!schoolId) return;
@@ -147,6 +148,11 @@ const Attendance: React.FC = () => {
     fetchData();
     fetchClasses();
   }, [schoolId, fetchData]);
+
+  useEffect(() => {
+    setMeta({ showLiveStatus: isTodayRange, isConnected });
+    return () => setMeta({ showLiveStatus: false, isConnected: false });
+  }, [isTodayRange, isConnected, setMeta]);
 
   useEffect(() => {
     if (!isTodayRange) return;
@@ -397,7 +403,7 @@ const Attendance: React.FC = () => {
   return (
     <div>
       {/* Standart Header */}
-      <PageHeader showTime showLiveStatus isConnected={isConnected}>
+      <PageHeader>
         <StatGroup>
           <StatItem
             icon={<TeamOutlined />}

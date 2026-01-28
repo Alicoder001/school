@@ -36,11 +36,11 @@ import {
   Tooltip as RechartsTooltip,
   ResponsiveContainer,
 } from "recharts";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { dashboardService } from "../services/dashboard";
 import type { PeriodType, AttendanceScope } from "../types";
 import { useAdminSSE } from "../hooks/useAdminSSE";
-import { PageHeader, StatItem, StatGroup } from "../shared/ui";
+import { PageHeader, StatItem, StatGroup, useHeaderMeta } from "../shared/ui";
 import {
   EFFECTIVE_STATUS_META,
   STATUS_COLORS,
@@ -110,15 +110,17 @@ interface RealtimeEvent {
 
 const SuperAdminDashboard: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [data, setData] = useState<AdminDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [realtimeEvents, setRealtimeEvents] = useState<RealtimeEvent[]>([]);
-  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   
   // Vaqt filterlari
   const [selectedPeriod, setSelectedPeriod] = useState<PeriodType>('today');
   const [customDateRange, setCustomDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
   const [attendanceScope, setAttendanceScope] = useState<AttendanceScope>('started');
+  const backState = { backTo: location.pathname };
+  const { setMeta } = useHeaderMeta();
   
   // Bugunmi tekshirish (SSE va real-time uchun)
   const isToday = selectedPeriod === 'today';
@@ -138,7 +140,6 @@ const SuperAdminDashboard: React.FC = () => {
       }
       const result = await dashboardService.getAdminStats(filters);
       setData(result);
-      setLastUpdate(new Date());
     } catch (err) {
       console.error("Failed to refresh admin dashboard:", err);
     } finally {
@@ -235,6 +236,11 @@ const SuperAdminDashboard: React.FC = () => {
     }, AUTO_REFRESH_MS);
     return () => clearInterval(timer);
   }, [isToday, refreshData]);
+
+  useEffect(() => {
+    setMeta({ showLiveStatus: isToday, isConnected });
+    return () => setMeta({ showLiveStatus: false, isConnected: false });
+  }, [isToday, isConnected, setMeta]);
 
   if (loading) {
     return (
@@ -443,18 +449,7 @@ const SuperAdminDashboard: React.FC = () => {
   return (
     <div>
       {/* Kompakt Header - Standart PageHeader uslubida */}
-      <PageHeader 
-        showTime 
-        showLiveStatus={isToday} 
-        isConnected={isConnected}
-        extra={
-          lastUpdate && (
-            <Text type="secondary" style={{ fontSize: 10 }}>
-              (yangilandi: {dayjs(lastUpdate).format("HH:mm:ss")})
-            </Text>
-          )
-        }
-      >
+      <PageHeader>
         <StatGroup>
           <StatItem
             icon={<BankOutlined />}
@@ -626,7 +621,11 @@ const SuperAdminDashboard: React.FC = () => {
                     {problemSchools.map(s => (
                       <div 
                         key={s.id}
-                        onClick={() => navigate(`/schools/${s.id}/dashboard`)}
+                        onClick={() =>
+                          navigate(`/schools/${s.id}/dashboard`, {
+                            state: { ...backState, schoolName: s.name },
+                          })
+                        }
                         style={{ 
                           display: "flex", 
                           justifyContent: "space-between", 
@@ -669,7 +668,10 @@ const SuperAdminDashboard: React.FC = () => {
           size="small"
           pagination={false}
           onRow={(record) => ({
-            onClick: () => navigate(`/schools/${record.id}/dashboard`),
+            onClick: () =>
+              navigate(`/schools/${record.id}/dashboard`, {
+                state: { ...backState, schoolName: record.name },
+              }),
             style: { cursor: "pointer" },
           })}
         />
@@ -757,7 +759,11 @@ const SuperAdminDashboard: React.FC = () => {
                     borderLeft: `3px solid ${event.eventType === 'IN' ? STATUS_COLORS.PRESENT : STATUS_COLORS.ABSENT}`,
                     background: event.eventType === 'IN' ? '#f6ffed' : '#fff2f0',
                   }}
-                  onClick={() => navigate(`/schools/${event.schoolId}/dashboard`)}
+                  onClick={() =>
+                    navigate(`/schools/${event.schoolId}/dashboard`, {
+                      state: { ...backState, schoolName: event.schoolName },
+                    })
+                  }
                 >
                   <div style={{ width: "100%" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>

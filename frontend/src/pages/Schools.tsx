@@ -17,7 +17,7 @@ import {
     LockOutlined,
     MailOutlined,
 } from '@ant-design/icons';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { schoolsService } from '../services/schools';
 import { PageHeader, Divider, StatItem, StatGroup } from '../shared/ui';
 import { StatusBar } from '../entities/attendance';
@@ -28,6 +28,7 @@ const AUTO_REFRESH_MS = 60000;
 
 const Schools: React.FC = () => {
     const navigate = useNavigate();
+    const location = useLocation();
     const { message } = App.useApp();
     const [schools, setSchools] = useState<School[]>([]);
     const [loading, setLoading] = useState(true);
@@ -36,6 +37,7 @@ const Schools: React.FC = () => {
     const [searchText, setSearchText] = useState('');
     const [attendanceScope, setAttendanceScope] = useState<AttendanceScope>('started');
     const [form] = Form.useForm();
+    const backStateBase = { backTo: location.pathname };
 
     const fetchSchools = useCallback(async (silent = false) => {
         if (!silent) {
@@ -261,7 +263,12 @@ const Schools: React.FC = () => {
                             size="small" 
                             icon={<RightOutlined />} 
                             aria-label="Maktab boshqaruv sahifasi"
-                            onClick={(e) => { e.stopPropagation(); navigate(`/schools/${record.id}/dashboard`); }} 
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                navigate(`/schools/${record.id}/dashboard`, {
+                                    state: { ...backStateBase, schoolName: record.name },
+                                });
+                            }} 
                         />
                     </Tooltip>
                 </Space>
@@ -335,11 +342,16 @@ const Schools: React.FC = () => {
                 loading={loading}
                 size="middle"
                 onRow={(record) => ({
-                    onClick: () => navigate(`/schools/${record.id}/dashboard`),
+                    onClick: () =>
+                        navigate(`/schools/${record.id}/dashboard`, {
+                            state: { ...backStateBase, schoolName: record.name },
+                        }),
                     onKeyDown: (e) => {
                         if (e.key === "Enter" || e.key === " ") {
                             e.preventDefault();
-                            navigate(`/schools/${record.id}/dashboard`);
+                            navigate(`/schools/${record.id}/dashboard`, {
+                                state: { ...backStateBase, schoolName: record.name },
+                            });
                         }
                     },
                     role: "button",

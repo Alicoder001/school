@@ -12,7 +12,6 @@ import {
   Tag,
   Spin,
   Empty,
-  Tooltip,
   Typography,
   List,
   Select,
@@ -51,7 +50,7 @@ import type { PeriodType, AttendanceScope } from "../types";
 import { schoolsService } from "../services/schools";
 import type { DashboardStats, AttendanceEvent, School, Class } from "../types";
 import { classesService } from "../services/classes";
-import { PageHeader, StatItem, StatGroup } from "../shared/ui";
+import { PageHeader, StatItem, StatGroup, useHeaderMeta } from "../shared/ui";
 import dayjs from "dayjs";
 import debounce from "lodash/debounce";
 import {
@@ -94,8 +93,6 @@ const Dashboard: React.FC = () => {
   const [selectedClassId, setSelectedClassId] = useState<string | undefined>(
     undefined,
   );
-  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
-
   // Vaqt filterlari
   const [selectedPeriod, setSelectedPeriod] = useState<PeriodType>("today");
   const [customDateRange, setCustomDateRange] = useState<
@@ -104,6 +101,7 @@ const Dashboard: React.FC = () => {
   const [attendanceScope, setAttendanceScope] = useState<AttendanceScope>(
     "started",
   );
+  const { setMeta } = useHeaderMeta();
 
   // Ref to track pending events for batch processing
   const pendingEventsRef = useRef<{ inCount: number; outCount: number }>({
@@ -127,7 +125,6 @@ const Dashboard: React.FC = () => {
 
       const statsData = await dashboardService.getStats(schoolId, filters);
       setStats(statsData);
-      setLastUpdate(new Date());
       // Reset pending counts after full refresh
       pendingEventsRef.current = { inCount: 0, outCount: 0 };
     } catch (err) {
@@ -221,7 +218,6 @@ const Dashboard: React.FC = () => {
         setEvents(eventsData);
         setSchool(schoolData);
         setClasses(classesData);
-        setLastUpdate(new Date());
       } catch (err) {
         console.error("Failed to load dashboard:", err);
       } finally {
@@ -238,6 +234,11 @@ const Dashboard: React.FC = () => {
     }, AUTO_REFRESH_MS);
     return () => clearInterval(timer);
   }, [isToday, fetchStats]);
+
+  useEffect(() => {
+    setMeta({ showLiveStatus: isToday, isConnected });
+    return () => setMeta({ showLiveStatus: false, isConnected: false });
+  }, [isToday, isConnected, setMeta]);
 
   if (loading) {
     return (
@@ -296,20 +297,7 @@ const Dashboard: React.FC = () => {
   return (
     <div>
       {/* Kompakt Header: Vaqt + Statistikalar */}
-      <PageHeader 
-        showTime 
-        showLiveStatus={isToday} 
-        isConnected={isConnected}
-        extra={
-          lastUpdate && (
-            <Tooltip title="Oxirgi yangilanish">
-              <Text type="secondary" style={{ fontSize: 11 }}>
-                ({dayjs(lastUpdate).format("HH:mm:ss")})
-              </Text>
-            </Tooltip>
-          )
-        }
-      >
+      <PageHeader>
         <StatGroup>
           <StatItem
             icon={<TeamOutlined />}

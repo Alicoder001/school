@@ -19,14 +19,34 @@ export const flexRowWrap: CSSProperties = {
 };
 
 export const headerContainerStyle: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 12,
+};
+
+export const headerMetaRowStyle: CSSProperties = {
   ...flexRowWrap,
-  gap: 16,
+  gap: 12,
+  justifyContent: "space-between",
+};
+
+export const headerMetaLeftStyle: CSSProperties = {
+  ...flexRowWrap,
+  gap: 12,
+  flex: 1,
+};
+
+export const headerMetaRightStyle: CSSProperties = {
+  ...flexRowWrap,
+  gap: 8,
+  justifyContent: "flex-end",
 };
 
 export const headerMainContentStyle: CSSProperties = {
   ...flexRowWrap,
   gap: 16,
   flex: 1,
+  justifyContent: "space-between",
 };
 
 export const headerTimeRowStyle: CSSProperties = {
@@ -101,6 +121,12 @@ export function getSiderStyle(themeToken: any): CSSProperties {
   return {
     background: themeToken.colorBgContainer,
     borderRight: `1px solid ${themeToken.colorBorderSecondary}`,
+    position: "sticky",
+    top: 0,
+    height: "100vh",
+    overflowY: "auto",
+    display: "flex",
+    flexDirection: "column",
   };
 }
 
@@ -122,6 +148,9 @@ export function getHeaderStyle(themeToken: any): CSSProperties {
     alignItems: "center",
     justifyContent: "space-between",
     borderBottom: `1px solid ${themeToken.colorBorderSecondary}`,
+    position: "sticky",
+    top: 0,
+    zIndex: 10,
   };
 }
 

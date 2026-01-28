@@ -17,6 +17,7 @@ import Schools from "./pages/Schools";
 import Users from "./pages/Users";
 import { UiGallery } from "./shared/ui";
 import Cameras from "./pages/Cameras";
+import CamerasSuperAdmin from "./pages/CamerasSuperAdmin";
 
 function App() {
   return (
@@ -59,6 +60,14 @@ function App() {
                   element={
                     <ProtectedRoute requiredRoles={["SUPER_ADMIN"]}>
                       <Schools />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="cameras"
+                  element={
+                    <ProtectedRoute requiredRoles={["SUPER_ADMIN"]}>
+                      <CamerasSuperAdmin />
                     </ProtectedRoute>
                   }
                 />

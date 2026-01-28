@@ -8,6 +8,7 @@ import {
   SettingOutlined,
   TeamOutlined,
   VideoCameraOutlined,
+  LeftOutlined,
 } from "@ant-design/icons";
 
 export type UserRole = "SUPER_ADMIN" | "SCHOOL_ADMIN" | "TEACHER" | "GUARD";
@@ -17,14 +18,16 @@ export function buildMenuItems(params: {
   isViewingSchool: boolean;
   schoolId?: string | null;
   role?: UserRole | null;
+  backTo?: string;
 }): MenuProps["items"] {
-  const { isSuperAdmin, isViewingSchool, schoolId, role } = params;
+  const { isSuperAdmin, isViewingSchool, schoolId, role, backTo } = params;
 
   // SuperAdmin o'z panelida (maktab ko'rmayapti)
   if (isSuperAdmin && !isViewingSchool) {
     return [
       { key: "/dashboard", icon: <DashboardOutlined />, label: "Boshqaruv" },
       { key: "/schools", icon: <BankOutlined />, label: "Maktablar" },
+      { key: "/cameras", icon: <VideoCameraOutlined />, label: "Kameralar" },
       { key: "/settings", icon: <SettingOutlined />, label: "Sozlamalar" },
     ];
   }
@@ -99,9 +102,9 @@ export function buildMenuItems(params: {
   // SuperAdmin uchun "Orqaga" tugmasi
   if (isSuperAdmin && isViewingSchool) {
     items.unshift({
-      key: "/schools",
-      icon: <BankOutlined />,
-      label: "<- Maktablar",
+      key: backTo || "/schools",
+      icon: <LeftOutlined />,
+      label: "Ortga",
     });
   }
 

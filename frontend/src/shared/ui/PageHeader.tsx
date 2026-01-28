@@ -7,6 +7,9 @@ import {
     getLiveIconStyle,
     headerContainerStyle,
     headerMainContentStyle,
+    headerMetaLeftStyle,
+    headerMetaRightStyle,
+    headerMetaRowStyle,
     headerTimeRowStyle,
     liveStatusTextStyle,
     pageHeaderCardStyle,
@@ -39,6 +42,7 @@ const PageHeader: React.FC<PageHeaderProps> = ({
     extra,
 }) => {
     const [currentTime, setCurrentTime] = React.useState(dayjs());
+    const showMeta = showTime || showLiveStatus || !!extra;
 
     React.useEffect(() => {
         if (!showTime) return;
@@ -49,51 +53,44 @@ const PageHeader: React.FC<PageHeaderProps> = ({
     return (
         <Card size="small" style={pageHeaderCardStyle}>
             <div style={headerContainerStyle}>
-                {/* Vaqt */}
-                {showTime && (
-                    <>
-                        <div style={headerTimeRowStyle}>
-                            <ClockCircleOutlined style={timeIconStyle} />
-                            <Text strong style={timeTextStyle}>{currentTime.format('HH:mm')}</Text>
-                            <Text type="secondary" style={timeSubTextStyle}>
-                                <CalendarOutlined style={calendarIconStyle} />
-                                {currentTime.format('DD MMM, ddd')}
-                            </Text>
+                {showMeta && (
+                    <div style={headerMetaRowStyle}>
+                        <div style={headerMetaLeftStyle}>
+                            {showTime && (
+                                <>
+                                    <div style={headerTimeRowStyle}>
+                                        <ClockCircleOutlined style={timeIconStyle} />
+                                        <Text strong style={timeTextStyle}>{currentTime.format('HH:mm')}</Text>
+                                        <Text type="secondary" style={timeSubTextStyle}>
+                                            <CalendarOutlined style={calendarIconStyle} />
+                                            {currentTime.format('DD MMM, ddd')}
+                                        </Text>
+                                    </div>
+                                    {showLiveStatus && <Divider />}
+                                </>
+                            )}
+
+                            {showLiveStatus && (
+                                <Tooltip title={isConnected ? 'Real vaqt ulangan' : 'Oflayn'}>
+                                    <Badge
+                                        status={isConnected ? 'success' : 'error'}
+                                        text={
+                                            <span style={liveStatusTextStyle}>
+                                                <WifiOutlined style={getLiveIconStyle(isConnected)} />
+                                                {isConnected ? 'Jonli' : 'Oflayn'}
+                                            </span>
+                                        }
+                                    />
+                                </Tooltip>
+                            )}
                         </div>
-                        <Divider />
-                    </>
+                        {extra && <div style={headerMetaRightStyle}>{extra}</div>}
+                    </div>
                 )}
 
-                {/* Jonli status */}
-                {showLiveStatus && (
-                    <>
-                        <Tooltip title={isConnected ? 'Real vaqt ulangan' : 'Oflayn'}>
-                            <Badge
-                                status={isConnected ? 'success' : 'error'}
-                                text={
-                                    <span style={liveStatusTextStyle}>
-                                        <WifiOutlined style={getLiveIconStyle(isConnected)} />
-                                        {isConnected ? 'Jonli' : 'Oflayn'}
-                                    </span>
-                                }
-                            />
-                        </Tooltip>
-                        <Divider />
-                    </>
-                )}
-
-                {/* Main content (statistikalar, filterlar) */}
                 <div style={headerMainContentStyle}>
                     {children}
                 </div>
-
-                {/* Extra content (qo'shimcha tugmalar) */}
-                {extra && (
-                    <>
-                        <Divider />
-                        {extra}
-                    </>
-                )}
             </div>
         </Card>
     );
