@@ -3,6 +3,7 @@ import prisma from '../prisma';
 import { addDaysUtc, getDateOnlyInZone } from '../utils/date';
 import { requireRoles, requireSchoolScope, requireClassSchoolScope } from '../utils/authz';
 import { sendHttpError } from '../utils/httpErrors';
+import { logAudit } from '../utils/audit';
 
 export default async function (fastify: FastifyInstance) {
   fastify.get(
@@ -101,7 +102,28 @@ export default async function (fastify: FastifyInstance) {
         requireRoles(user, ['SCHOOL_ADMIN']);
         await requireClassSchoolScope(user, id);
 
+        const existing = await prisma.class.findUnique({ where: { id } });
+        if (!existing) {
+          return reply.status(404).send({ error: 'not found' });
+        }
+
         const cls = await prisma.class.update({ where: { id }, data });
+        logAudit(fastify, {
+          action: 'class.update',
+          level: 'info',
+          message: 'Sinf vaqtini o‘zgartirish',
+          userId: user.sub,
+          userRole: user.role,
+          requestId: request.id,
+          schoolId: existing.schoolId,
+          extra: {
+            classId: id,
+            oldStartTime: existing.startTime,
+            newStartTime: cls.startTime,
+            oldEndTime: existing.endTime,
+            newEndTime: cls.endTime,
+          },
+        });
         return cls;
       } catch (err) {
         return sendHttpError(reply, err);

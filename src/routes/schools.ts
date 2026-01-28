@@ -6,7 +6,7 @@ import { requireRoles, requireSchoolScope } from "../utils/authz";
 import { sendHttpError } from "../utils/httpErrors";
 import { addDaysUtc, getDateOnlyInZone } from "../utils/date";
 import { getActiveClassIds, getNowMinutesInZone, getStartedClassIds, splitNoScanCountsByClass } from "../utils/attendanceStatus";
-import { Prisma } from "@prisma/client";
+import { logAudit } from "../utils/audit";
 
 export default async function (fastify: FastifyInstance) {
   fastify.get(
@@ -64,7 +64,7 @@ export default async function (fastify: FastifyInstance) {
             };
           }
 
-          const [attendanceStats, activeStudents, classStudentCounts, classAttendanceCounts] = await Promise.all([
+          const [attendanceStats, activeStudents, classStudentCounts, attendanceRecords] = await Promise.all([
             prisma.dailyAttendance.groupBy({
               by: ["status"],
               where: {
@@ -82,22 +82,17 @@ export default async function (fastify: FastifyInstance) {
               where: { schoolId: school.id, isActive: true, classId: { in: effectiveClassIds } },
               _count: true,
             }),
-            prisma.$queryRaw<
-              Array<{
-                classId: string | null;
-                count: bigint;
-              }>
-            >`
-              SELECT s."classId", COUNT(*)::bigint as count
-              FROM "DailyAttendance" da
-              JOIN "Student" s ON da."studentId" = s.id
-              WHERE da."schoolId" = ${school.id}
-                AND da."date" >= ${today}
-                AND da."date" < ${tomorrow}
-                AND s."isActive" = true
-                AND s."classId" IN (${Prisma.join(effectiveClassIds)})
-              GROUP BY s."classId"
-            `,
+            prisma.dailyAttendance.findMany({
+              where: {
+                schoolId: school.id,
+                date: { gte: today, lt: tomorrow },
+                student: { classId: { in: effectiveClassIds } },
+              },
+              select: {
+                studentId: true,
+                student: { select: { classId: true } },
+              },
+            }),
           ]);
 
           let present = 0;
@@ -123,11 +118,15 @@ export default async function (fastify: FastifyInstance) {
 
           const classAttendanceMap = new Map<string, number>();
           let unassignedAttended = 0;
-          classAttendanceCounts.forEach((row) => {
-            if (row.classId) {
-              classAttendanceMap.set(row.classId, Number(row.count));
+          attendanceRecords.forEach((row) => {
+            const classId = row.student?.classId || null;
+            if (classId) {
+              classAttendanceMap.set(
+                classId,
+                (classAttendanceMap.get(classId) || 0) + 1,
+              );
             } else {
-              unassignedAttended = Number(row.count);
+              unassignedAttended += 1;
             }
           });
 
@@ -309,6 +308,10 @@ export default async function (fastify: FastifyInstance) {
           absenceCutoffMinutes,
           timezone,
         } = request.body;
+        const existingSchool = await prisma.school.findUnique({ where: { id } });
+        if (!existingSchool) {
+          return reply.status(404).send({ error: "not found" });
+        }
         const school = await prisma.school.update({
           where: { id },
           data: {
@@ -319,6 +322,23 @@ export default async function (fastify: FastifyInstance) {
             lateThresholdMinutes,
             absenceCutoffMinutes,
             timezone,
+          },
+        });
+        logAudit(fastify, {
+          action: "school.settings.update",
+          level: "info",
+          message: "Maktab sozlamalari o'zgartirildi",
+          userId: user.sub,
+          userRole: user.role,
+          requestId: request.id,
+          schoolId: school.id,
+          extra: {
+            oldLateThreshold: existingSchool.lateThresholdMinutes,
+            newLateThreshold: lateThresholdMinutes,
+            oldAbsenceCutoff: existingSchool.absenceCutoffMinutes,
+            newAbsenceCutoff: absenceCutoffMinutes,
+            oldTimezone: existingSchool.timezone,
+            newTimezone: timezone,
           },
         });
         return school;

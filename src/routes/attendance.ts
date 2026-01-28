@@ -12,6 +12,7 @@ import {
   computeAttendanceStatus,
   getNowMinutesInZone,
 } from "../utils/attendanceStatus";
+import { logAudit } from "../utils/audit";
 
 export default async function (fastify: FastifyInstance) {
   fastify.get(
@@ -272,6 +273,13 @@ export default async function (fastify: FastifyInstance) {
         requireRoles(user, ["SCHOOL_ADMIN", "TEACHER"]);
         await requireAttendanceTeacherScope(user, id);
 
+        const existing = await prisma.dailyAttendance.findUnique({
+          where: { id },
+        });
+        if (!existing) {
+          return reply.status(404).send({ error: "not found" });
+        }
+
         if (user.role === "TEACHER") {
           const safe: any = {};
           if (data.notes !== undefined) safe.notes = data.notes;
@@ -281,11 +289,52 @@ export default async function (fastify: FastifyInstance) {
             }
             safe.status = "EXCUSED";
           }
-          return prisma.dailyAttendance.update({ where: { id }, data: safe });
+          const updated = await prisma.dailyAttendance.update({
+            where: { id },
+            data: safe,
+          });
+          logAudit(fastify, {
+            action: "attendance.record.update",
+            level: "info",
+            message: "O'qituvchi holatni yangiladi",
+            userId: user.sub,
+            userRole: user.role,
+            requestId: request.id,
+            schoolId: existing.schoolId,
+            studentId: existing.studentId,
+            extra: {
+              recordId: id,
+              oldStatus: existing.status,
+              newStatus: updated.status,
+              notes: safe.notes,
+            },
+          });
+          return updated;
         }
 
-        // SCHOOL_ADMIN
-        return prisma.dailyAttendance.update({ where: { id }, data });
+        const updated = await prisma.dailyAttendance.update({
+          where: { id },
+          data,
+        });
+
+        logAudit(fastify, {
+          action: "attendance.record.update",
+          level: "info",
+          message: "School admin status o‘zgartirdi",
+          userId: user.sub,
+          userRole: user.role,
+          requestId: request.id,
+          schoolId: existing.schoolId,
+          studentId: existing.studentId,
+          extra: {
+            recordId: id,
+            oldStatus: existing.status,
+            newStatus: updated.status,
+            notes: data.notes,
+          },
+        });
+
+        return updated;
       } catch (err) {
         return sendHttpError(reply, err);
       }
@@ -317,6 +366,15 @@ export default async function (fastify: FastifyInstance) {
         const result = await prisma.dailyAttendance.updateMany({
           where,
           data: updateData,
+        });
+        logAudit(fastify, {
+          action: "attendance.bulk.update",
+          level: "info",
+          message: "Bulk holat yangilandi",
+          userId: user.sub,
+          userRole: user.role,
+          requestId: request.id,
+          extra: { ids, status, notes },
         });
         return { updated: result.count };
       } catch (err) {
@@ -372,6 +430,12 @@ export default async function (fastify: FastifyInstance) {
 
         const dateObj = new Date(date);
 
+        const existing = await prisma.dailyAttendance.findUnique({
+          where: {
+            studentId_date: { studentId, date: dateObj },
+          },
+        });
+
         const record = await prisma.dailyAttendance.upsert({
           where: {
             studentId_date: { studentId, date: dateObj },
@@ -387,6 +451,22 @@ export default async function (fastify: FastifyInstance) {
             status,
             notes,
             schoolId,
+          },
+        });
+
+        logAudit(fastify, {
+          action: "attendance.record.upsert",
+          level: "info",
+          message: "Upsert orqali holat o‘zgardi",
+          userId: user.sub,
+          userRole: user.role,
+          requestId: request.id,
+          schoolId,
+          studentId,
+          extra: {
+            oldStatus: existing?.status,
+            newStatus: record.status,
+            notes,
           },
         });
 

@@ -152,7 +152,7 @@ const ClassDetail: React.FC = () => {
         return {
           date: dateKey,
           dayName: dayNames[date.day()],
-          present: stats.present + stats.late,
+          present: stats.present,
           late: stats.late,
           absent: stats.absent,
         };

@@ -1,5 +1,6 @@
 import cron from "node-cron";
 import prisma from "../prisma";
+import { logAudit } from "../utils/audit";
 import {
   addDaysUtc,
   dateKeyToUtcDate,
@@ -40,6 +41,12 @@ export function registerJobs(server: any) {
   // Har daqiqada ishga tushadi
   cron.schedule("* * * * *", async () => {
     const now = new Date();
+    logAudit(server, {
+      action: "cron.mark_absent.run",
+      level: "info",
+      message: "Cutoff absent job bajarildi",
+      extra: { timestamp: now.toISOString() },
+    });
 
     try {
       const schools = await prisma.school.findMany({
@@ -66,7 +73,16 @@ export function registerJobs(server: any) {
             where: { schoolId: school.id, date: today },
           });
 
-          if (holidayCount > 0) continue;
+          if (holidayCount > 0) {
+            logAudit(server, {
+              action: "cron.mark_absent.skip",
+              level: "info",
+              message: "Bayram kuni, absent job o‘tkazildi",
+              schoolId: school.id,
+              extra: { date: today.toISOString() },
+            });
+            continue;
+          }
 
           // ✅ FIX: Cutoff O'TGAN barcha sinflarni topish (aynan shu daqiqada emas!)
           const classesToProcess = school.classes.filter((cls) => {
@@ -105,9 +121,17 @@ export function registerJobs(server: any) {
           `;
 
           if (result > 0) {
-            server.log.info(
-              `Marked ${result} students as ABSENT in classes: ${classesToProcess.map((c) => c.name).join(", ")}`,
-            );
+            logAudit(server, {
+              action: "cron.mark_absent",
+              level: "info",
+              message: `${result} o‘quvchi absentga o‘tkazildi`,
+              schoolId: school.id,
+              extra: {
+                classes: classesToProcess.map((c) => c.id),
+                inserted: Number(result),
+                classNames: classesToProcess.map((c) => c.name),
+              },
+            });
           }
         } catch (schoolErr) {
           server.log.error(

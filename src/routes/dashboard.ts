@@ -111,7 +111,7 @@ export async function adminDashboardRoutes(fastify: FastifyInstance) {
               currentlyInSchoolCount,
               weeklyAttendance,
               classStudentCounts,
-              classAttendanceCounts,
+              attendanceRecords,
               daysCount,
             ] = await Promise.all([
               prisma.dailyAttendance.groupBy({
@@ -151,22 +151,17 @@ export async function adminDashboardRoutes(fastify: FastifyInstance) {
                 _count: true,
               }),
               isToday
-                ? prisma.$queryRaw<
-                    Array<{
-                      classId: string | null;
-                      count: bigint;
-                    }>
-                  >`
-                    SELECT s."classId", COUNT(*)::bigint as count
-                    FROM "DailyAttendance" da
-                    JOIN "Student" s ON da."studentId" = s.id
-                    WHERE da."schoolId" = ${school.id}
-                      AND da."date" >= ${today}
-                      AND da."date" < ${addDaysUtc(today, 1)}
-                      AND s."isActive" = true
-                      AND s."classId" IN (${Prisma.join(effectiveClassIds)})
-                    GROUP BY s."classId"
-                  `
+                ? prisma.dailyAttendance.findMany({
+                    where: {
+                      schoolId: school.id,
+                      date: { gte: today, lt: addDaysUtc(today, 1) },
+                      student: { classId: { in: effectiveClassIds } },
+                    },
+                    select: {
+                      studentId: true,
+                      student: { select: { classId: true } },
+                    },
+                  })
                 : Promise.resolve([]),
               isSingleDay
                 ? Promise.resolve(1)
@@ -194,10 +189,14 @@ export async function adminDashboardRoutes(fastify: FastifyInstance) {
 
             const classAttendanceMap = new Map<string, number>();
             if (isToday) {
-              (classAttendanceCounts as Array<{ classId: string | null; count: bigint }>).forEach(
+              (attendanceRecords as Array<{ student?: { classId: string | null } }>).forEach(
                 (row) => {
-                  if (row.classId) {
-                    classAttendanceMap.set(row.classId, Number(row.count));
+                  const classId = row.student?.classId || null;
+                  if (classId) {
+                    classAttendanceMap.set(
+                      classId,
+                      (classAttendanceMap.get(classId) || 0) + 1,
+                    );
                   }
                 },
               );
@@ -381,7 +380,7 @@ export async function adminDashboardRoutes(fastify: FastifyInstance) {
             dayName: ["Ya", "Du", "Se", "Ch", "Pa", "Ju", "Sh"][
               date.getUTCDay()
             ],
-            present: stats.present + stats.late,
+            present: stats.present,
             late: stats.late,
             absent: stats.absent,
           };
@@ -571,7 +570,7 @@ export default async function (fastify: FastifyInstance) {
           arrivedStudentIds,
           totalAttendanceDays,
           classStudentCounts,
-          classAttendanceCounts,
+          attendanceRecords,
         ] = await Promise.all([
           // Total students
           prisma.student.count({ where: studentFilter }),
@@ -648,22 +647,17 @@ export default async function (fastify: FastifyInstance) {
             : Promise.resolve([]),
           // Attendance records by class for today (any status) - only for today
           isToday
-            ? prisma.$queryRaw<
-                Array<{
-                  classId: string | null;
-                  count: bigint;
-                }>
-              >`
-                SELECT s."classId", COUNT(*)::bigint as count
-                FROM "DailyAttendance" da
-                JOIN "Student" s ON da."studentId" = s.id
-              WHERE da."schoolId" = ${schoolId}
-                  AND da."date" >= ${today}
-                  AND da."date" < ${todayEnd}
-                  AND s."isActive" = true
-                  AND s."classId" IN (${Prisma.join(classIdFilterList)})
-                GROUP BY s."classId"
-              `
+            ? prisma.dailyAttendance.findMany({
+                where: {
+                  schoolId,
+                  date: { gte: today, lt: todayEnd },
+                  student: { classId: { in: classIdFilterList } },
+                },
+                select: {
+                  studentId: true,
+                  student: { select: { classId: true } },
+                },
+              })
             : Promise.resolve([]),
         ]);
 
@@ -775,7 +769,7 @@ export default async function (fastify: FastifyInstance) {
           return {
             date: dateKey,
             dayName: ["Ya", "Du", "Se", "Ch", "Pa", "Ju", "Sh"][dayIndex],
-            present: stats.present + stats.late,
+            present: stats.present,
             late: stats.late,
             absent: stats.absent,
           };
@@ -811,11 +805,15 @@ export default async function (fastify: FastifyInstance) {
 
         const classAttendanceMap = new Map<string, number>();
         let unassignedAttended = 0;
-        (classAttendanceCounts as any[]).forEach((row) => {
-          if (row.classId) {
-            classAttendanceMap.set(row.classId, Number(row.count));
+        (attendanceRecords as Array<{ student?: { classId: string | null } }>).forEach((row) => {
+          const classId = row.student?.classId || null;
+          if (classId) {
+            classAttendanceMap.set(
+              classId,
+              (classAttendanceMap.get(classId) || 0) + 1,
+            );
           } else {
-            unassignedAttended = Number(row.count);
+            unassignedAttended += 1;
           }
         });
 

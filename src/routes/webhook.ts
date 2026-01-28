@@ -1,10 +1,11 @@
-import { FastifyInstance } from "fastify";
+import { FastifyInstance, FastifyRequest } from "fastify";
 import prisma from "../prisma";
 import { attendanceEmitter, adminEmitter } from "../eventEmitter";
 import { MultipartFile } from "@fastify/multipart";
 import fs from "fs";
 import path from "path";
 import { getDateOnlyInZone, getTimePartsInZone } from "../utils/date";
+import { logAudit } from "../utils/audit";
 
 const UPLOADS_DIR = path.join(process.cwd(), "uploads");
 
@@ -47,9 +48,21 @@ const handleAttendanceEvent = async (
   direction: string,
   accessEventJson: any,
   savedPicturePath: string | null,
+  opts?: {
+    fastify?: FastifyInstance;
+    request?: FastifyRequest;
+  },
 ) => {
   const normalized = normalizeEvent(accessEventJson);
   if (!normalized) {
+    if (opts?.fastify) {
+      logAudit(opts.fastify, {
+        action: "webhook.event.invalid",
+        level: "warn",
+        message: "Incorrect webhook payload",
+        extra: { direction },
+      });
+    }
     return { ok: true, ignored: true };
   }
 
@@ -73,6 +86,16 @@ const handleAttendanceEvent = async (
 
   const student = studentWithClass;
   const cls = studentWithClass?.class;
+
+  const audit = (detail: Parameters<typeof logAudit>[1]) => {
+    if (!opts?.fastify) return;
+    logAudit(opts.fastify, {
+      schoolId: school?.id,
+      studentId: student?.id,
+      requestId: opts.request?.id,
+      ...detail,
+    });
+  };
 
   // Update device lastSeenAt so UI 'Holat' reflects recent activity
   if (device?.id) {
@@ -110,12 +133,24 @@ const handleAttendanceEvent = async (
       if (eventType === "IN" && existing.currentlyInSchool && existing.lastInTime) {
         const timeSinceLastIn = eventTime.getTime() - new Date(existing.lastInTime).getTime();
         if (timeSinceLastIn < MIN_SCAN_INTERVAL) {
+          audit({
+            action: "webhook.duplicate_scan",
+            level: "info",
+            message: "Duplikat IN scan bekor qilindi",
+            extra: { eventType, timeSinceLastIn },
+          });
           return { ok: true, ignored: true, reason: "duplicate_scan" };
         }
       }
       if (eventType === "OUT" && !existing.currentlyInSchool && existing.lastOutTime) {
         const timeSinceLastOut = eventTime.getTime() - new Date(existing.lastOutTime).getTime();
         if (timeSinceLastOut < MIN_SCAN_INTERVAL) {
+          audit({
+            action: "webhook.duplicate_scan",
+            level: "info",
+            message: "Duplikat OUT scan bekor qilindi",
+            extra: { eventType, timeSinceLastOut },
+          });
           return { ok: true, ignored: true, reason: "duplicate_scan" };
         }
       }
@@ -125,6 +160,8 @@ const handleAttendanceEvent = async (
         lastScanTime: eventTime,
         scanCount: existing.scanCount + 1,
       };
+      let computedDiff: number | null = null;
+      let statusReason: string | null = null;
 
       if (eventType === "IN") {
         if (!existing.firstScanTime && cls) {
@@ -132,20 +169,25 @@ const handleAttendanceEvent = async (
           const timeParts = getTimePartsInZone(eventTime, schoolTimeZone);
           const diff = timeParts.hours * 60 + timeParts.minutes - (h * 60 + m);
           const afterAbsenceCutoff = diff >= school.absenceCutoffMinutes;
+          computedDiff = diff;
 
           if (existing.status === "ABSENT") {
             // Statusni ABSENT sifatida saqlab qolamiz (cutoffdan keyin kelgan bo'lsa ham)
             update.status = "ABSENT";
             update.lateMinutes = null;
+            statusReason = "existing_absent";
           } else if (afterAbsenceCutoff) {
             update.status = "ABSENT";
             update.lateMinutes = null;
+            statusReason = "absent_cutoff";
           } else if (diff >= school.lateThresholdMinutes) {
             update.status = "LATE";
             update.lateMinutes = Math.round(diff - school.lateThresholdMinutes);
+            statusReason = "late_threshold";
           } else {
             update.status = "PRESENT";
             update.lateMinutes = null;
+            statusReason = "present";
           }
         }
         if (!existing.firstScanTime) {
@@ -167,6 +209,21 @@ const handleAttendanceEvent = async (
       }
 
       // ✅ OPTIMIZATION 3: Photo update va DailyAttendance update ni parallel
+      const newStatus = update.status || existing.status;
+      audit({
+        action: "webhook.attendance.update",
+        level: "info",
+        message: `Holat ${existing.status} → ${newStatus}`,
+        extra: {
+          diff: computedDiff,
+          reason: statusReason,
+          eventType,
+          oldStatus: existing.status,
+          newStatus,
+          lateMinutes: update.lateMinutes,
+        },
+      });
+
       const updatePromises: Promise<any>[] = [
         prisma.dailyAttendance.update({
           where: { id: existing.id },
@@ -232,6 +289,16 @@ const handleAttendanceEvent = async (
       }
 
       await Promise.all(createPromises);
+      audit({
+        action: "webhook.attendance.create",
+        level: "info",
+        message: `Yangi rekord: ${status}`,
+        extra: {
+          eventType,
+          status,
+          lateMinutes,
+        },
+      });
     }
   }
 
@@ -420,8 +487,28 @@ export default async function (fastify: FastifyInstance) {
 
     const normalized = normalizeEvent(accessEventJson);
     if (!normalized) {
+      logAudit(fastify, {
+        action: "webhook.request.invalid",
+        level: "warn",
+        message: "Event noto‘g‘ri formatda kelgan",
+        schoolId: school.id,
+        extra: { direction: params.direction },
+      });
       return reply.send({ ok: true, ignored: true });
     }
+
+    logAudit(fastify, {
+      action: "webhook.request.received",
+      level: "info",
+      message: "Webhook voqeasi qabul qilindi",
+      schoolId: school.id,
+      extra: {
+        direction: params.direction,
+        employeeNoString: normalized.employeeNoString,
+        deviceID: normalized.deviceID,
+        dateTime: normalized.dateTime,
+      },
+    });
 
     console.log("Processing face recognition event:");
     console.log("  - employeeNoString:", normalized.employeeNoString);
@@ -462,6 +549,7 @@ export default async function (fastify: FastifyInstance) {
       params.direction,
       accessEventJson,
       savedPicturePath,
+      { fastify, request },
     );
 
     return reply.send(result);
