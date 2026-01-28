@@ -18,6 +18,7 @@ import {
   ClockCircleOutlined,
   CalendarOutlined,
   WifiOutlined,
+  ReloadOutlined,
 } from "@ant-design/icons";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
@@ -34,7 +35,6 @@ import {
   getAvatarStyle,
   getSiderStyle,
   menuNoBorderStyle,
-  headerTimeRowStyle,
   timeIconStyle,
   timeSubTextStyle,
   timeTextStyle,
@@ -50,8 +50,39 @@ const headerMiddleStyle = {
   display: "flex",
   alignItems: "center",
   gap: 12,
-  justifyContent: "flex-end",
+  justifyContent: "space-between",
   flex: 1,
+} as const;
+
+const headerMetaLeftStyle = {
+  display: "flex",
+  alignItems: "center",
+  gap: 12,
+} as const;
+
+const headerRightActionsStyle = {
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+} as const;
+
+const timeStackStyle = {
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "flex-end",
+  lineHeight: 1.1,
+} as const;
+
+const timeRowStyle = {
+  display: "flex",
+  alignItems: "center",
+  gap: 6,
+} as const;
+
+const timeSubRowStyle = {
+  display: "flex",
+  alignItems: "center",
+  gap: 4,
 } as const;
 
 const siderUserWrapStyle = {
@@ -89,7 +120,7 @@ const LayoutInner: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { token: themeToken } = theme.useToken();
-  const { meta } = useHeaderMeta();
+  const { meta, setLastUpdated } = useHeaderMeta();
   const [currentTime, setCurrentTime] = useState(dayjs());
 
   // URL'dan schoolId ni olish (SuperAdmin maktab panelida bo'lganda)
@@ -107,6 +138,15 @@ const LayoutInner: React.FC = () => {
   const handleLogout = () => {
     logout();
     navigate("/login");
+  };
+
+  const handleRefresh = async () => {
+    if (!meta.refresh) return;
+    const result = meta.refresh();
+    if (result instanceof Promise) {
+      await result;
+    }
+    setLastUpdated(new Date());
   };
 
   const userMenuItems = [
@@ -198,29 +238,50 @@ const LayoutInner: React.FC = () => {
             onClick={() => setCollapsed(!collapsed)}
           />
           <div style={headerMiddleStyle}>
+            <div style={headerMetaLeftStyle}>
+              {meta.showLiveStatus && (
+                <Tooltip title={meta.isConnected ? "Real vaqt ulangan" : "Oflayn"}>
+                  <Badge
+                    status={meta.isConnected ? "success" : "error"}
+                    text={
+                      <span style={liveStatusTextStyle}>
+                        <WifiOutlined style={getLiveIconStyle(meta.isConnected)} />
+                        {meta.isConnected ? "Jonli" : "Oflayn"}
+                      </span>
+                    }
+                    style={{ display: "flex", alignItems: "center" }}
+                  />
+                </Tooltip>
+              )}
+              {meta.refresh && (
+                <div style={headerRightActionsStyle}>
+                  <Button
+                    type="text"
+                    icon={<ReloadOutlined />}
+                    onClick={handleRefresh}
+                    aria-label="Yangilash"
+                  />
+                  {meta.lastUpdated && (
+                    <Text type="secondary" style={{ fontSize: 11 }}>
+                      Yangilandi: {dayjs(meta.lastUpdated).format("HH:mm:ss")}
+                    </Text>
+                  )}
+                </div>
+              )}
+            </div>
             {meta.showTime && (
-              <div style={headerTimeRowStyle}>
-                <ClockCircleOutlined style={timeIconStyle} />
-                <Text strong style={timeTextStyle}>{currentTime.format("HH:mm")}</Text>
+              <div style={timeStackStyle}>
+                <div style={timeRowStyle}>
+                  <ClockCircleOutlined style={timeIconStyle} />
+                  <Text strong style={timeTextStyle}>{currentTime.format("HH:mm")}</Text>
+                </div>
                 <Text type="secondary" style={timeSubTextStyle}>
-                  <CalendarOutlined style={calendarIconStyle} />
-                  {currentTime.format("DD MMM, ddd")}
+                  <span style={timeSubRowStyle}>
+                    <CalendarOutlined style={calendarIconStyle} />
+                    {currentTime.format("DD MMM, ddd")}
+                  </span>
                 </Text>
               </div>
-            )}
-            {meta.showLiveStatus && (
-              <Tooltip title={meta.isConnected ? "Real vaqt ulangan" : "Oflayn"}>
-                <Badge
-                  status={meta.isConnected ? "success" : "error"}
-                  text={
-                    <span style={liveStatusTextStyle}>
-                      <WifiOutlined style={getLiveIconStyle(meta.isConnected)} />
-                      {meta.isConnected ? "Jonli" : "Oflayn"}
-                    </span>
-                  }
-                  style={{ display: "flex", alignItems: "center" }}
-                />
-              </Tooltip>
             )}
           </div>
           <div />

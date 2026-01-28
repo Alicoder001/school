@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { Table, Button, Modal, Form, Input, Select, Card, Typography, Popconfirm, Tag, App, Row, Col, Space, Tooltip } from 'antd';
 import { 
     PlusOutlined, 
@@ -15,7 +15,7 @@ import {
 import { useSchool } from '../hooks/useSchool';
 import { devicesService } from '../services/devices';
 import { schoolsService } from '../services/schools';
-import { PageHeader, Divider, StatItem } from '../shared/ui';
+import { PageHeader, Divider, StatItem, useHeaderMeta } from '../shared/ui';
 import type { Device } from '../types';
 import dayjs from 'dayjs';
 
@@ -24,6 +24,7 @@ const { Text } = Typography;
 const Devices: React.FC = () => {
     const { schoolId, isSchoolAdmin, isSuperAdmin } = useSchool();
     const { message } = App.useApp();
+    const { setRefresh, setLastUpdated } = useHeaderMeta();
     const [devices, setDevices] = useState<Device[]>([]);
     const [webhookInfo, setWebhookInfo] = useState<{ inUrl: string; outUrl: string } | null>(null);
     const [loading, setLoading] = useState(true);
@@ -31,36 +32,48 @@ const Devices: React.FC = () => {
     const [editingId, setEditingId] = useState<string | null>(null);
     const [form] = Form.useForm();
 
-    const fetchDevices = async () => {
+    const fetchDevices = useCallback(async () => {
         if (!schoolId) return;
         setLoading(true);
         try {
             const data = await devicesService.getAll(schoolId);
             setDevices(data);
+            setLastUpdated(new Date());
         } catch (err) {
             console.error(err);
         } finally {
             setLoading(false);
         }
-    };
+    }, [schoolId, setLastUpdated]);
 
     const canManage = isSchoolAdmin || isSuperAdmin;
 
-    const fetchWebhookInfo = async () => {
+    const fetchWebhookInfo = useCallback(async () => {
         if (!schoolId) return;
         if (!canManage) return;
         try {
             const info = await schoolsService.getWebhookInfo(schoolId);
             setWebhookInfo(info);
+            setLastUpdated(new Date());
         } catch (err) {
             console.error(err);
         }
-    };
+    }, [schoolId, canManage, setLastUpdated]);
 
     useEffect(() => {
         fetchDevices();
         fetchWebhookInfo();
-    }, [schoolId]);
+    }, [fetchDevices, fetchWebhookInfo]);
+
+    const handleRefresh = useCallback(async () => {
+        await Promise.all([fetchDevices(), fetchWebhookInfo()]);
+        setLastUpdated(new Date());
+    }, [fetchDevices, fetchWebhookInfo, setLastUpdated]);
+
+    useEffect(() => {
+        setRefresh(handleRefresh);
+        return () => setRefresh(null);
+    }, [handleRefresh, setRefresh]);
 
     // Statistikalar
     const stats = useMemo(() => {

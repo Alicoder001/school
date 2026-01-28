@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import {
   Table,
   Button,
@@ -26,7 +26,7 @@ import { useSchool } from "../hooks/useSchool";
 import { usersService } from "../services/users";
 import type { User, CreateUserData, TeacherClass } from "../services/users";
 import { classesService } from "../services/classes";
-import { PageHeader, Divider, StatItem } from "../shared/ui";
+import { PageHeader, Divider, StatItem, useHeaderMeta } from "../shared/ui";
 import type { Class } from "../types";
 
 const { Text } = Typography;
@@ -34,6 +34,7 @@ const { Text } = Typography;
 const Users: React.FC = () => {
   const { schoolId } = useSchool();
   const { message } = App.useApp();
+  const { setRefresh, setLastUpdated } = useHeaderMeta();
   const [users, setUsers] = useState<User[]>([]);
   const [classes, setClasses] = useState<Class[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,33 +48,45 @@ const Users: React.FC = () => {
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editForm] = Form.useForm();
 
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
     if (!schoolId) return;
     setLoading(true);
     try {
       const data = await usersService.getAll(schoolId);
       setUsers(data);
+      setLastUpdated(new Date());
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
     }
-  };
+  }, [schoolId, setLastUpdated]);
 
-  const fetchClasses = async () => {
+  const fetchClasses = useCallback(async () => {
     if (!schoolId) return;
     try {
       const data = await classesService.getAll(schoolId);
       setClasses(data);
+      setLastUpdated(new Date());
     } catch (err) {
       console.error(err);
     }
-  };
+  }, [schoolId, setLastUpdated]);
 
   useEffect(() => {
     fetchUsers();
     fetchClasses();
-  }, [schoolId]);
+  }, [fetchUsers, fetchClasses]);
+
+  const handleRefresh = useCallback(async () => {
+    await Promise.all([fetchUsers(), fetchClasses()]);
+    setLastUpdated(new Date());
+  }, [fetchUsers, fetchClasses, setLastUpdated]);
+
+  useEffect(() => {
+    setRefresh(handleRefresh);
+    return () => setRefresh(null);
+  }, [handleRefresh, setRefresh]);
 
   const handleAdd = () => {
     form.resetFields();

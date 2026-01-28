@@ -78,7 +78,7 @@ const Attendance: React.FC = () => {
     user?.role === "SCHOOL_ADMIN" || user?.role === "SUPER_ADMIN";
   const isTeacher = user?.role === "TEACHER";
   const canEdit = isSchoolAdmin || isTeacher;
-  const { setMeta } = useHeaderMeta();
+  const { setMeta, setRefresh, setLastUpdated } = useHeaderMeta();
 
   const fetchData = useCallback(async (silent = false) => {
     if (!schoolId) return;
@@ -108,6 +108,7 @@ const Attendance: React.FC = () => {
         }
       }
       setRecords(data);
+      setLastUpdated(new Date());
     } catch (err) {
       console.error(err);
     } finally {
@@ -148,6 +149,16 @@ const Attendance: React.FC = () => {
     fetchData();
     fetchClasses();
   }, [schoolId, fetchData]);
+
+  const handleRefresh = useCallback(async () => {
+    await Promise.all([fetchData(), fetchClasses()]);
+    setLastUpdated(new Date());
+  }, [fetchData, fetchClasses, setLastUpdated]);
+
+  useEffect(() => {
+    setRefresh(handleRefresh);
+    return () => setRefresh(null);
+  }, [handleRefresh, setRefresh]);
 
   useEffect(() => {
     setMeta({ showLiveStatus: isTodayRange, isConnected });

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { Card, Form, InputNumber, Button, Spin, App, Space } from 'antd';
 import { 
     SettingOutlined, 
@@ -7,35 +7,48 @@ import {
 } from '@ant-design/icons';
 import { useSchool } from '../hooks/useSchool';
 import { schoolsService } from '../services/schools';
-import { PageHeader, StatItem } from '../shared/ui';
+import { PageHeader, StatItem, useHeaderMeta } from '../shared/ui';
 
 const Settings: React.FC = () => {
     const { schoolId } = useSchool();
     const { message } = App.useApp();
+    const { setRefresh, setLastUpdated } = useHeaderMeta();
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [schoolName, setSchoolName] = useState('');
     const [form] = Form.useForm();
 
+    const fetchSchool = useCallback(async () => {
+        if (!schoolId) return;
+        setLoading(true);
+        try {
+            const data = await schoolsService.getById(schoolId);
+            setSchoolName(data.name);
+            form.setFieldsValue({
+                lateThresholdMinutes: data.lateThresholdMinutes,
+                absenceCutoffMinutes: data.absenceCutoffMinutes,
+            });
+            setLastUpdated(new Date());
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setLoading(false);
+        }
+    }, [schoolId, form, setLastUpdated]);
+
     useEffect(() => {
-        const fetchSchool = async () => {
-            if (!schoolId) return;
-            setLoading(true);
-            try {
-                const data = await schoolsService.getById(schoolId);
-                setSchoolName(data.name);
-                form.setFieldsValue({
-                    lateThresholdMinutes: data.lateThresholdMinutes,
-                    absenceCutoffMinutes: data.absenceCutoffMinutes,
-                });
-            } catch (err) {
-                console.error(err);
-            } finally {
-                setLoading(false);
-            }
-        };
         fetchSchool();
-    }, [schoolId]);
+    }, [fetchSchool]);
+
+    const handleRefresh = useCallback(async () => {
+        await fetchSchool();
+        setLastUpdated(new Date());
+    }, [fetchSchool, setLastUpdated]);
+
+    useEffect(() => {
+        setRefresh(handleRefresh);
+        return () => setRefresh(null);
+    }, [handleRefresh, setRefresh]);
 
     const handleSave = async (values: any) => {
         if (!schoolId) return;

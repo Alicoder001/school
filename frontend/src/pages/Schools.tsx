@@ -19,7 +19,7 @@ import {
 } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { schoolsService } from '../services/schools';
-import { PageHeader, Divider, StatItem, StatGroup } from '../shared/ui';
+import { PageHeader, Divider, StatItem, StatGroup, useHeaderMeta } from '../shared/ui';
 import { StatusBar } from '../entities/attendance';
 import type { School, AttendanceScope } from '../types';
 
@@ -30,6 +30,7 @@ const Schools: React.FC = () => {
     const navigate = useNavigate();
     const location = useLocation();
     const { message } = App.useApp();
+    const { setRefresh, setLastUpdated } = useHeaderMeta();
     const [schools, setSchools] = useState<School[]>([]);
     const [loading, setLoading] = useState(true);
     const [modalOpen, setModalOpen] = useState(false);
@@ -46,6 +47,7 @@ const Schools: React.FC = () => {
         try {
             const data = await schoolsService.getAll(attendanceScope);
             setSchools(data);
+            setLastUpdated(new Date());
         } catch (err) {
             console.error(err);
         } finally {
@@ -65,6 +67,16 @@ const Schools: React.FC = () => {
         }, AUTO_REFRESH_MS);
         return () => clearInterval(timer);
     }, [fetchSchools]);
+
+    const handleRefresh = useCallback(async () => {
+        await fetchSchools();
+        setLastUpdated(new Date());
+    }, [fetchSchools, setLastUpdated]);
+
+    useEffect(() => {
+        setRefresh(handleRefresh);
+        return () => setRefresh(null);
+    }, [handleRefresh, setRefresh]);
 
     // Statistikalar
     const stats = useMemo(() => {

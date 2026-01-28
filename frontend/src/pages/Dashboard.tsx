@@ -101,7 +101,7 @@ const Dashboard: React.FC = () => {
   const [attendanceScope, setAttendanceScope] = useState<AttendanceScope>(
     "started",
   );
-  const { setMeta } = useHeaderMeta();
+  const { setMeta, setRefresh, setLastUpdated } = useHeaderMeta();
 
   // Ref to track pending events for batch processing
   const pendingEventsRef = useRef<{ inCount: number; outCount: number }>({
@@ -125,6 +125,7 @@ const Dashboard: React.FC = () => {
 
       const statsData = await dashboardService.getStats(schoolId, filters);
       setStats(statsData);
+      setLastUpdated(new Date());
       // Reset pending counts after full refresh
       pendingEventsRef.current = { inCount: 0, outCount: 0 };
     } catch (err) {
@@ -192,10 +193,12 @@ const Dashboard: React.FC = () => {
     enabled: isToday,
   });
 
-  useEffect(() => {
-    const fetchData = async () => {
+  const loadDashboard = useCallback(
+    async (withLoading = true) => {
       if (!schoolId) return;
-      setLoading(true);
+      if (withLoading) {
+        setLoading(true);
+      }
       try {
         const filters: any = { period: selectedPeriod };
         if (selectedClassId) filters.classId = selectedClassId;
@@ -218,14 +221,29 @@ const Dashboard: React.FC = () => {
         setEvents(eventsData);
         setSchool(schoolData);
         setClasses(classesData);
+        setLastUpdated(new Date());
       } catch (err) {
         console.error("Failed to load dashboard:", err);
       } finally {
-        setLoading(false);
+        if (withLoading) {
+          setLoading(false);
+        }
       }
-    };
-    fetchData();
-  }, [schoolId, selectedClassId, selectedPeriod, customDateRange, isToday, attendanceScope]);
+    },
+    [
+      schoolId,
+      selectedClassId,
+      selectedPeriod,
+      customDateRange,
+      isToday,
+      attendanceScope,
+      setLastUpdated,
+    ],
+  );
+
+  useEffect(() => {
+    loadDashboard(true);
+  }, [loadDashboard]);
 
   useEffect(() => {
     if (!isToday) return;
@@ -239,6 +257,15 @@ const Dashboard: React.FC = () => {
     setMeta({ showLiveStatus: isToday, isConnected });
     return () => setMeta({ showLiveStatus: false, isConnected: false });
   }, [isToday, isConnected, setMeta]);
+
+  const handleRefresh = useCallback(async () => {
+    await loadDashboard(false);
+  }, [loadDashboard]);
+
+  useEffect(() => {
+    setRefresh(handleRefresh);
+    return () => setRefresh(null);
+  }, [handleRefresh, setRefresh]);
 
   if (loading) {
     return (

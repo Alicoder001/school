@@ -1,10 +1,10 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { Table, Button, Modal, Form, Input, Select, TimePicker, Tag, Progress, Typography, Space, Tooltip, App } from 'antd';
 import { PlusOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined, UserOutlined, TeamOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useSchool } from '../hooks/useSchool';
 import { classesService } from '../services/classes';
-import { PageHeader, Divider, StatItem } from '../shared/ui';
+import { PageHeader, Divider, StatItem, useHeaderMeta } from '../shared/ui';
 import type { Class } from '../types';
 import { ATTENDANCE_STATUS_TAG, STATUS_COLORS } from '../entities/attendance';
 
@@ -12,6 +12,7 @@ const { Text } = Typography;
 
 const Classes: React.FC = () => {
     const { schoolId } = useSchool();
+    const { setRefresh, setLastUpdated } = useHeaderMeta();
     const { message } = App.useApp();
     const navigate = useNavigate();
     const [classes, setClasses] = useState<Class[]>([]);
@@ -19,22 +20,33 @@ const Classes: React.FC = () => {
     const [modalOpen, setModalOpen] = useState(false);
     const [form] = Form.useForm<{ name: string; gradeLevel: number; startTime: any; endTime: any }>();
 
-    const fetchClasses = async () => {
+    const fetchClasses = useCallback(async () => {
         if (!schoolId) return;
         setLoading(true);
         try {
             const data = await classesService.getAll(schoolId);
             setClasses(data);
+            setLastUpdated(new Date());
         } catch (err) {
             console.error(err);
         } finally {
             setLoading(false);
         }
-    };
+    }, [schoolId, setLastUpdated]);
 
     useEffect(() => {
         fetchClasses();
-    }, [schoolId]);
+    }, [fetchClasses]);
+
+    const handleRefresh = useCallback(async () => {
+        await fetchClasses();
+        setLastUpdated(new Date());
+    }, [fetchClasses, setLastUpdated]);
+
+    useEffect(() => {
+        setRefresh(handleRefresh);
+        return () => setRefresh(null);
+    }, [handleRefresh, setRefresh]);
 
     // Statistikalar
     const stats = useMemo(() => {

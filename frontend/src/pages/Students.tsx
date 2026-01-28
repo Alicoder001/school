@@ -36,7 +36,7 @@ import { studentsService } from "../services/students";
 import type { StudentsResponse } from "../types";
 import { classesService } from "../services/classes";
 import type { PeriodType, EffectiveAttendanceStatus } from "../types";
-import { PageHeader, Divider, StatItem } from "../shared/ui";
+import { PageHeader, Divider, StatItem, useHeaderMeta } from "../shared/ui";
 import { getAssetUrl, DEFAULT_PAGE_SIZE } from "../config";
 import type { Student, Class } from "../types";
 import dayjs from "dayjs";
@@ -57,6 +57,7 @@ const PERIOD_OPTIONS = SHARED_PERIOD_OPTIONS;
 
 const Students: React.FC = () => {
   const { schoolId } = useSchool();
+  const { setRefresh, setLastUpdated } = useHeaderMeta();
   const { message } = App.useApp();
   const navigate = useNavigate();
   const [students, setStudents] = useState<Student[]>([]);
@@ -107,6 +108,7 @@ const Students: React.FC = () => {
       setStudents(data.data || []);
       setTotal(data.total || 0);
       setResponseData(data);
+      setLastUpdated(new Date());
     } catch (err) {
       console.error(err);
     } finally {
@@ -121,6 +123,7 @@ const Students: React.FC = () => {
     try {
       const data = await classesService.getAll(schoolId);
       setClasses(data);
+      setLastUpdated(new Date());
     } catch (err) {
       console.error(err);
     }
@@ -130,6 +133,16 @@ const Students: React.FC = () => {
     fetchStudents();
     fetchClasses();
   }, [fetchStudents, fetchClasses]);
+
+  const handleRefresh = useCallback(async () => {
+    await Promise.all([fetchStudents(), fetchClasses()]);
+    setLastUpdated(new Date());
+  }, [fetchStudents, fetchClasses, setLastUpdated]);
+
+  useEffect(() => {
+    setRefresh(handleRefresh);
+    return () => setRefresh(null);
+  }, [handleRefresh, setRefresh]);
 
   useEffect(() => {
     if (selectedPeriod !== "today") return;

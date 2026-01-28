@@ -1,7 +1,7 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { Card, Col, Empty, Row, Space, Tag, Typography } from "antd";
 import { VideoCameraOutlined } from "@ant-design/icons";
-import { PageHeader, StatItem } from "../shared/ui";
+import { PageHeader, StatItem, useHeaderMeta } from "../shared/ui";
 import { schoolsService } from "../services/schools";
 import type { School } from "../types";
 import { cameraApi } from "../entities/camera";
@@ -23,34 +23,42 @@ const CamerasSuperAdmin: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const backState = { backTo: location.pathname };
+  const { setRefresh, setLastUpdated } = useHeaderMeta();
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const schoolsData = await schoolsService.getAll("started");
+    setSchools(schoolsData);
+    const results = await Promise.all(
+      schoolsData.map(async (s) => {
+        const cams = await cameraApi.getCameras(s.id);
+        const online = cams.filter((c) => c.status === "ONLINE").length;
+        const offline = cams.filter((c) => c.status === "OFFLINE").length;
+        return {
+          schoolId: s.id,
+          total: cams.length,
+          online,
+          offline,
+        };
+      }),
+    );
+    const map: Record<string, SchoolCameraStats> = {};
+    results.forEach((r) => {
+      map[r.schoolId] = r;
+    });
+    setStats(map);
+    setLoading(false);
+    setLastUpdated(new Date());
+  }, [setLastUpdated]);
 
   useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      const schoolsData = await schoolsService.getAll("started");
-      setSchools(schoolsData);
-      const results = await Promise.all(
-        schoolsData.map(async (s) => {
-          const cams = await cameraApi.getCameras(s.id);
-          const online = cams.filter((c) => c.status === "ONLINE").length;
-          const offline = cams.filter((c) => c.status === "OFFLINE").length;
-          return {
-            schoolId: s.id,
-            total: cams.length,
-            online,
-            offline,
-          };
-        }),
-      );
-      const map: Record<string, SchoolCameraStats> = {};
-      results.forEach((r) => {
-        map[r.schoolId] = r;
-      });
-      setStats(map);
-      setLoading(false);
-    };
     load();
-  }, []);
+  }, [load]);
+
+  useEffect(() => {
+    setRefresh(load);
+    return () => setRefresh(null);
+  }, [load, setRefresh]);
 
   const totalStats = useMemo(() => {
     const total = Object.values(stats).reduce((sum, s) => sum + s.total, 0);

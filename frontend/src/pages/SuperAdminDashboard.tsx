@@ -120,7 +120,7 @@ const SuperAdminDashboard: React.FC = () => {
   const [customDateRange, setCustomDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
   const [attendanceScope, setAttendanceScope] = useState<AttendanceScope>('started');
   const backState = { backTo: location.pathname };
-  const { setMeta } = useHeaderMeta();
+  const { setMeta, setRefresh, setLastUpdated } = useHeaderMeta();
   
   // Bugunmi tekshirish (SSE va real-time uchun)
   const isToday = selectedPeriod === 'today';
@@ -140,6 +140,7 @@ const SuperAdminDashboard: React.FC = () => {
       }
       const result = await dashboardService.getAdminStats(filters);
       setData(result);
+      setLastUpdated(new Date());
     } catch (err) {
       console.error("Failed to refresh admin dashboard:", err);
     } finally {
@@ -241,6 +242,15 @@ const SuperAdminDashboard: React.FC = () => {
     setMeta({ showLiveStatus: isToday, isConnected });
     return () => setMeta({ showLiveStatus: false, isConnected: false });
   }, [isToday, isConnected, setMeta]);
+
+  const handleRefresh = useCallback(async () => {
+    await refreshData(true);
+  }, [refreshData]);
+
+  useEffect(() => {
+    setRefresh(handleRefresh);
+    return () => setRefresh(null);
+  }, [handleRefresh, setRefresh]);
 
   if (loading) {
     return (

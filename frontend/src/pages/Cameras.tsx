@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import {
   Card,
   Col,
@@ -14,7 +14,7 @@ import {
 } from "antd";
 import { VideoCameraOutlined } from "@ant-design/icons";
 import { useSchool } from "../hooks/useSchool";
-import { PageHeader, StatItem } from "../shared/ui";
+import { PageHeader, StatItem, useHeaderMeta } from "../shared/ui";
 import type { Camera, CameraArea } from "../types";
 import { cameraApi, getStatusBadge } from "../entities/camera";
 import { CAMERA_SNAPSHOT_REFRESH_MS } from "../config";
@@ -24,6 +24,7 @@ const { Text } = Typography;
 
 const Cameras: React.FC = () => {
   const { schoolId } = useSchool();
+  const { setRefresh, setLastUpdated } = useHeaderMeta();
   const [areas, setAreas] = useState<CameraArea[]>([]);
   const [cameras, setCameras] = useState<Camera[]>([]);
   const [loading, setLoading] = useState(true);
@@ -34,20 +35,27 @@ const Cameras: React.FC = () => {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(8);
 
-  useEffect(() => {
+  const load = useCallback(async () => {
     if (!schoolId) return;
-    const load = async () => {
-      setLoading(true);
-      const [areasData, camerasData] = await Promise.all([
-        cameraApi.getAreas(schoolId),
-        cameraApi.getCameras(schoolId),
-      ]);
-      setAreas(areasData);
-      setCameras(camerasData);
-      setLoading(false);
-    };
+    setLoading(true);
+    const [areasData, camerasData] = await Promise.all([
+      cameraApi.getAreas(schoolId),
+      cameraApi.getCameras(schoolId),
+    ]);
+    setAreas(areasData);
+    setCameras(camerasData);
+    setLoading(false);
+    setLastUpdated(new Date());
+  }, [schoolId, setLastUpdated]);
+
+  useEffect(() => {
     load();
-  }, [schoolId]);
+  }, [load]);
+
+  useEffect(() => {
+    setRefresh(load);
+    return () => setRefresh(null);
+  }, [load, setRefresh]);
 
   useEffect(() => {
     const timer = setInterval(() => {

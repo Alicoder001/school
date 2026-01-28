@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { Table, Button, Modal, Form, Input, DatePicker, Card, Calendar, Badge, App, Popconfirm, Row, Col, Typography, Space, Tooltip, Tag } from 'antd';
 import { 
     PlusOutlined, 
@@ -11,7 +11,7 @@ import {
 } from '@ant-design/icons';
 import { useSchool } from '../hooks/useSchool';
 import { holidaysService } from '../services/holidays';
-import { PageHeader, Divider, StatItem } from '../shared/ui';
+import { PageHeader, Divider, StatItem, useHeaderMeta } from '../shared/ui';
 import type { Holiday } from '../types';
 import dayjs, { Dayjs } from 'dayjs';
 
@@ -20,27 +20,39 @@ const { Text } = Typography;
 const Holidays: React.FC = () => {
     const { schoolId } = useSchool();
     const { message } = App.useApp();
+    const { setRefresh, setLastUpdated } = useHeaderMeta();
     const [holidays, setHolidays] = useState<Holiday[]>([]);
     const [loading, setLoading] = useState(true);
     const [modalOpen, setModalOpen] = useState(false);
     const [form] = Form.useForm();
 
-    const fetchHolidays = async () => {
+    const fetchHolidays = useCallback(async () => {
         if (!schoolId) return;
         setLoading(true);
         try {
             const data = await holidaysService.getAll(schoolId);
             setHolidays(data);
+            setLastUpdated(new Date());
         } catch (err) {
             console.error(err);
         } finally {
             setLoading(false);
         }
-    };
+    }, [schoolId, setLastUpdated]);
 
     useEffect(() => {
         fetchHolidays();
-    }, [schoolId]);
+    }, [fetchHolidays]);
+
+    const handleRefresh = useCallback(async () => {
+        await fetchHolidays();
+        setLastUpdated(new Date());
+    }, [fetchHolidays, setLastUpdated]);
+
+    useEffect(() => {
+        setRefresh(handleRefresh);
+        return () => setRefresh(null);
+    }, [handleRefresh, setRefresh]);
 
     // Statistikalar
     const stats = useMemo(() => {

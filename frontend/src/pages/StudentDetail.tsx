@@ -31,6 +31,7 @@ import { useParams } from "react-router-dom";
 import { useAttendanceSSE } from "../hooks/useAttendanceSSE";
 import { studentsService } from "../services/students";
 import { getAssetUrl } from "../config";
+import { useHeaderMeta } from "../shared/ui";
 import type {
   Student,
   DailyAttendance,
@@ -59,6 +60,7 @@ const { RangePicker } = DatePicker;
 
 const StudentDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const { setRefresh, setLastUpdated } = useHeaderMeta();
   const [student, setStudent] = useState<Student | null>(null);
   const [attendance, setAttendance] = useState<DailyAttendance[]>([]);
   const [events, setEvents] = useState<AttendanceEvent[]>([]);
@@ -100,10 +102,11 @@ const StudentDetail: React.FC = () => {
       setStudent(studentData);
       setAttendance(attendanceData);
       setEvents(eventsData);
+      setLastUpdated(new Date());
     } catch (err) {
       console.error(err);
     }
-  }, [id]);
+  }, [id, setLastUpdated]);
 
   // Eventlarni kun bo'yicha guruhlash
   const getEventsForDate = (date: string) => {
@@ -132,6 +135,16 @@ const StudentDetail: React.FC = () => {
     };
     loadInitial();
   }, [fetchData]);
+
+  const handleRefresh = useCallback(async () => {
+    await fetchData();
+    setLastUpdated(new Date());
+  }, [fetchData, setLastUpdated]);
+
+  useEffect(() => {
+    setRefresh(handleRefresh);
+    return () => setRefresh(null);
+  }, [handleRefresh, setRefresh]);
 
   if (loading) {
     return (

@@ -50,7 +50,7 @@ import { useAttendanceSSE } from "../hooks/useAttendanceSSE";
 import { classesService } from "../services/classes";
 import { studentsService } from "../services/students";
 import { attendanceService } from "../services/attendance";
-import { PageHeader, Divider, StatItem } from "../shared/ui";
+import { PageHeader, Divider, StatItem, useHeaderMeta } from "../shared/ui";
 import { getAssetUrl } from "../config";
 import type { Class, Student, EffectiveAttendanceStatus } from "../types";
 import dayjs from "dayjs";
@@ -77,6 +77,7 @@ const STATUS_CONFIG: Record<
 const ClassDetail: React.FC = () => {
   const { classId } = useParams<{ classId: string }>();
   const { schoolId } = useSchool();
+  const { setRefresh, setLastUpdated } = useHeaderMeta();
   const { message } = App.useApp();
   const navigate = useNavigate();
   const [classData, setClassData] = useState<Class | null>(null);
@@ -164,10 +165,11 @@ const ClassDetail: React.FC = () => {
       // Vaqt bo'yicha tartiblash
       events.sort((a, b) => dayjs(b.timestamp).diff(dayjs(a.timestamp)));
       setRecentEvents(events.slice(0, 10));
+      setLastUpdated(new Date());
     } catch (err) {
       console.error(err);
     }
-  }, [classId, schoolId]);
+  }, [classId, schoolId, setLastUpdated]);
 
   // SSE for real-time updates
   const { isConnected } = useAttendanceSSE(schoolId, {
@@ -184,6 +186,16 @@ const ClassDetail: React.FC = () => {
     };
     loadInitial();
   }, [fetchData]);
+
+  const handleRefresh = useCallback(async () => {
+    await fetchData();
+    setLastUpdated(new Date());
+  }, [fetchData, setLastUpdated]);
+
+  useEffect(() => {
+    setRefresh(handleRefresh);
+    return () => setRefresh(null);
+  }, [handleRefresh, setRefresh]);
 
   useEffect(() => {
     if (dateFilter !== "today") return;
