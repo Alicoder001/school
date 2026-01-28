@@ -41,6 +41,16 @@ import type {
 } from "../types";
 import dayjs, { Dayjs } from "dayjs";
 import { Segmented } from "antd";
+import {
+  ATTENDANCE_STATUS_OPTIONS,
+  EFFECTIVE_STATUS_COLORS,
+  EFFECTIVE_STATUS_LABELS,
+  EVENT_TYPE_BG,
+  EVENT_TYPE_COLOR,
+  EVENT_TYPE_TAG,
+  getAttendanceStatsForStudentDetail,
+  STATUS_COLORS,
+} from "../entities/attendance";
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
@@ -52,23 +62,6 @@ const PERIOD_OPTIONS = [
   { label: "Oy", value: "month" },
   { label: "Yil", value: "year" },
 ];
-
-const statusColors: Record<EffectiveAttendanceStatus, string> = {
-  PRESENT: "green",
-  LATE: "orange",
-  ABSENT: "red",
-  EXCUSED: "gray",
-  PENDING_EARLY: "#bfbfbf",
-  PENDING_LATE: "#fadb14",
-};
-const statusLabels: Record<EffectiveAttendanceStatus, string> = {
-  PRESENT: "Kelgan",
-  LATE: "Kech qoldi",
-  ABSENT: "Kelmadi",
-  EXCUSED: "Sababli",
-  PENDING_EARLY: "Hali kelmagan",
-  PENDING_LATE: "Kechikmoqda",
-};
 
 const StudentDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -190,12 +183,10 @@ const StudentDetail: React.FC = () => {
         )
       : 0;
 
+  const counts = getAttendanceStatsForStudentDetail(attendance);
   const stats = {
-    total: attendance.length,
-    present: attendance.filter((a) => a.status === "PRESENT").length,
+    ...counts,
     late: lateRecords.length,
-    absent: attendance.filter((a) => a.status === "ABSENT").length,
-    excused: attendance.filter((a) => a.status === "EXCUSED").length,
     avgLateMinutes,
   };
 
@@ -208,7 +199,7 @@ const StudentDetail: React.FC = () => {
     const key = date.format("YYYY-MM-DD");
     const record = attendanceMap.get(key);
     if (!record) return null;
-    return <Badge color={statusColors[record.status]} />;
+    return <Badge color={EFFECTIVE_STATUS_COLORS[record.status]} />;
   };
 
   // Jami maktabda bo'lgan vaqtni hisoblash
@@ -237,7 +228,9 @@ const StudentDetail: React.FC = () => {
       key: "status",
       render: (s: EffectiveAttendanceStatus, record: DailyAttendance) => (
         <Space>
-          <Tag color={statusColors[s]}>{statusLabels[s]}</Tag>
+          <Tag color={EFFECTIVE_STATUS_COLORS[s]}>
+            {EFFECTIVE_STATUS_LABELS[s]}
+          </Tag>
           {record.currentlyInSchool && (
             <Tag icon={<LoginOutlined />} color="purple">
               Maktabda
@@ -402,7 +395,7 @@ const StudentDetail: React.FC = () => {
 
               <div style={{ textAlign: "center" }}>
                 <div
-                  style={{ fontSize: 22, fontWeight: 700, color: "#52c41a" }}
+                  style={{ fontSize: 22, fontWeight: 700, color: STATUS_COLORS.PRESENT }}
                 >
                   {stats.present}
                 </div>
@@ -413,7 +406,7 @@ const StudentDetail: React.FC = () => {
 
               <div style={{ textAlign: "center" }}>
                 <div
-                  style={{ fontSize: 22, fontWeight: 700, color: "#fa8c16" }}
+                  style={{ fontSize: 22, fontWeight: 700, color: STATUS_COLORS.LATE }}
                 >
                   {stats.late}
                 </div>
@@ -424,7 +417,7 @@ const StudentDetail: React.FC = () => {
 
               <div style={{ textAlign: "center" }}>
                 <div
-                  style={{ fontSize: 22, fontWeight: 700, color: "#ff4d4f" }}
+                  style={{ fontSize: 22, fontWeight: 700, color: STATUS_COLORS.ABSENT }}
                 >
                   {stats.absent}
                 </div>
@@ -436,7 +429,7 @@ const StudentDetail: React.FC = () => {
               {(stats.excused || 0) > 0 && (
                 <div style={{ textAlign: "center" }}>
                   <div
-                    style={{ fontSize: 22, fontWeight: 700, color: "#8c8c8c" }}
+                    style={{ fontSize: 22, fontWeight: 700, color: STATUS_COLORS.EXCUSED }}
                   >
                     {stats.excused}
                   </div>
@@ -530,7 +523,9 @@ const StudentDetail: React.FC = () => {
         >
           <Badge
             status={
-              statusFilter ? (statusColors[statusFilter] as any) : "default"
+              statusFilter
+                ? (EFFECTIVE_STATUS_COLORS[statusFilter] as any)
+                : "default"
             }
           />
           <Select
@@ -540,12 +535,7 @@ const StudentDetail: React.FC = () => {
             style={{ width: 150 }}
             allowClear
             variant="borderless"
-            options={[
-              { value: "PRESENT", label: "Kelgan" },
-              { value: "LATE", label: "Kech qoldi" },
-              { value: "ABSENT", label: "Kelmadi" },
-              { value: "EXCUSED", label: "Sababli" },
-            ]}
+            options={ATTENDANCE_STATUS_OPTIONS}
           />
         </div>
 
@@ -573,22 +563,22 @@ const StudentDetail: React.FC = () => {
                       {
                         name: "Kelgan",
                         value: stats.present,
-                        color: "#52c41a",
+                        color: STATUS_COLORS.PRESENT,
                       },
                       {
                         name: "Kech qoldi",
                         value: stats.late,
-                        color: "#fa8c16",
+                        color: STATUS_COLORS.LATE,
                       },
                       {
                         name: "Kelmadi",
                         value: stats.absent,
-                        color: "#ff4d4f",
+                        color: STATUS_COLORS.ABSENT,
                       },
                       {
                         name: "Sababli",
                         value: stats.excused,
-                        color: "#8c8c8c",
+                        color: STATUS_COLORS.EXCUSED,
                       },
                     ].filter((d) => d.value > 0)}
                     cx="50%"
@@ -602,22 +592,22 @@ const StudentDetail: React.FC = () => {
                       {
                         name: "Kelgan",
                         value: stats.present,
-                        color: "#52c41a",
+                        color: STATUS_COLORS.PRESENT,
                       },
                       {
                         name: "Kech qoldi",
                         value: stats.late,
-                        color: "#fa8c16",
+                        color: STATUS_COLORS.LATE,
                       },
                       {
                         name: "Kelmadi",
                         value: stats.absent,
-                        color: "#ff4d4f",
+                        color: STATUS_COLORS.ABSENT,
                       },
                       {
                         name: "Sababli",
                         value: stats.excused,
-                        color: "#8c8c8c",
+                        color: STATUS_COLORS.EXCUSED,
                       },
                     ]
                       .filter((d) => d.value > 0)
@@ -655,43 +645,40 @@ const StudentDetail: React.FC = () => {
           >
             {events.length > 0 ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                {events.slice(0, 8).map((event) => (
-                  <div
-                    key={event.id}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      padding: "6px 8px",
-                      background:
-                        event.eventType === "IN" ? "#f6ffed" : "#e6f7ff",
-                      borderRadius: 4,
-                      borderLeft: `3px solid ${event.eventType === "IN" ? "#52c41a" : "#1890ff"}`,
-                    }}
-                  >
-                    <Tag
-                      icon={
-                        event.eventType === "IN" ? (
-                          <LoginOutlined />
-                        ) : (
-                          <LogoutOutlined />
-                        )
-                      }
-                      color={
-                        event.eventType === "IN" ? "success" : "processing"
-                      }
-                      style={{ margin: 0, fontSize: 11, padding: "0 6px" }}
+                {events.slice(0, 8).map((event) => {
+                  const isIn = event.eventType === "IN";
+                  const eventType = isIn ? "IN" : "OUT";
+                  const eventTag = EVENT_TYPE_TAG[eventType];
+
+                  return (
+                    <div
+                      key={event.id}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        padding: "6px 8px",
+                        background: EVENT_TYPE_BG[eventType],
+                        borderRadius: 4,
+                        borderLeft: `3px solid ${EVENT_TYPE_COLOR[eventType]}`,
+                      }}
                     >
-                      {event.eventType === "IN" ? "KIRDI" : "CHIQDI"}
-                    </Tag>
-                    <Text strong style={{ fontSize: 13 }}>
-                      {dayjs(event.timestamp).format("HH:mm")}
-                    </Text>
-                    <Text type="secondary" style={{ fontSize: 11 }}>
-                      {dayjs(event.timestamp).format("DD/MM")}
-                    </Text>
-                  </div>
-                ))}
+                      <Tag
+                        icon={eventTag.icon}
+                        color={eventTag.color}
+                        style={{ margin: 0, fontSize: 11, padding: "0 6px" }}
+                      >
+                        {eventTag.text}
+                      </Tag>
+                      <Text strong style={{ fontSize: 13 }}>
+                        {dayjs(event.timestamp).format("HH:mm")}
+                      </Text>
+                      <Text type="secondary" style={{ fontSize: 11 }}>
+                        {dayjs(event.timestamp).format("DD/MM")}
+                      </Text>
+                    </div>
+                  );
+                })}
               </div>
             ) : (
               <div
@@ -783,8 +770,8 @@ const StudentDetail: React.FC = () => {
           selectedRecord && (
             <Space>
               <span>{dayjs(selectedRecord.date).format("DD MMMM, YYYY")}</span>
-              <Tag color={statusColors[selectedRecord.status]}>
-                {statusLabels[selectedRecord.status]}
+              <Tag color={EFFECTIVE_STATUS_COLORS[selectedRecord.status]}>
+                {EFFECTIVE_STATUS_LABELS[selectedRecord.status]}
               </Tag>
               {selectedRecord.currentlyInSchool && (
                 <Tag icon={<LoginOutlined />} color="purple">
@@ -867,43 +854,40 @@ const StudentDetail: React.FC = () => {
                 <div
                   style={{ display: "flex", flexDirection: "column", gap: 8 }}
                 >
-                  {dayEvents.map((event) => (
-                    <div
-                      key={event.id}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 12,
-                        padding: "10px 14px",
-                        background:
-                          event.eventType === "IN" ? "#f6ffed" : "#e6f7ff",
-                        borderRadius: 8,
-                        borderLeft: `4px solid ${event.eventType === "IN" ? "#52c41a" : "#1890ff"}`,
-                      }}
-                    >
-                      <Tag
-                        icon={
-                          event.eventType === "IN" ? (
-                            <LoginOutlined />
-                          ) : (
-                            <LogoutOutlined />
-                          )
-                        }
-                        color={
-                          event.eventType === "IN" ? "success" : "processing"
-                        }
-                        style={{ margin: 0 }}
+                  {dayEvents.map((event) => {
+                    const isIn = event.eventType === "IN";
+                    const eventType = isIn ? "IN" : "OUT";
+                    const eventTag = EVENT_TYPE_TAG[eventType];
+
+                    return (
+                      <div
+                        key={event.id}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 12,
+                          padding: "10px 14px",
+                          background: EVENT_TYPE_BG[eventType],
+                          borderRadius: 8,
+                          borderLeft: `4px solid ${EVENT_TYPE_COLOR[eventType]}`,
+                        }}
                       >
-                        {event.eventType === "IN" ? "KIRDI" : "CHIQDI"}
-                      </Tag>
-                      <Text strong style={{ fontSize: 16 }}>
-                        {dayjs(event.timestamp).format("HH:mm:ss")}
-                      </Text>
-                      {event.device?.name && (
-                        <Text type="secondary">{event.device.name}</Text>
-                      )}
-                    </div>
-                  ))}
+                        <Tag
+                          icon={eventTag.icon}
+                          color={eventTag.color}
+                          style={{ margin: 0 }}
+                        >
+                          {eventTag.text}
+                        </Tag>
+                        <Text strong style={{ fontSize: 16 }}>
+                          {dayjs(event.timestamp).format("HH:mm:ss")}
+                        </Text>
+                        {event.device?.name && (
+                          <Text type="secondary">{event.device.name}</Text>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               );
             })()}

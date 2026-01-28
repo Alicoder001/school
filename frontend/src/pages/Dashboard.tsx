@@ -29,7 +29,6 @@ import {
   FileTextOutlined,
   WarningOutlined,
   LoginOutlined,
-  LogoutOutlined,
   CalendarOutlined,
 } from "@ant-design/icons";
 import {
@@ -56,6 +55,13 @@ import { PageHeader } from "../components/PageHeader";
 import { StatItem, StatGroup } from "../components/StatItem";
 import dayjs from "dayjs";
 import debounce from "lodash/debounce";
+import {
+  EFFECTIVE_STATUS_META,
+  EVENT_TYPE_BG,
+  EVENT_TYPE_COLOR,
+  EVENT_TYPE_TAG,
+  STATUS_COLORS,
+} from "../entities/attendance";
 
 const { Text } = Typography;
 const { RangePicker } = DatePicker;
@@ -70,12 +76,12 @@ const PERIOD_OPTIONS = [
 ];
 
 const PIE_COLORS: Record<string, string> = {
-  Kelgan: "#52c41a",
-  "Kech qoldi": "#fa8c16",
-  Kechikmoqda: "#fadb14",
-  Kelmadi: "#ff4d4f",
-  Sababli: "#8c8c8c",
-  "Hali kelmagan": "#d9d9d9",
+  Kelgan: STATUS_COLORS.PRESENT,
+  "Kech qoldi": STATUS_COLORS.LATE,
+  Kechikmoqda: EFFECTIVE_STATUS_META.PENDING_LATE.color,
+  Kelmadi: STATUS_COLORS.ABSENT,
+  Sababli: STATUS_COLORS.EXCUSED,
+  "Hali kelmagan": EFFECTIVE_STATUS_META.PENDING_EARLY.color,
 };
 const AUTO_REFRESH_MS = 60000;
 
@@ -317,21 +323,21 @@ const Dashboard: React.FC = () => {
             icon={<CheckCircleOutlined />}
             label="kelgan"
             value={stats.presentToday}
-            color="#52c41a"
+            color={STATUS_COLORS.PRESENT}
             tooltip={`Kelganlar (kelgan+kech) ${stats.presentPercentage}%`}
           />
           <StatItem
             icon={<ClockCircleOutlined />}
             label="kech qoldi"
             value={stats.lateToday}
-            color="#fa8c16"
+            color={STATUS_COLORS.LATE}
             tooltip="Kech qolganlar (scan bilan)"
           />
           <StatItem
             icon={<CloseCircleOutlined />}
             label="kelmadi"
             value={stats.absentToday}
-            color="#ff4d4f"
+            color={STATUS_COLORS.ABSENT}
             tooltip="Kelmadi (cutoff o'tgan)"
           />
           {latePendingCount > 0 && (
@@ -339,7 +345,7 @@ const Dashboard: React.FC = () => {
               icon={<ClockCircleOutlined />}
               label="kechikmoqda"
               value={latePendingCount}
-              color="#fadb14"
+              color={EFFECTIVE_STATUS_META.PENDING_LATE.color}
               tooltip="Dars boshlangan, cutoff o'tmagan"
             />
           )}
@@ -348,7 +354,7 @@ const Dashboard: React.FC = () => {
               icon={<CloseCircleOutlined />}
               label="hali kelmagan"
               value={pendingEarlyCount}
-              color="#bfbfbf"
+              color={EFFECTIVE_STATUS_META.PENDING_EARLY.color}
               tooltip="Dars hali boshlanmagan"
             />
           )}
@@ -357,7 +363,7 @@ const Dashboard: React.FC = () => {
               icon={<FileTextOutlined />}
               label="sababli"
               value={stats.excusedToday}
-              color="#8c8c8c"
+              color={STATUS_COLORS.EXCUSED}
               tooltip="Sababli"
             />
           )}
@@ -565,46 +571,41 @@ const Dashboard: React.FC = () => {
           >
             {events.length > 0 ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                {events.slice(0, 8).map((event) => (
-                  <div
-                    key={event.id}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                      padding: "5px 8px",
-                      background:
-                        event.eventType === "IN" ? "#f6ffed" : "#e6f7ff",
-                      borderRadius: 4,
-                      borderLeft: `3px solid ${event.eventType === "IN" ? "#52c41a" : "#1890ff"}`,
-                    }}
-                  >
-                    <Tag
-                      icon={
-                        event.eventType === "IN" ? (
-                          <LoginOutlined />
-                        ) : (
-                          <LogoutOutlined />
-                        )
-                      }
-                      color={
-                        event.eventType === "IN" ? "success" : "processing"
-                      }
-                      style={{ margin: 0, fontSize: 10, padding: "0 4px" }}
+                {events.slice(0, 8).map((event) => {
+                  const eventTag = EVENT_TYPE_TAG[event.eventType];
+
+                  return (
+                    <div
+                      key={event.id}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        padding: "5px 8px",
+                        background: EVENT_TYPE_BG[event.eventType],
+                        borderRadius: 4,
+                        borderLeft: `3px solid ${EVENT_TYPE_COLOR[event.eventType]}`,
+                      }}
                     >
-                      {event.eventType === "IN" ? "KIRDI" : "CHIQDI"}
-                    </Tag>
-                    <Text strong style={{ fontSize: 12 }}>
-                      {dayjs(event.timestamp).format("HH:mm")}
-                    </Text>
-                    <Text style={{ fontSize: 11, flex: 1 }} ellipsis>
-                      {event.student?.name || "?"}
-                    </Text>
-                    <Text type="secondary" style={{ fontSize: 10 }}>
-                      {event.student?.class?.name || ""}
-                    </Text>
-                  </div>
-                ))}
+                      <Tag
+                        icon={eventTag.icon}
+                        color={eventTag.color}
+                        style={{ margin: 0, fontSize: 10, padding: "0 4px" }}
+                      >
+                        {eventTag.text}
+                      </Tag>
+                      <Text strong style={{ fontSize: 12 }}>
+                        {dayjs(event.timestamp).format("HH:mm")}
+                      </Text>
+                      <Text style={{ fontSize: 11, flex: 1 }} ellipsis>
+                        {event.student?.name || "?"}
+                      </Text>
+                      <Text type="secondary" style={{ fontSize: 10 }}>
+                        {event.student?.class?.name || ""}
+                      </Text>
+                    </div>
+                  );
+                })}
               </div>
             ) : (
               <div
@@ -680,7 +681,7 @@ const Dashboard: React.FC = () => {
                     <Line
                       type="monotone"
                       dataKey="present"
-                      stroke="#52c41a"
+                      stroke={STATUS_COLORS.PRESENT}
                       strokeWidth={2}
                       dot={{ r: 2 }}
                       activeDot={{ r: 4 }}
@@ -689,7 +690,7 @@ const Dashboard: React.FC = () => {
                     <Line
                       type="monotone"
                       dataKey="late"
-                      stroke="#fa8c16"
+                      stroke={STATUS_COLORS.LATE}
                       strokeWidth={2}
                       dot={{ r: 2 }}
                       activeDot={{ r: 4 }}
@@ -698,7 +699,7 @@ const Dashboard: React.FC = () => {
                     <Line
                       type="monotone"
                       dataKey="absent"
-                      stroke="#ff4d4f"
+                      stroke={STATUS_COLORS.ABSENT}
                       strokeWidth={2}
                       dot={{ r: 2 }}
                       activeDot={{ r: 4 }}

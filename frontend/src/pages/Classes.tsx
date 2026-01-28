@@ -7,6 +7,7 @@ import { classesService } from '../services/classes';
 import { PageHeader, Divider } from '../components';
 import { StatItem } from '../components/StatItem';
 import type { Class } from '../types';
+import { ATTENDANCE_STATUS_TAG, STATUS_COLORS } from '../entities/attendance';
 
 const { Text } = Typography;
 
@@ -123,16 +124,16 @@ const Classes: React.FC = () => {
                         />
                         <Space size={4}>
                             <Tooltip title="Kelgan">
-                                <Tag color="success" style={{ margin: 0 }}><CheckCircleOutlined /> {present}</Tag>
+                                <Tag color={ATTENDANCE_STATUS_TAG.PRESENT.color} style={{ margin: 0 }}><CheckCircleOutlined /> {present}</Tag>
                             </Tooltip>
                             {late > 0 && (
                                 <Tooltip title="Kech qoldi">
-                                    <Tag color="warning" style={{ margin: 0 }}><ClockCircleOutlined /> {late}</Tag>
+                                    <Tag color={ATTENDANCE_STATUS_TAG.LATE.color} style={{ margin: 0 }}><ClockCircleOutlined /> {late}</Tag>
                                 </Tooltip>
                             )}
                             {absent > 0 && (
                                 <Tooltip title="Kelmadi">
-                                    <Tag color="error" style={{ margin: 0 }}><CloseCircleOutlined /> {absent}</Tag>
+                                    <Tag color={ATTENDANCE_STATUS_TAG.ABSENT.color} style={{ margin: 0 }}><CloseCircleOutlined /> {absent}</Tag>
                                 </Tooltip>
                             )}
                         </Space>
@@ -165,21 +166,21 @@ const Classes: React.FC = () => {
                     icon={<CheckCircleOutlined />} 
                     value={stats.todayPresent} 
                     label="kelgan" 
-                    color="#52c41a"
+                    color={STATUS_COLORS.PRESENT}
                     tooltip="Bugun kelganlar"
                 />
                 <StatItem 
                     icon={<ClockCircleOutlined />} 
                     value={stats.todayLate} 
                     label="kech qoldi" 
-                    color="#fa8c16"
+                    color={STATUS_COLORS.LATE}
                     tooltip="Kech qoldi (scan bilan)"
                 />
                 <StatItem 
                     icon={<CloseCircleOutlined />} 
                     value={stats.todayAbsent} 
                     label="kelmadi" 
-                    color="#ff4d4f"
+                    color={STATUS_COLORS.ABSENT}
                     tooltip="Kelmadi (cutoff o'tgan)"
                 />
                 <Divider />

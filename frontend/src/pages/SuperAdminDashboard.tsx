@@ -42,7 +42,11 @@ import type { PeriodType, AttendanceScope } from "../types";
 import { useAdminSSE } from "../hooks/useAdminSSE";
 import { PageHeader } from "../components/PageHeader";
 import { StatItem, StatGroup } from "../components/StatItem";
-import { StatusBar } from "../components";
+import {
+  EFFECTIVE_STATUS_META,
+  STATUS_COLORS,
+  StatusBar,
+} from "../entities/attendance";
 import dayjs from "dayjs";
 import debounce from "lodash/debounce";
 
@@ -255,9 +259,10 @@ const SuperAdminDashboard: React.FC = () => {
 
   // Holat aniqlash
   const getStatus = (percent: number) => {
-    if (percent >= 90) return { color: "#52c41a", text: "Yaxshi", icon: "" };
+    if (percent >= 90)
+      return { color: STATUS_COLORS.PRESENT, text: "Yaxshi", icon: "" };
     if (percent >= 75) return { color: "#faad14", text: "Normal", icon: "" };
-    return { color: "#ff4d4f", text: "Muammo", icon: "" };
+    return { color: STATUS_COLORS.ABSENT, text: "Muammo", icon: "" };
   };
 
   // Jadval ustunlari
@@ -374,25 +379,33 @@ const SuperAdminDashboard: React.FC = () => {
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
                   <Text type="secondary">Kelganlar (jami):</Text>
-                  <Text strong style={{ color: "#52c41a" }}>
+                  <Text strong style={{ color: STATUS_COLORS.PRESENT }}>
                     {record.presentToday + record.lateToday} ({record.attendancePercent}%)
                   </Text>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
                   <Text type="secondary">Kech qoldi:</Text>
-                  <Text strong style={{ color: "#fa8c16" }}>{record.lateToday}</Text>
+                  <Text strong style={{ color: STATUS_COLORS.LATE }}>
+                    {record.lateToday}
+                  </Text>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
                   <Text type="secondary">Kechikmoqda:</Text>
-                  <Text strong style={{ color: "#fadb14" }}>{record.latePendingCount || 0}</Text>
+                  <Text strong style={{ color: EFFECTIVE_STATUS_META.PENDING_LATE.color }}>
+                    {record.latePendingCount || 0}
+                  </Text>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
                   <Text type="secondary">Kelmadi:</Text>
-                  <Text strong style={{ color: "#ff4d4f" }}>{record.absentToday}</Text>
+                  <Text strong style={{ color: STATUS_COLORS.ABSENT }}>
+                    {record.absentToday}
+                  </Text>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
                   <Text type="secondary">Hali kelmagan:</Text>
-                  <Text strong style={{ color: "#bfbfbf" }}>{record.pendingEarlyCount || 0}</Text>
+                  <Text strong style={{ color: EFFECTIVE_STATUS_META.PENDING_EARLY.color }}>
+                    {record.pendingEarlyCount || 0}
+                  </Text>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
                   <Text type="secondary">Hozir maktabda:</Text>
@@ -422,7 +435,9 @@ const SuperAdminDashboard: React.FC = () => {
       title: "",
       key: "action",
       width: 40,
-      render: () => <RightOutlined style={{ color: "#bfbfbf" }} />,
+      render: () => (
+        <RightOutlined style={{ color: EFFECTIVE_STATUS_META.PENDING_EARLY.color }} />
+      ),
     },
   ];
 
@@ -460,28 +475,28 @@ const SuperAdminDashboard: React.FC = () => {
             icon={<CheckCircleOutlined />}
             label="kelgan %"
             value={`${totals.attendancePercent}%`}
-            color="#52c41a"
+            color={STATUS_COLORS.PRESENT}
             tooltip="Kelganlar foizi"
           />
           <StatItem
             icon={<CheckCircleOutlined />}
             label="kelgan"
             value={totals.presentToday}
-            color="#52c41a"
+            color={STATUS_COLORS.PRESENT}
             tooltip="Kelganlar"
           />
           <StatItem
             icon={<ClockCircleOutlined />}
             label="kech qoldi"
             value={totals.lateToday}
-            color="#fa8c16"
+            color={STATUS_COLORS.LATE}
             tooltip="Kech qoldi (scan bilan)"
           />
           <StatItem
             icon={<CloseCircleOutlined />}
             label="kelmadi"
             value={totals.absentToday}
-            color="#ff4d4f"
+            color={STATUS_COLORS.ABSENT}
             tooltip="Kelmadi"
           />
           {(totals.excusedToday || 0) > 0 && (
@@ -489,7 +504,7 @@ const SuperAdminDashboard: React.FC = () => {
               icon={<FileTextOutlined />}
               label="sababli"
               value={totals.excusedToday || 0}
-              color="#8c8c8c"
+              color={STATUS_COLORS.EXCUSED}
               tooltip="Sababli"
             />
           )}
@@ -498,7 +513,7 @@ const SuperAdminDashboard: React.FC = () => {
               icon={<ClockCircleOutlined />}
               label="kechikmoqda"
               value={totals.latePendingCount || 0}
-              color="#fadb14"
+              color={EFFECTIVE_STATUS_META.PENDING_LATE.color}
               tooltip="Dars boshlangan, cutoff o'tmagan"
             />
           )}
@@ -507,7 +522,7 @@ const SuperAdminDashboard: React.FC = () => {
               icon={<CloseCircleOutlined />}
               label="hali kelmagan"
               value={totals.pendingEarlyCount || 0}
-              color="#bfbfbf"
+              color={EFFECTIVE_STATUS_META.PENDING_EARLY.color}
               tooltip="Dars hali boshlanmagan"
             />
           )}
@@ -516,7 +531,7 @@ const SuperAdminDashboard: React.FC = () => {
               icon={<WarningOutlined />}
               label="muammo"
               value={problemSchools.length}
-              color="#ff4d4f"
+              color={STATUS_COLORS.ABSENT}
               tooltip="Muammoli maktablar"
               highlight
               onClick={() => {}} // Popover handle by own
@@ -603,7 +618,7 @@ const SuperAdminDashboard: React.FC = () => {
           {problemSchools.length > 0 && (
             <div style={{ marginLeft: "auto" }}>
               <Popover
-                title={<span style={{ color: "#ff4d4f" }}><WarningOutlined /> Muammoli maktablar ({problemSchools.length})</span>}
+                title={<span style={{ color: STATUS_COLORS.ABSENT }}><WarningOutlined /> Muammoli maktablar ({problemSchools.length})</span>}
                 content={
                   <div style={{ maxWidth: 280 }}>
                     <Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: 8 }}>
@@ -622,7 +637,7 @@ const SuperAdminDashboard: React.FC = () => {
                           background: "#fff2f0",
                           borderRadius: 4,
                           cursor: "pointer",
-                          borderLeft: "3px solid #ff4d4f"
+                          borderLeft: `3px solid ${STATUS_COLORS.ABSENT}`
                         }}
                       >
                         <Text style={{ fontSize: 12 }}>{s.name}</Text>
@@ -675,7 +690,7 @@ const SuperAdminDashboard: React.FC = () => {
                 <Line
                   type="monotone"
                   dataKey="present"
-                  stroke="#52c41a"
+                  stroke={STATUS_COLORS.PRESENT}
                   strokeWidth={2}
                   dot={{ r: 2 }}
                   activeDot={{ r: 4 }}
@@ -684,7 +699,7 @@ const SuperAdminDashboard: React.FC = () => {
                 <Line
                   type="monotone"
                   dataKey="late"
-                  stroke="#fa8c16"
+                  stroke={STATUS_COLORS.LATE}
                   strokeWidth={2}
                   dot={{ r: 2 }}
                   activeDot={{ r: 4 }}
@@ -693,7 +708,7 @@ const SuperAdminDashboard: React.FC = () => {
                 <Line
                   type="monotone"
                   dataKey="absent"
-                  stroke="#ff4d4f"
+                  stroke={STATUS_COLORS.ABSENT}
                   strokeWidth={2}
                   dot={{ r: 2 }}
                   activeDot={{ r: 4 }}
@@ -713,7 +728,7 @@ const SuperAdminDashboard: React.FC = () => {
               {isConnected && (
                 <Badge 
                   count={realtimeEvents.length} 
-                  style={{ backgroundColor: '#52c41a' }} 
+                  style={{ backgroundColor: STATUS_COLORS.PRESENT }} 
                   overflowCount={99}
                 />
               )}
@@ -740,7 +755,7 @@ const SuperAdminDashboard: React.FC = () => {
                   style={{ 
                     padding: "6px 12px",
                     cursor: "pointer",
-                    borderLeft: `3px solid ${event.eventType === 'IN' ? '#52c41a' : '#ff4d4f'}`,
+                    borderLeft: `3px solid ${event.eventType === 'IN' ? STATUS_COLORS.PRESENT : STATUS_COLORS.ABSENT}`,
                     background: event.eventType === 'IN' ? '#f6ffed' : '#fff2f0',
                   }}
                   onClick={() => navigate(`/schools/${event.schoolId}/dashboard`)}
@@ -749,9 +764,9 @@ const SuperAdminDashboard: React.FC = () => {
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <Text strong style={{ fontSize: 12 }}>
                         {event.eventType === 'IN' ? (
-                          <LoginOutlined style={{ color: '#52c41a', marginRight: 4 }} />
+                          <LoginOutlined style={{ color: STATUS_COLORS.PRESENT, marginRight: 4 }} />
                         ) : (
-                          <LogoutOutlined style={{ color: '#ff4d4f', marginRight: 4 }} />
+                          <LogoutOutlined style={{ color: STATUS_COLORS.ABSENT, marginRight: 4 }} />
                         )}
                         {event.studentName}
                       </Text>
@@ -784,7 +799,7 @@ const SuperAdminDashboard: React.FC = () => {
                 </>
               ) : (
                 <>
-                  <WifiOutlined style={{ fontSize: 24, color: "#ff4d4f" }} />
+                  <WifiOutlined style={{ fontSize: 24, color: STATUS_COLORS.ABSENT }} />
                   <Text type="secondary" style={{ fontSize: 12 }}>Ulanish yo'q</Text>
                 </>
               )}

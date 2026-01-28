@@ -35,12 +35,18 @@ import { useSchool } from "../hooks/useSchool";
 import { studentsService } from "../services/students";
 import type { StudentsResponse } from "../types";
 import { classesService } from "../services/classes";
-import type { PeriodType } from "../types";
+import type { PeriodType, EffectiveAttendanceStatus } from "../types";
 import { PageHeader, Divider } from "../components";
 import { StatItem } from "../components/StatItem";
 import { getAssetUrl, DEFAULT_PAGE_SIZE } from "../config";
 import type { Student, Class } from "../types";
 import dayjs from "dayjs";
+import {
+  getEffectiveStatusTagConfig,
+  getStudentListStatsFallback,
+  EFFECTIVE_STATUS_META,
+  STATUS_COLORS,
+} from "../entities/attendance";
 
 const { Text } = Typography;
 const { RangePicker } = DatePicker;
@@ -159,35 +165,7 @@ const Students: React.FC = () => {
     if (responseData?.stats) {
       return responseData.stats;
     }
-    // Fallback
-    const present = students.filter(
-      (s) => (s.todayEffectiveStatus || s.todayStatus) === "PRESENT",
-    ).length;
-    const late = students.filter(
-      (s) => (s.todayEffectiveStatus || s.todayStatus) === "LATE",
-    ).length;
-    const absent = students.filter(
-      (s) => (s.todayEffectiveStatus || s.todayStatus) === "ABSENT",
-    ).length;
-    const excused = students.filter(
-      (s) => (s.todayEffectiveStatus || s.todayStatus) === "EXCUSED",
-    ).length;
-    const pendingEarly = students.filter(
-      (s) => (s.todayEffectiveStatus || s.todayStatus) === "PENDING_EARLY",
-    ).length;
-    const pendingLate = students.filter(
-      (s) => (s.todayEffectiveStatus || s.todayStatus) === "PENDING_LATE",
-    ).length;
-    return {
-      total,
-      present,
-      late,
-      absent,
-      excused,
-      pending: pendingEarly + pendingLate,
-      pendingEarly,
-      pendingLate,
-    };
+    return getStudentListStatsFallback(students, total);
   }, [responseData, students, total]);
 
   const isSingleDay = responseData?.isSingleDay ?? true;
@@ -334,42 +312,9 @@ const Students: React.FC = () => {
               if (!effectiveStatus) {
                 return <Tag color="default">-</Tag>;
               }
-              const statusConfig: Record<
-                string,
-                { color: string; text: string; icon: React.ReactNode }
-              > = {
-                PRESENT: {
-                  color: "green",
-                  text: "Kelgan",
-                  icon: <CheckCircleOutlined />,
-                },
-                LATE: {
-                  color: "orange",
-                  text: "Kech qoldi",
-                  icon: <ClockCircleOutlined />,
-                },
-                ABSENT: {
-                  color: "red",
-                  text: "Kelmadi",
-                  icon: <CloseCircleOutlined />,
-                },
-                EXCUSED: { color: "gray", text: "Sababli", icon: null },
-                PENDING_EARLY: {
-                  color: "default",
-                  text: "Hali kelmagan",
-                  icon: null,
-                },
-                PENDING_LATE: {
-                  color: "gold",
-                  text: "Kechikmoqda",
-                  icon: null,
-                },
-              };
-              const config = statusConfig[effectiveStatus] || {
-                color: "default",
-                text: effectiveStatus,
-                icon: null,
-              };
+              const config = getEffectiveStatusTagConfig(
+                effectiveStatus as EffectiveAttendanceStatus,
+              );
               const time = record.todayFirstScan
                 ? new Date(record.todayFirstScan).toLocaleTimeString("uz-UZ", {
                     hour: "2-digit",
@@ -415,7 +360,7 @@ const Students: React.FC = () => {
           },
           {
             title: (
-              <span style={{ color: "#52c41a" }}>
+              <span style={{ color: STATUS_COLORS.PRESENT }}>
                 <CheckCircleOutlined /> Kelgan
               </span>
             ),
@@ -423,14 +368,14 @@ const Students: React.FC = () => {
             width: 80,
             align: "center" as const,
             render: (_: any, record: any) => (
-              <Text style={{ color: "#52c41a" }}>
+              <Text style={{ color: STATUS_COLORS.PRESENT }}>
                 {record.periodStats?.presentCount || 0}
               </Text>
             ),
           },
           {
             title: (
-              <span style={{ color: "#fa8c16" }}>
+              <span style={{ color: STATUS_COLORS.LATE }}>
                 <ClockCircleOutlined /> Kech qoldi
               </span>
             ),
@@ -438,14 +383,14 @@ const Students: React.FC = () => {
             width: 80,
             align: "center" as const,
             render: (_: any, record: any) => (
-              <Text style={{ color: "#fa8c16" }}>
+              <Text style={{ color: STATUS_COLORS.LATE }}>
                 {record.periodStats?.lateCount || 0}
               </Text>
             ),
           },
           {
             title: (
-              <span style={{ color: "#ff4d4f" }}>
+              <span style={{ color: STATUS_COLORS.ABSENT }}>
                 <CloseCircleOutlined /> Yo'q
               </span>
             ),
@@ -453,7 +398,7 @@ const Students: React.FC = () => {
             width: 80,
             align: "center" as const,
             render: (_: any, record: any) => (
-              <Text style={{ color: "#ff4d4f" }}>
+              <Text style={{ color: STATUS_COLORS.ABSENT }}>
                 {record.periodStats?.absentCount || 0}
               </Text>
             ),
@@ -575,7 +520,7 @@ const Students: React.FC = () => {
           icon={<CheckCircleOutlined />}
           value={stats.present}
           label={isSingleDay ? "kelgan" : "kelgan (jami)"}
-          color="#52c41a"
+          color={STATUS_COLORS.PRESENT}
           tooltip={
             isSingleDay ? "Kelganlar" : "Vaqt oralig'ida kelgan kunlar soni"
           }
@@ -584,7 +529,7 @@ const Students: React.FC = () => {
           icon={<ClockCircleOutlined />}
           value={stats.late}
           label={isSingleDay ? "kech qoldi" : "kech (jami)"}
-          color="#fa8c16"
+          color={STATUS_COLORS.LATE}
           tooltip={
             isSingleDay
               ? "Kech qolganlar (scan bilan)"
@@ -595,7 +540,7 @@ const Students: React.FC = () => {
           icon={<CloseCircleOutlined />}
           value={stats.absent}
           label={isSingleDay ? "kelmadi" : "yo'q (jami)"}
-          color="#ff4d4f"
+          color={STATUS_COLORS.ABSENT}
           tooltip={
             isSingleDay ? "Kelmadi (cutoff o'tgan)" : "Vaqt oralig'ida kelmagan kunlar soni"
           }
@@ -605,7 +550,7 @@ const Students: React.FC = () => {
             icon={<ClockCircleOutlined />}
             value={stats.pendingLate || 0}
             label="kechikmoqda"
-            color="#fadb14"
+            color={EFFECTIVE_STATUS_META.PENDING_LATE.color}
             tooltip="Dars boshlangan, cutoff o'tmagan"
           />
         )}
@@ -614,7 +559,7 @@ const Students: React.FC = () => {
             icon={<CloseCircleOutlined />}
             value={stats.pendingEarly || 0}
             label="hali kelmagan"
-            color="#bfbfbf"
+            color={EFFECTIVE_STATUS_META.PENDING_EARLY.color}
             tooltip="Dars hali boshlanmagan"
           />
         )}

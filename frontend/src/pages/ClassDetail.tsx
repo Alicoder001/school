@@ -53,34 +53,25 @@ import { attendanceService } from "../services/attendance";
 import { PageHeader, Divider } from "../components";
 import { StatItem } from "../components/StatItem";
 import { getAssetUrl } from "../config";
-import type { Class, Student, AttendanceStatus } from "../types";
+import type { Class, Student, EffectiveAttendanceStatus } from "../types";
 import dayjs from "dayjs";
+import {
+  EFFECTIVE_STATUS_META,
+  EVENT_TYPE_BG,
+  EVENT_TYPE_COLOR,
+  EVENT_TYPE_TAG,
+  getEffectiveStatusCounts,
+  STATUS_COLORS,
+  EFFECTIVE_STATUS_OPTIONS,
+} from "../entities/attendance";
 
 const { Text, Title } = Typography;
 const AUTO_REFRESH_MS = 60000;
 
-// Status konfiguratsiyasi
-type EffectiveStatus = AttendanceStatus | "PENDING_EARLY" | "PENDING_LATE";
-
 const STATUS_CONFIG: Record<
-  EffectiveStatus,
+  EffectiveAttendanceStatus,
   { color: string; bg: string; text: string }
-> = {
-  PRESENT: { color: "#52c41a", bg: "#f6ffed", text: "Kelgan" },
-  LATE: { color: "#fa8c16", bg: "#fff7e6", text: "Kech qoldi" },
-  ABSENT: { color: "#ff4d4f", bg: "#fff2f0", text: "Kelmadi" },
-  EXCUSED: { color: "#8c8c8c", bg: "#f5f5f5", text: "Sababli" },
-  PENDING_EARLY: {
-    color: "#bfbfbf",
-    bg: "#fafafa",
-    text: "Hali kelmagan",
-  },
-  PENDING_LATE: {
-    color: "#fadb14",
-    bg: "#fffbe6",
-    text: "Kechikmoqda",
-  },
-};
+> = EFFECTIVE_STATUS_META;
 
 // NOTE: getEffectiveStatus removed - now using todayEffectiveStatus from backend API
 
@@ -246,48 +237,27 @@ const ClassDetail: React.FC = () => {
   };
 
   // O'quvchilarning effective statuslarini olish (backenddan keladi)
-  const studentsWithEffectiveStatus = useMemo(() => {
+  const studentsWithEffectiveStatus = useMemo<
+    Array<Student & { effectiveStatus: EffectiveAttendanceStatus }>
+  >(() => {
     return students.map((student) => ({
       ...student,
       effectiveStatus:
-        (student.todayEffectiveStatus as EffectiveStatus) || "PENDING_EARLY",
+        (student.todayEffectiveStatus as EffectiveAttendanceStatus) ||
+        "PENDING_EARLY",
     }));
   }, [students]);
 
   // Statistikalar
   const stats = useMemo(() => {
-    const present = studentsWithEffectiveStatus.filter(
-      (s) => s.effectiveStatus === "PRESENT",
-    ).length;
-    const late = studentsWithEffectiveStatus.filter(
-      (s) => s.effectiveStatus === "LATE",
-    ).length;
-    const absent = studentsWithEffectiveStatus.filter(
-      (s) => s.effectiveStatus === "ABSENT",
-    ).length;
-    const excused = studentsWithEffectiveStatus.filter(
-      (s) => s.effectiveStatus === "EXCUSED",
-    ).length;
-    const pendingEarly = studentsWithEffectiveStatus.filter(
-      (s) => s.effectiveStatus === "PENDING_EARLY",
-    ).length;
-    const pendingLate = studentsWithEffectiveStatus.filter(
-      (s) => s.effectiveStatus === "PENDING_LATE",
-    ).length;
-
+    const counts = getEffectiveStatusCounts(studentsWithEffectiveStatus);
     const total = students.length;
     const attendancePercent =
-      total > 0 ? Math.round(((present + late) / total) * 100) : 0;
+      total > 0 ? Math.round(((counts.present + counts.late) / total) * 100) : 0;
 
     return {
       total,
-      present,
-      late,
-      absent,
-      excused,
-      pending: pendingEarly + pendingLate,
-      pendingEarly,
-      pendingLate,
+      ...counts,
       attendancePercent,
     };
   }, [studentsWithEffectiveStatus, students.length]);
@@ -384,21 +354,21 @@ const ClassDetail: React.FC = () => {
           icon={<CheckCircleOutlined />}
           value={stats.present}
           label="kelgan"
-          color="#52c41a"
+          color={STATUS_COLORS.PRESENT}
           tooltip="Bugun kelganlar"
         />
         <StatItem
           icon={<ClockCircleOutlined />}
           value={stats.late}
           label="kech"
-          color="#fa8c16"
+          color={STATUS_COLORS.LATE}
           tooltip="Kech qoldi (scan bilan)"
         />
         <StatItem
           icon={<CloseCircleOutlined />}
           value={stats.absent}
           label="yo'q"
-          color="#ff4d4f"
+          color={STATUS_COLORS.ABSENT}
           tooltip="Kelmadi (cutoff o'tgan)"
         />
         <Divider />
@@ -505,42 +475,45 @@ const ClassDetail: React.FC = () => {
           >
             {recentEvents.length > 0 ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                {recentEvents.map((event) => (
-                  <div
-                    key={event.id}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                      padding: "5px 8px",
-                      background:
-                        event.eventType === "IN" ? "#f6ffed" : "#e6f7ff",
-                      borderRadius: 4,
-                      borderLeft: `3px solid ${event.eventType === "IN" ? "#52c41a" : "#1890ff"}`,
-                      cursor: "pointer",
-                    }}
-                    onClick={() => navigate(`/students/${event.student.id}`)}
-                  >
-                    <Avatar
-                      src={getAssetUrl(event.student.photoUrl)}
-                      icon={<UserOutlined />}
-                      size="small"
-                    />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <Text strong style={{ fontSize: 12 }} ellipsis>
-                        {event.student.name}
-                      </Text>
-                    </div>
-                    <Tag
-                      color={
-                        event.eventType === "IN" ? "success" : "processing"
-                      }
-                      style={{ margin: 0, fontSize: 10 }}
+                {recentEvents.map((event) => {
+                  const isIn = event.eventType === "IN";
+                  const eventType = isIn ? "IN" : "OUT";
+                  const eventTag = EVENT_TYPE_TAG[eventType];
+
+                  return (
+                    <div
+                      key={event.id}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        padding: "5px 8px",
+                        background: EVENT_TYPE_BG[eventType],
+                        borderRadius: 4,
+                        borderLeft: `3px solid ${EVENT_TYPE_COLOR[eventType]}`,
+                        cursor: "pointer",
+                      }}
+                      onClick={() => navigate(`/students/${event.student.id}`)}
                     >
-                      {dayjs(event.timestamp).format("HH:mm")}
-                    </Tag>
-                  </div>
-                ))}
+                      <Avatar
+                        src={getAssetUrl(event.student.photoUrl)}
+                        icon={<UserOutlined />}
+                        size="small"
+                      />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <Text strong style={{ fontSize: 12 }} ellipsis>
+                          {event.student.name}
+                        </Text>
+                      </div>
+                      <Tag
+                        color={eventTag.color}
+                        style={{ margin: 0, fontSize: 10 }}
+                      >
+                        {dayjs(event.timestamp).format("HH:mm")}
+                      </Tag>
+                    </div>
+                  );
+                })}
               </div>
             ) : (
               <div
@@ -576,20 +549,7 @@ const ClassDetail: React.FC = () => {
                 style={{ width: 120 }}
                 allowClear
                 size="small"
-                options={[
-                  { value: "PRESENT", label: STATUS_CONFIG.PRESENT.text },
-                  { value: "LATE", label: STATUS_CONFIG.LATE.text },
-                  { value: "ABSENT", label: STATUS_CONFIG.ABSENT.text },
-                  {
-                    value: "PENDING_LATE",
-                    label: STATUS_CONFIG.PENDING_LATE.text,
-                  },
-                  {
-                    value: "PENDING_EARLY",
-                    label: STATUS_CONFIG.PENDING_EARLY.text,
-                  },
-                  { value: "EXCUSED", label: STATUS_CONFIG.EXCUSED.text },
-                ].filter((opt) => {
+                options={EFFECTIVE_STATUS_OPTIONS.filter((opt) => {
                   // Faqat mavjud statuslarni ko'rsatish
                   if (opt.value === "ABSENT") return stats.absent > 0;
                   if (opt.value === "PENDING_LATE")
@@ -683,7 +643,7 @@ const ClassDetail: React.FC = () => {
                   <Line
                     type="monotone"
                     dataKey="present"
-                    stroke="#52c41a"
+                    stroke={STATUS_COLORS.PRESENT}
                     strokeWidth={2}
                     dot={{ r: 2 }}
                     activeDot={{ r: 4 }}
@@ -692,7 +652,7 @@ const ClassDetail: React.FC = () => {
                   <Line
                     type="monotone"
                     dataKey="late"
-                    stroke="#fa8c16"
+                    stroke={STATUS_COLORS.LATE}
                     strokeWidth={2}
                     dot={{ r: 2 }}
                     activeDot={{ r: 4 }}
@@ -701,7 +661,7 @@ const ClassDetail: React.FC = () => {
                   <Line
                     type="monotone"
                     dataKey="absent"
-                    stroke="#ff4d4f"
+                    stroke={STATUS_COLORS.ABSENT}
                     strokeWidth={2}
                     dot={{ r: 2 }}
                     activeDot={{ r: 4 }}

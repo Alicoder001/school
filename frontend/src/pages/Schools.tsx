@@ -19,7 +19,8 @@ import {
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { schoolsService } from '../services/schools';
-import { PageHeader, Divider, StatusBar } from '../components';
+import { PageHeader, Divider } from '../components';
+import { StatusBar } from '../entities/attendance';
 import { StatItem, StatGroup } from '../components/StatItem';
 import type { School, AttendanceScope } from '../types';
 

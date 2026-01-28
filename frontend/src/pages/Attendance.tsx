@@ -36,6 +36,14 @@ import { useAuth } from "../hooks/useAuth";
 import { PageHeader } from "../components/PageHeader";
 import { StatItem, StatGroup } from "../components/StatItem";
 import dayjs from "dayjs";
+import {
+  ATTENDANCE_STATUS_TAG,
+  EFFECTIVE_STATUS_COLORS,
+  EFFECTIVE_STATUS_LABELS,
+  getAttendanceStatsFromRecords,
+  STATUS_COLORS,
+  EFFECTIVE_STATUS_OPTIONS,
+} from "../entities/attendance";
 
 const { RangePicker } = DatePicker;
 const AUTO_REFRESH_MS = 60000;
@@ -272,15 +280,7 @@ const Attendance: React.FC = () => {
     );
   }, [records, searchText]);
 
-  const stats = {
-    total: filteredRecords.length,
-    present: filteredRecords.filter(
-      (r) => r.status === "PRESENT" || r.status === "LATE",
-    ).length,
-    late: filteredRecords.filter((r) => r.status === "LATE").length,
-    absent: filteredRecords.filter((r) => r.status === "ABSENT").length,
-    excused: filteredRecords.filter((r) => r.status === "EXCUSED").length,
-  };
+  const stats = getAttendanceStatsFromRecords(filteredRecords);
 
   const columns = [
     {
@@ -309,55 +309,47 @@ const Attendance: React.FC = () => {
       key: "status",
       render: (status: EffectiveAttendanceStatus, record: DailyAttendance) => {
         if (!canEdit) {
+          const color = EFFECTIVE_STATUS_COLORS[status];
+          const text = EFFECTIVE_STATUS_LABELS[status];
           return (
-            <Tag
-              color={
-                status === "PRESENT"
-                  ? "green"
-                  : status === "LATE"
-                    ? "orange"
-                    : status === "ABSENT"
-                      ? "red"
-                      : status === "EXCUSED"
-                        ? "gray"
-                        : status === "PENDING_LATE"
-                          ? "gold"
-                          : "default"
-              }
-            >
-              {status === "PRESENT"
-                ? "Kelgan"
-                : status === "LATE"
-                  ? "Kech qoldi"
-                  : status === "ABSENT"
-                    ? "Kelmadi"
-                    : status === "EXCUSED"
-                      ? "Sababli"
-                      : status === "PENDING_LATE"
-                        ? "Kechikmoqda"
-                        : "Hali kelmagan"}
-            </Tag>
+            <Tag color={color || "default"}>{text || "-"}</Tag>
           );
         }
         const options = [
           {
             value: "PRESENT",
-            label: <Tag color="green">Kelgan</Tag>,
+            label: (
+              <Tag color={ATTENDANCE_STATUS_TAG.PRESENT.color}>
+                {ATTENDANCE_STATUS_TAG.PRESENT.text}
+              </Tag>
+            ),
             disabled: isTeacher,
           },
           {
             value: "LATE",
-            label: <Tag color="orange">Kech qoldi</Tag>,
+            label: (
+              <Tag color={ATTENDANCE_STATUS_TAG.LATE.color}>
+                {ATTENDANCE_STATUS_TAG.LATE.text}
+              </Tag>
+            ),
             disabled: isTeacher,
           },
           {
             value: "ABSENT",
-            label: <Tag color="red">Kelmadi</Tag>,
+            label: (
+              <Tag color={ATTENDANCE_STATUS_TAG.ABSENT.color}>
+                {ATTENDANCE_STATUS_TAG.ABSENT.text}
+              </Tag>
+            ),
             disabled: isTeacher,
           },
           {
             value: "EXCUSED",
-            label: <Tag color="gray">Sababli</Tag>,
+            label: (
+              <Tag color={ATTENDANCE_STATUS_TAG.EXCUSED.color}>
+                {ATTENDANCE_STATUS_TAG.EXCUSED.text}
+              </Tag>
+            ),
             disabled: false,
           },
         ];
@@ -424,26 +416,26 @@ const Attendance: React.FC = () => {
             icon={<CheckCircleOutlined />}
             label="Kelgan"
             value={stats.present}
-            color="#52c41a"
+            color={STATUS_COLORS.PRESENT}
           />
           <StatItem
             icon={<ClockCircleOutlined />}
             label="Kech qoldi"
             value={stats.late}
-            color="#fa8c16"
+            color={STATUS_COLORS.LATE}
           />
           <StatItem
             icon={<CloseCircleOutlined />}
             label="Yo'q"
             value={stats.absent}
-            color="#ff4d4f"
+            color={STATUS_COLORS.ABSENT}
           />
           {stats.excused > 0 && (
              <StatItem
              icon={<CalendarOutlined />}
              label="Sababli"
              value={stats.excused}
-             color="#8c8c8c"
+             color={STATUS_COLORS.EXCUSED}
            />
           )}
         </StatGroup>
@@ -526,14 +518,7 @@ const Attendance: React.FC = () => {
           onChange={setStatusFilter}
           style={{ width: 120 }}
           allowClear
-          options={[
-            { value: "PRESENT", label: "Kelgan" },
-            { value: "LATE", label: "Kech qoldi" },
-            { value: "ABSENT", label: "Kelmadi" },
-            { value: "PENDING_LATE", label: "Kechikmoqda" },
-            { value: "PENDING_EARLY", label: "Hali kelmagan" },
-            { value: "EXCUSED", label: "Sababli" },
-          ]}
+          options={EFFECTIVE_STATUS_OPTIONS}
         />
         
         <Button icon={<DownloadOutlined />} onClick={handleExport} style={{ borderRadius: 8 }}>
