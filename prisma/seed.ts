@@ -164,8 +164,8 @@ async function main() {
         name: "1A",
         gradeLevel: 1,
         schoolId: baseSchool.id,
-        startTime: "08:00",
-        endTime: "12:00",
+        startTime: "18:00",
+        endTime: "23:00",
       },
     });
 
@@ -174,8 +174,8 @@ async function main() {
         name: "8C",
         gradeLevel: 8,
         schoolId: baseSchool.id,
-        startTime: "12:00",
-        endTime: "15:00",
+        startTime: "17:00",
+        endTime: "22:00",
       },
     });
 
@@ -217,7 +217,7 @@ async function main() {
         name: "Abduvahob Abdurazzoqov",
         deviceStudentId: "6",
         schoolId: baseSchool.id,
-        classId: baseClass2.id,
+        classId: baseClass1.id,
       },
       {
         name: "Saidorifxo'ja Yo'ldoshxo'jayev",
@@ -229,7 +229,7 @@ async function main() {
         name: "Ibroxim Sadriddinov",
         deviceStudentId: "9",
         schoolId: baseSchool.id,
-        classId: baseClass2.id,
+        classId: baseClass1.id,
       },
     ];
 
