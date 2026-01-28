@@ -190,26 +190,44 @@ async function main() {
 
     const baseStudents = [
       {
-        name: "Alice",
+        name: "Jaxongir Mirzaakhmedov",
         deviceStudentId: "1",
         schoolId: baseSchool.id,
         classId: baseClass1.id,
       },
       {
-        name: "Bob",
+        name: "Mukhammad Mirzaakhmedov",
         deviceStudentId: "2",
         schoolId: baseSchool.id,
         classId: baseClass1.id,
       },
       {
-        name: "Charlie",
-        deviceStudentId: "3",
+        name: "Axmadxon Dexqonboyev",
+        deviceStudentId: "484655",
         schoolId: baseSchool.id,
         classId: baseClass2.id,
       },
       {
         name: "G'olibjon",
         deviceStudentId: "2302209",
+        schoolId: baseSchool.id,
+        classId: baseClass2.id,
+      },
+      {
+        name: "Abduvahob Abdurazzoqov",
+        deviceStudentId: "5",
+        schoolId: baseSchool.id,
+        classId: baseClass2.id,
+      },
+      {
+        name: "Saidorifxo'ja Yo'ldoshxo'jayev",
+        deviceStudentId: "456585",
+        schoolId: baseSchool.id,
+        classId: baseClass2.id,
+      },
+      {
+        name: "Ibroxim Sadriddinov",
+        deviceStudentId: "9",
         schoolId: baseSchool.id,
         classId: baseClass2.id,
       },
