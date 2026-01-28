@@ -37,8 +37,8 @@ import {
   Cell,
   ResponsiveContainer,
   Legend,
-  BarChart,
-  Bar,
+  LineChart,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -675,15 +675,39 @@ const ClassDetail: React.FC = () => {
           >
             {weeklyStats.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={weeklyStats}>
+                <LineChart data={weeklyStats}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="dayName" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} />
                   <RechartsTooltip />
-                  <Bar dataKey="present" fill="#52c41a" name="Kelgan" />
-                  <Bar dataKey="late" fill="#fa8c16" name="Kech qoldi" />
-                  <Bar dataKey="absent" fill="#ff4d4f" name="Kelmadi" />
-                </BarChart>
+                  <Line
+                    type="monotone"
+                    dataKey="present"
+                    stroke="#52c41a"
+                    strokeWidth={2}
+                    dot={{ r: 2 }}
+                    activeDot={{ r: 4 }}
+                    name="Kelgan"
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="late"
+                    stroke="#fa8c16"
+                    strokeWidth={2}
+                    dot={{ r: 2 }}
+                    activeDot={{ r: 4 }}
+                    name="Kech qoldi"
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="absent"
+                    stroke="#ff4d4f"
+                    strokeWidth={2}
+                    dot={{ r: 2 }}
+                    activeDot={{ r: 4 }}
+                    name="Kelmadi"
+                  />
+                </LineChart>
               </ResponsiveContainer>
             ) : (
               <Empty
