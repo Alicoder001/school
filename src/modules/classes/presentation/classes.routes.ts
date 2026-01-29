@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import prisma from "../../../prisma";
-import { addDaysUtc, getDateOnlyInZone } from "../../../utils/date";
+import { addDaysUtc, getDateKeyInZone, dateKeyToUtcDate } from "../../../utils/date";
 import {
   requireRoles,
   requireSchoolScope,
@@ -42,8 +42,11 @@ export default async function (fastify: FastifyInstance) {
         ]);
 
         const tz = school?.timezone || 'Asia/Tashkent';
-        const today = getDateOnlyInZone(new Date(), tz);
+        const now = new Date();
+        const todayKey = getDateKeyInZone(now, tz);
+        const today = dateKeyToUtcDate(todayKey);
         const tomorrow = addDaysUtc(today, 1);
+        
         const classesWithAttendance = await Promise.all(
           classes.map(async (cls) => {
             const [presentCount, lateCount, absentCount] = await Promise.all([
@@ -59,7 +62,7 @@ export default async function (fastify: FastifyInstance) {
             ]);
             return {
               ...cls,
-              todayPresent: presentCount + lateCount,
+              todayPresent: presentCount,
               todayLate: lateCount,
               todayAbsent: absentCount,
               totalStudents: cls._count.students,

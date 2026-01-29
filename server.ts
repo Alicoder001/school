@@ -24,17 +24,21 @@ import searchRoutes from "./src/routes/search";
 import { registerJobs } from "./src/cron/jobs";
 import { startSnapshotScheduler } from "./src/realtime/snapshotScheduler";
 
-const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
+const PORT = process.env.PORT ? Number(process.env.PORT) : 5000;
 const JWT_SECRET = process.env.JWT_SECRET || "secret";
 
 const server = Fastify({ logger: true });
 
 server.register(require("@fastify/cors"), {
-  origin: "*",
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
+  origin: (origin, cb) => {
+    // Allow all origins in development
+    cb(null, true);
+  },
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+  allowedHeaders: ["Content-Type", "Authorization", "Accept"],
   exposedHeaders: ["Content-Disposition"],
   credentials: true,
+  preflight: true,
 });
 
 server.register(multipart, {

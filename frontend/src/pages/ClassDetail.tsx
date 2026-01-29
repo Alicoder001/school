@@ -110,11 +110,16 @@ const ClassDetail: React.FC = () => {
       const weekStart = dayjs().subtract(6, "day").startOf("day");
       const weekEnd = dayjs().endOf("day");
 
-      const attendanceData = await attendanceService.getReport(schoolId, {
-        startDate: weekStart.format("YYYY-MM-DD"),
-        endDate: weekEnd.format("YYYY-MM-DD"),
-        classId,
-      });
+      let attendanceData: any[] = [];
+      try {
+        attendanceData = await attendanceService.getReport(schoolId, {
+          startDate: weekStart.format("YYYY-MM-DD"),
+          endDate: weekEnd.format("YYYY-MM-DD"),
+          classId,
+        });
+      } catch (err) {
+        console.error("Failed to load weekly attendance report:", err);
+      }
 
       const byDate = new Map<
         string,

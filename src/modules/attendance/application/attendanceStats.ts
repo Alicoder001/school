@@ -42,20 +42,9 @@ async function getDistinctAttendanceDaysCount(params: {
   const { schoolId, dateStart, dateEnd, classIds } = params;
   if (Array.isArray(classIds) && classIds.length === 0) return 1;
 
-  if (!Array.isArray(classIds)) {
-    const res = await prisma.$queryRaw<Array<{ count: bigint }>>`
-      SELECT COUNT(DISTINCT da."date"::date)::bigint as count
-      FROM "DailyAttendance" da
-      WHERE da."schoolId" = ${schoolId}
-        AND da."date" >= ${dateStart}
-        AND da."date" < ${dateEnd}
-    `;
-    return Number(res?.[0]?.count || 0) || 1;
-  }
-
-  const classFilterSql = Prisma.sql`AND s."classId" IN (${Prisma.join(
-    classIds,
-  )})`;
+  const classFilterSql = Array.isArray(classIds)
+    ? Prisma.sql`AND s."classId" IN (${Prisma.join(classIds)})`
+    : Prisma.empty;
 
   const res = await prisma.$queryRaw<Array<{ count: bigint }>>`
       SELECT COUNT(DISTINCT da."date"::date)::bigint as count
@@ -64,6 +53,7 @@ async function getDistinctAttendanceDaysCount(params: {
       WHERE da."schoolId" = ${schoolId}
         AND da."date" >= ${dateStart}
         AND da."date" < ${dateEnd}
+        AND s."isActive" = true
         ${classFilterSql}
     `;
 
@@ -86,7 +76,9 @@ export async function getStatusCountsByRange(params: {
     date: { gte: dateRange.startDate, lt: rangeEnd },
   };
   if (Array.isArray(classIds)) {
-    where.student = { classId: { in: classIds } };
+    where.student = { classId: { in: classIds }, isActive: true };
+  } else {
+    where.student = { isActive: true };
   }
 
   const [stats, daysCount] = await Promise.all([
@@ -129,7 +121,9 @@ export async function getWeeklyStatusMap(params: {
     date: { gte: startDate, lt: endDate },
   };
   if (Array.isArray(classIds)) {
-    where.student = { classId: { in: classIds } };
+    where.student = { classId: { in: classIds }, isActive: true };
+  } else {
+    where.student = { isActive: true };
   }
 
   const rows = await prisma.dailyAttendance.groupBy({
@@ -182,6 +176,7 @@ export async function getClassBreakdown(params: {
     WHERE da."schoolId" = ${schoolId} 
       AND da."date" >= ${dateRange.startDate}
       AND da."date" < ${rangeEnd}
+      AND s."isActive" = true
       ${classFilterSql}
     GROUP BY s."classId", da."status"
   `;
@@ -303,7 +298,7 @@ export async function getAttendanceCountsByClass(params: {
     where: {
       schoolId,
       date: { gte: dateStart, lt: dateEnd },
-      student: { classId: { in: classIds } },
+      student: { classId: { in: classIds }, isActive: true },
     },
     select: {
       student: { select: { classId: true } },

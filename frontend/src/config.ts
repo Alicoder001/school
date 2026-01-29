@@ -1,6 +1,6 @@
 // API Base URL
 export const API_BASE_URL =
-  import.meta.env.VITE_API_URL || `http://${window.location.hostname}:4000`;
+  import.meta.env.VITE_API_URL || `http://${window.location.hostname}:5000`;
 
 // Helper function to get full URL for assets (photos, etc.)
 export const getAssetUrl = (

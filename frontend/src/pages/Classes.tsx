@@ -1,12 +1,12 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
-import { Table, Button, Modal, Form, Input, Select, TimePicker, Tag, Progress, Typography, Space, Tooltip, App } from 'antd';
+import { Table, Button, Modal, Form, Input, Select, TimePicker, Tag, Typography, Space, Tooltip, App } from 'antd';
 import { PlusOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined, UserOutlined, TeamOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useSchool } from '../hooks/useSchool';
 import { classesService } from '../services/classes';
 import { PageHeader, Divider, StatItem, useHeaderMeta } from '../shared/ui';
 import type { Class } from '../types';
-import { ATTENDANCE_STATUS_TAG, STATUS_COLORS } from '../entities/attendance';
+import { ATTENDANCE_STATUS_TAG, STATUS_COLORS, StatusBar } from '../entities/attendance';
 
 const { Text } = Typography;
 
@@ -122,17 +122,18 @@ const Classes: React.FC = () => {
                 const late = record.todayLate || 0;
                 const absent = record.todayAbsent || 0;
                 const total = record.totalStudents || record._count?.students || 0;
-                const percent = total > 0 ? Math.round((present / total) * 100) : 0;
                 
                 return (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <Progress 
-                            percent={percent} 
-                            size="small" 
-                            style={{ width: 80, margin: 0 }}
-                            status={percent < 70 ? 'exception' : percent < 90 ? 'normal' : 'success'}
-                            showInfo={false}
-                        />
+                        <div style={{ width: 80 }}>
+                            <StatusBar
+                                total={total}
+                                present={present}
+                                late={late}
+                                absent={absent}
+                                height={10}
+                            />
+                        </div>
                         <Space size={4}>
                             <Tooltip title="Kelgan">
                                 <Tag color={ATTENDANCE_STATUS_TAG.PRESENT.color} style={{ margin: 0 }}><CheckCircleOutlined /> {present}</Tag>

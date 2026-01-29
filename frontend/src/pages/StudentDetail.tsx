@@ -26,7 +26,19 @@ import {
   ExclamationCircleOutlined,
   CalendarOutlined,
 } from "@ant-design/icons";
-import { PieChart, Pie, Cell, ResponsiveContainer, Legend } from "recharts";
+import {
+  PieChart,
+  Pie,
+  Cell,
+  ResponsiveContainer,
+  Legend,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip as RechartsTooltip,
+} from "recharts";
 import { useParams } from "react-router-dom";
 import { useAttendanceSSE } from "../hooks/useAttendanceSSE";
 import { studentsService } from "../services/students";
@@ -186,6 +198,22 @@ const StudentDetail: React.FC = () => {
     if (!record) return null;
     return <Badge color={EFFECTIVE_STATUS_COLORS[record.status]} />;
   };
+
+  // Haftalik data tayyorlash (oxirgi 7 kun)
+  const weeklyData = Array.from({ length: 7 }).map((_, idx) => {
+    const date = dayjs().subtract(6 - idx, "day");
+    const dateStr = date.format("YYYY-MM-DD");
+    const record = attendance.find((a) => dayjs(a.date).format("YYYY-MM-DD") === dateStr);
+    
+    return {
+      date: dateStr,
+      dayName: date.format("dd"),
+      present: record && record.status === "PRESENT" ? 1 : 0,
+      late: record && record.status === "LATE" ? 1 : 0,
+      absent: record && record.status === "ABSENT" ? 1 : 0,
+      excused: record && record.status === "EXCUSED" ? 1 : 0,
+    };
+  });
 
   // Jami maktabda bo'lgan vaqtni hisoblash
 
@@ -723,6 +751,71 @@ const StudentDetail: React.FC = () => {
                     : dayjs()
                 }
               />
+            </div>
+          </Card>
+        </Col>
+      </Row>
+
+      {/* Haftalik davomat dinamikasi */}
+      <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
+        <Col xs={24}>
+          <Card
+            title="Haftalik davomat dinamikasi (oxirgi 7 kun)"
+            size="small"
+            styles={{ body: { height: 200 } }}
+          >
+            <div style={{ height: 180 }}>
+              {weeklyData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={weeklyData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="dayName" tick={{ fontSize: 11 }} />
+                    <YAxis tick={{ fontSize: 11 }} domain={[0, 1]} ticks={[0, 1]} />
+                    <RechartsTooltip />
+                    <Line
+                      type="monotone"
+                      dataKey="present"
+                      stroke={STATUS_COLORS.PRESENT}
+                      strokeWidth={2}
+                      dot={{ r: 3 }}
+                      activeDot={{ r: 5 }}
+                      name="Kelgan"
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="late"
+                      stroke={STATUS_COLORS.LATE}
+                      strokeWidth={2}
+                      dot={{ r: 3 }}
+                      activeDot={{ r: 5 }}
+                      name="Kech qoldi"
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="absent"
+                      stroke={STATUS_COLORS.ABSENT}
+                      strokeWidth={2}
+                      dot={{ r: 3 }}
+                      activeDot={{ r: 5 }}
+                      name="Kelmadi"
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <div
+                  style={{
+                    height: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Empty
+                    description="Ma'lumot yo'q"
+                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  />
+                </div>
+              )}
             </div>
           </Card>
         </Col>
