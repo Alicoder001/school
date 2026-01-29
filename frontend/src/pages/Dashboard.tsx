@@ -45,6 +45,14 @@ import {
 } from "recharts";
 import { useSchool } from "../hooks/useSchool";
 import { useAttendanceSSE } from "../hooks/useAttendanceSSE";
+import {
+  useSchoolSnapshotSSE,
+  type SchoolSnapshotPayload,
+} from "../hooks/useSchoolSnapshotSSE";
+import {
+  useClassSnapshotSSE,
+  type ClassSnapshotPayload,
+} from "../hooks/useClassSnapshotSSE";
 import { dashboardService } from "../services/dashboard";
 import type { PeriodType, AttendanceScope } from "../types";
 import { schoolsService } from "../services/schools";
@@ -111,6 +119,8 @@ const Dashboard: React.FC = () => {
 
   // Bugunmi tekshirish (SSE va real-time uchun)
   const isToday = selectedPeriod === "today";
+  const schoolSnapshotEnabled = isToday && !selectedClassId;
+  const classSnapshotEnabled = isToday && !!selectedClassId;
 
   const fetchStats = useCallback(async () => {
     if (!schoolId) return;
@@ -153,9 +163,21 @@ const Dashboard: React.FC = () => {
       if (!isToday) return;
 
       const typedEvent = event as unknown as AttendanceEvent;
+      const eventClassId = typedEvent.student?.classId;
+      const matchesClass =
+        !selectedClassId || (eventClassId && eventClassId === selectedClassId);
 
-      // Add new event to the top of the list
-      setEvents((prev) => [typedEvent, ...prev].slice(0, 10));
+      if (matchesClass) {
+        setEvents((prev) => [typedEvent, ...prev].slice(0, 10));
+      }
+
+      if (schoolSnapshotEnabled || classSnapshotEnabled) return;
+
+      if (selectedClassId) {
+        if (!matchesClass) return;
+        debouncedFetchStats();
+        return;
+      }
 
       // LOCAL STATE UPDATE - tezkor UI yangilanishi, API kutmasdan
       setStats((prevStats) => {
@@ -184,13 +206,89 @@ const Dashboard: React.FC = () => {
       // Debounced full refresh - batches multiple events
       debouncedFetchStats();
     },
-    [debouncedFetchStats, isToday],
+    [
+      debouncedFetchStats,
+      isToday,
+      selectedClassId,
+      schoolSnapshotEnabled,
+      classSnapshotEnabled,
+    ],
+  );
+
+  const handleSnapshot = useCallback(
+    (snapshot: SchoolSnapshotPayload | ClassSnapshotPayload) => {
+      if (snapshot.scope !== attendanceScope) return;
+      setStats((prevStats) => {
+        if (!snapshot?.stats) return prevStats;
+
+        const totalStudents = snapshot.stats.totalStudents;
+        const presentToday = snapshot.stats.present;
+        const lateToday = snapshot.stats.late;
+        const absentToday = snapshot.stats.absent;
+        const excusedToday = snapshot.stats.excused;
+        const currentlyInSchool = snapshot.stats.currentlyInSchool;
+        const pendingEarlyCount = snapshot.stats.pendingEarly;
+        const latePendingCount = snapshot.stats.pendingLate;
+        const presentPercentage =
+          totalStudents > 0
+            ? Math.round(((presentToday + lateToday) / totalStudents) * 100)
+            : 0;
+
+        if (!prevStats) {
+          return {
+            period: "today",
+            periodLabel: "Bugun",
+            startDate: snapshot.timestamp,
+            endDate: snapshot.timestamp,
+            daysCount: 1,
+            totalStudents,
+            presentToday,
+            lateToday,
+            absentToday,
+            excusedToday,
+            presentPercentage,
+            currentlyInSchool,
+            pendingEarlyCount,
+            latePendingCount,
+            notYetArrivedCount: pendingEarlyCount + latePendingCount,
+            weeklyStats: snapshot.weeklyStats || [],
+          };
+        }
+
+        return {
+          ...prevStats,
+          totalStudents,
+          presentToday,
+          lateToday,
+          absentToday,
+          excusedToday,
+          currentlyInSchool,
+          pendingEarlyCount,
+          latePendingCount,
+          notYetArrivedCount: pendingEarlyCount + latePendingCount,
+          presentPercentage,
+          weeklyStats: snapshot.weeklyStats || prevStats.weeklyStats,
+        };
+      });
+      setLastUpdated(new Date());
+    },
+    [attendanceScope, setLastUpdated],
   );
 
   // SSE for real-time updates (faqat bugun uchun faol)
   const { isConnected } = useAttendanceSSE(schoolId, {
     onEvent: handleSSEEvent,
     enabled: isToday,
+  });
+
+  useSchoolSnapshotSSE(schoolId, {
+    onSnapshot: handleSnapshot,
+    enabled: schoolSnapshotEnabled,
+  });
+
+  useClassSnapshotSSE(schoolId, selectedClassId || null, {
+    onSnapshot: handleSnapshot,
+    enabled: classSnapshotEnabled,
   });
 
   const loadDashboard = useCallback(

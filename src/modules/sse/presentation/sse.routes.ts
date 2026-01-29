@@ -7,6 +7,15 @@ import {
   trackConnection,
   getConnectionStats 
 } from "../../../eventEmitter";
+import {
+  onAdminSnapshot,
+  onClassSnapshot,
+  onSchoolSnapshot,
+} from "../../../realtime/snapshotBus";
+import {
+  computeClassSnapshot,
+  computeSchoolSnapshot,
+} from "../../../realtime/snapshot.service";
 import prisma from "../../../prisma";
 
 export default async function (fastify: FastifyInstance) {
@@ -104,6 +113,195 @@ export default async function (fastify: FastifyInstance) {
       // Keep connection open (don't call reply.send())
       await new Promise(() => {});
     }
+  );
+
+  // SSE endpoint for aggregated school snapshots
+  fastify.get(
+    "/schools/:schoolId/snapshots/stream",
+    async (request: any, reply) => {
+      const { schoolId } = request.params;
+      const { token } = request.query;
+
+      if (!token) {
+        return reply.status(401).send({ error: "Missing token" });
+      }
+
+      let decoded: any;
+      try {
+        decoded = await fastify.jwt.verify(token);
+      } catch (err) {
+        return reply.status(401).send({ error: "Invalid token" });
+      }
+
+      if (!["SUPER_ADMIN", "SCHOOL_ADMIN", "GUARD"].includes(decoded.role)) {
+        return reply.status(403).send({ error: "Access denied" });
+      }
+
+      if (decoded.role !== "SUPER_ADMIN" && decoded.schoolId !== schoolId) {
+        return reply.status(403).send({ error: "Access denied" });
+      }
+
+      reply.raw.setHeader("Content-Type", "text/event-stream");
+      reply.raw.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      reply.raw.setHeader("Connection", "keep-alive");
+      reply.raw.setHeader("Access-Control-Allow-Origin", "*");
+      reply.raw.setHeader("X-Accel-Buffering", "no");
+
+      trackConnection(schoolId, "connect");
+
+      reply.raw.write(
+        `data: ${JSON.stringify({
+          type: "connected",
+          schoolId,
+          serverTime: new Date().toISOString(),
+        })}\n\n`,
+      );
+
+      const [initialStarted, initialActive] = await Promise.all([
+        computeSchoolSnapshot(schoolId, "started", { includeWeekly: true }),
+        computeSchoolSnapshot(schoolId, "active", { includeWeekly: true }),
+      ]);
+
+      if (initialStarted) {
+        reply.raw.write(`data: ${JSON.stringify(initialStarted)}\n\n`);
+      }
+      if (initialActive) {
+        reply.raw.write(`data: ${JSON.stringify(initialActive)}\n\n`);
+      }
+
+      const unsubscribe = onSchoolSnapshot(schoolId, (snapshot) => {
+        try {
+          reply.raw.write(`data: ${JSON.stringify(snapshot)}\n\n`);
+        } catch (err) {
+          // Connection might be closed
+        }
+      });
+
+      const heartbeat = setInterval(() => {
+        try {
+          reply.raw.write(`: heartbeat ${Date.now()}\n\n`);
+        } catch (err) {
+          clearInterval(heartbeat);
+        }
+      }, 30000);
+
+      request.raw.on("close", () => {
+        trackConnection(schoolId, "disconnect");
+        unsubscribe();
+        clearInterval(heartbeat);
+      });
+
+      await new Promise(() => {});
+    },
+  );
+
+  // SSE endpoint for class-level aggregated snapshots
+  fastify.get(
+    "/schools/:schoolId/classes/:classId/snapshots/stream",
+    async (request: any, reply) => {
+      const { schoolId, classId } = request.params;
+      const { token } = request.query;
+
+      if (!token) {
+        return reply.status(401).send({ error: "Missing token" });
+      }
+
+      let decoded: any;
+      try {
+        decoded = await fastify.jwt.verify(token);
+      } catch (err) {
+        return reply.status(401).send({ error: "Invalid token" });
+      }
+
+      if (
+        !["SUPER_ADMIN", "SCHOOL_ADMIN", "TEACHER", "GUARD"].includes(
+          decoded.role,
+        )
+      ) {
+        return reply.status(403).send({ error: "Access denied" });
+      }
+
+      if (decoded.role !== "SUPER_ADMIN" && decoded.schoolId !== schoolId) {
+        return reply.status(403).send({ error: "Access denied" });
+      }
+
+      const cls = await prisma.class.findUnique({
+        where: { id: classId },
+        select: { schoolId: true },
+      });
+      if (!cls || cls.schoolId !== schoolId) {
+        return reply.status(404).send({ error: "not found" });
+      }
+
+      if (decoded.role === "TEACHER") {
+        const assigned = await prisma.teacherClass.findUnique({
+          where: {
+            teacherId_classId: { teacherId: decoded.sub, classId },
+          } as any,
+          select: { classId: true },
+        });
+        if (!assigned) {
+          return reply.status(403).send({ error: "Access denied" });
+        }
+      }
+
+      reply.raw.setHeader("Content-Type", "text/event-stream");
+      reply.raw.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      reply.raw.setHeader("Connection", "keep-alive");
+      reply.raw.setHeader("Access-Control-Allow-Origin", "*");
+      reply.raw.setHeader("X-Accel-Buffering", "no");
+
+      trackConnection(`${schoolId}:${classId}:snapshot`, "connect");
+
+      reply.raw.write(
+        `data: ${JSON.stringify({
+          type: "connected",
+          schoolId,
+          classId,
+          serverTime: new Date().toISOString(),
+        })}\n\n`,
+      );
+
+      const [initialStarted, initialActive] = await Promise.all([
+        computeClassSnapshot(schoolId, classId, "started", {
+          includeWeekly: true,
+        }),
+        computeClassSnapshot(schoolId, classId, "active", {
+          includeWeekly: true,
+        }),
+      ]);
+
+      if (initialStarted) {
+        reply.raw.write(`data: ${JSON.stringify(initialStarted)}\n\n`);
+      }
+      if (initialActive) {
+        reply.raw.write(`data: ${JSON.stringify(initialActive)}\n\n`);
+      }
+
+      const unsubscribe = onClassSnapshot(schoolId, classId, (snapshot) => {
+        try {
+          reply.raw.write(`data: ${JSON.stringify(snapshot)}\n\n`);
+        } catch (err) {
+          // Connection might be closed
+        }
+      });
+
+      const heartbeat = setInterval(() => {
+        try {
+          reply.raw.write(`: heartbeat ${Date.now()}\n\n`);
+        } catch (err) {
+          clearInterval(heartbeat);
+        }
+      }, 30000);
+
+      request.raw.on("close", () => {
+        trackConnection(`${schoolId}:${classId}:snapshot`, "disconnect");
+        unsubscribe();
+        clearInterval(heartbeat);
+      });
+
+      await new Promise(() => {});
+    },
   );
 
   // SSE endpoint for class-specific attendance events
@@ -266,6 +464,30 @@ export default async function (fastify: FastifyInstance) {
       adminEmitter.on('admin_update', adminEventHandler);
       attendanceEmitter.on('attendance', attendanceHandler);
 
+      const snapshotUnsubscribe = onAdminSnapshot((snapshot) => {
+        try {
+          reply.raw.write(
+            `data: ${JSON.stringify({
+              type: "school_stats_update",
+              schoolId: snapshot.schoolId,
+              scope: snapshot.scope,
+              data: {
+                totalStudents: snapshot.stats.totalStudents,
+                presentToday: snapshot.stats.present,
+                lateToday: snapshot.stats.late,
+                absentToday: snapshot.stats.absent,
+                excusedToday: snapshot.stats.excused,
+                pendingEarlyCount: snapshot.stats.pendingEarly,
+                latePendingCount: snapshot.stats.pendingLate,
+                currentlyInSchool: snapshot.stats.currentlyInSchool,
+              },
+            })}\n\n`,
+          );
+        } catch (err) {
+          // Connection might be closed
+        }
+      });
+
       // Heartbeat every 30 seconds
       const heartbeat = setInterval(() => {
         try {
@@ -292,6 +514,7 @@ export default async function (fastify: FastifyInstance) {
         trackConnection('admin', 'disconnect');
         adminEmitter.off('admin_update', adminEventHandler);
         attendanceEmitter.off('attendance', attendanceHandler);
+        snapshotUnsubscribe();
         clearInterval(heartbeat);
         clearInterval(statsInterval);
       });

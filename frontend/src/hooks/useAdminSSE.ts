@@ -6,6 +6,7 @@ interface AdminSSEEvent {
   type: 'connected' | 'attendance_event' | 'school_stats_update' | 'connection_stats';
   role?: string;
   serverTime?: string;
+  scope?: 'started' | 'active';
   connectionStats?: {
     total: number;
     bySchool: Record<string, number>;
@@ -17,6 +18,9 @@ interface AdminSSEEvent {
     presentToday?: number;
     lateToday?: number;
     absentToday?: number;
+    excusedToday?: number;
+    pendingEarlyCount?: number;
+    latePendingCount?: number;
     currentlyInSchool?: number;
     event?: {
       id: string;

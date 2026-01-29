@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useMemo } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import {
   Card,
   Tag,
@@ -47,7 +47,6 @@ import {
   StatusBar,
 } from "../entities/attendance";
 import dayjs from "dayjs";
-import debounce from "lodash/debounce";
 
 const { Text } = Typography;
 const { RangePicker } = DatePicker;
@@ -108,6 +107,9 @@ interface RealtimeEvent {
   className?: string;
 }
 
+const calcPercent = (present: number, late: number, total: number) =>
+  total > 0 ? Math.round(((present + late) / total) * 100) : 0;
+
 const SuperAdminDashboard: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -150,15 +152,6 @@ const SuperAdminDashboard: React.FC = () => {
     }
   }, [selectedPeriod, customDateRange, attendanceScope]);
 
-  // Debounced fetch - har bir eventda emas, 5 sekundda bir marta
-  const debouncedFetchData = useMemo(
-    () =>
-      debounce(() => {
-        refreshData();
-      }, 5000),
-    [refreshData]
-  );
-
   // SSE event handler - local state update + debounced API call (faqat bugun uchun)
   const handleAttendanceEvent = useCallback((event: any) => {
     // Faqat bugun tanlangan bo'lsa real-time yangilash
@@ -176,49 +169,104 @@ const SuperAdminDashboard: React.FC = () => {
 
     // Add to realtime events (keep last 20)
     setRealtimeEvents(prev => [newEvent, ...prev].slice(0, 20));
+  }, [isToday]);
 
-    // Local state update - tezkor UI yangilanishi
-    if (data && event.schoolId) {
-      setData(prevData => {
+  const handleStatsUpdate = useCallback(
+    (event: any) => {
+      if (!isToday) return;
+      if (event?.scope && event.scope !== attendanceScope) return;
+      if (!event?.schoolId || !event?.data) return;
+
+      setData((prevData) => {
         if (!prevData) return prevData;
 
-        const updatedSchools = prevData.schools.map(school => {
-          if (school.id === event.schoolId) {
-            const isIn = event.event?.eventType === 'IN';
-            return {
-              ...school,
-              currentlyInSchool: isIn 
-                ? school.currentlyInSchool + 1 
-                : Math.max(0, school.currentlyInSchool - 1),
-            };
-          }
-          return school;
+        const updatedSchools = prevData.schools.map((school) => {
+          if (school.id !== event.schoolId) return school;
+
+          const totalStudents =
+            event.data.totalStudents ?? school.totalStudents;
+          const presentToday = event.data.presentToday ?? school.presentToday;
+          const lateToday = event.data.lateToday ?? school.lateToday;
+          const absentToday = event.data.absentToday ?? school.absentToday;
+          const excusedToday =
+            event.data.excusedToday ?? school.excusedToday;
+          const pendingEarlyCount =
+            event.data.pendingEarlyCount ?? school.pendingEarlyCount;
+          const latePendingCount =
+            event.data.latePendingCount ?? school.latePendingCount;
+          const currentlyInSchool =
+            event.data.currentlyInSchool ?? school.currentlyInSchool;
+
+          return {
+            ...school,
+            totalStudents,
+            presentToday,
+            lateToday,
+            absentToday,
+            excusedToday,
+            pendingEarlyCount,
+            latePendingCount,
+            currentlyInSchool,
+            attendancePercent: calcPercent(
+              presentToday,
+              lateToday,
+              totalStudents,
+            ),
+          };
         });
 
-        // Update totals
-        const isIn = event.event?.eventType === 'IN';
-        const updatedTotals = {
-          ...prevData.totals,
-          currentlyInSchool: isIn
-            ? prevData.totals.currentlyInSchool + 1
-            : Math.max(0, prevData.totals.currentlyInSchool - 1),
-        };
+        const totals = updatedSchools.reduce(
+          (acc, school) => ({
+            totalSchools: acc.totalSchools + 1,
+            totalStudents: acc.totalStudents + school.totalStudents,
+            presentToday: acc.presentToday + school.presentToday,
+            lateToday: acc.lateToday + school.lateToday,
+            absentToday: acc.absentToday + school.absentToday,
+            excusedToday: acc.excusedToday + (school.excusedToday || 0),
+            pendingEarlyCount:
+              acc.pendingEarlyCount + (school.pendingEarlyCount || 0),
+            latePendingCount:
+              acc.latePendingCount + (school.latePendingCount || 0),
+            currentlyInSchool:
+              acc.currentlyInSchool + school.currentlyInSchool,
+          }),
+          {
+            totalSchools: 0,
+            totalStudents: 0,
+            presentToday: 0,
+            lateToday: 0,
+            absentToday: 0,
+            excusedToday: 0,
+            pendingEarlyCount: 0,
+            latePendingCount: 0,
+            currentlyInSchool: 0,
+          },
+        );
 
         return {
           ...prevData,
           schools: updatedSchools,
-          totals: updatedTotals,
+          totals: {
+            ...prevData.totals,
+            ...totals,
+            attendancePercent: calcPercent(
+              totals.presentToday,
+              totals.lateToday,
+              totals.totalStudents,
+            ),
+          },
         };
       });
-    }
 
-    // Debounced full refresh
-    debouncedFetchData();
-  }, [data, debouncedFetchData, isToday]);
+      setLastUpdated(new Date());
+    },
+    [attendanceScope, isToday, setLastUpdated],
+  );
 
   // SSE connection (faqat bugun uchun faol)
   const { isConnected } = useAdminSSE({
     onAttendanceEvent: handleAttendanceEvent,
+    onStatsUpdate: handleStatsUpdate,
     enabled: isToday,
   });
 

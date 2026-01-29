@@ -12,6 +12,7 @@ interface SSEEvent {
     student?: {
       id: string;
       name: string;
+      classId?: string | null;
       class?: { name: string } | null;
     } | null;
   };

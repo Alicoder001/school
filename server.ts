@@ -22,6 +22,7 @@ import usersRoutes from "./src/routes/users";
 import camerasRoutes from "./src/routes/cameras";
 import searchRoutes from "./src/routes/search";
 import { registerJobs } from "./src/cron/jobs";
+import { startSnapshotScheduler } from "./src/realtime/snapshotScheduler";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 const JWT_SECRET = process.env.JWT_SECRET || "secret";
@@ -76,6 +77,7 @@ const start = async () => {
   try {
     await prisma.$connect();
     registerJobs(server);
+    startSnapshotScheduler({ logger: server.log });
     await server.listen({ port: PORT, host: "0.0.0.0" });
     console.log(`Server listening on ${PORT}`);
   } catch (err) {

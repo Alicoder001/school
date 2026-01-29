@@ -58,8 +58,12 @@ export default async function (fastify: FastifyInstance) {
           });
           const effectiveClassIds =
             attendanceScope === "active" ? activeClassIds : startedClassIds;
+          const effectiveClassIdsWithFallback =
+            attendanceScope === "started" && effectiveClassIds.length === 0
+              ? classes.map((cls) => cls.id)
+              : effectiveClassIds;
 
-          if (effectiveClassIds.length === 0) {
+          if (effectiveClassIdsWithFallback.length === 0) {
             return {
               ...school,
               todayStats: {
@@ -78,14 +82,14 @@ export default async function (fastify: FastifyInstance) {
             getStatusCountsByRange({
               schoolId: school.id,
               dateRange: { startDate: today, endDate: today },
-              classIds: effectiveClassIds,
+              classIds: effectiveClassIdsWithFallback,
             }),
             prisma.student.groupBy({
               by: ["classId"],
               where: {
                 schoolId: school.id,
                 isActive: true,
-                classId: { in: effectiveClassIds },
+                classId: { in: effectiveClassIdsWithFallback },
               },
               _count: true,
             }),
@@ -93,14 +97,14 @@ export default async function (fastify: FastifyInstance) {
 
           const classesForSplit: Array<{ id: string; startTime: string | null }> =
             classes
-              .filter((cls) => effectiveClassIds.includes(cls.id))
+              .filter((cls) => effectiveClassIdsWithFallback.includes(cls.id))
               .map((cls) => ({ id: cls.id, startTime: cls.startTime || null }));
 
           const { noScanSplit, totalActiveStudents } = await computeNoScanSplit({
             schoolId: school.id,
             dateStart: today,
             dateEnd: tomorrow,
-            classIds: effectiveClassIds,
+            classIds: effectiveClassIdsWithFallback,
             classes: classesForSplit,
             classStudentCounts: classStudentCounts as ClassCountRow[],
             absenceCutoffMinutes: school.absenceCutoffMinutes,

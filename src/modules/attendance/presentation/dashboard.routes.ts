@@ -98,8 +98,14 @@ export async function adminDashboardRoutes(fastify: FastifyInstance) {
                 ? activeClassIds
                 : startedClassIds
               : scopedClassIds;
+            const effectiveClassIdsWithFallback =
+              isToday &&
+              attendanceScope === "started" &&
+              effectiveClassIds.length === 0
+                ? scopedClassIds
+                : effectiveClassIds;
 
-            if (effectiveClassIds.length === 0) {
+            if (effectiveClassIdsWithFallback.length === 0) {
               return {
                 schoolId: school.id,
                 attendanceCounts: { present: 0, late: 0, absent: 0, excused: 0 },
@@ -120,7 +126,7 @@ export async function adminDashboardRoutes(fastify: FastifyInstance) {
               getStatusCountsByRange({
                 schoolId: school.id,
                 dateRange,
-                classIds: effectiveClassIds,
+                classIds: effectiveClassIdsWithFallback,
               }),
               isToday
                 ? prisma.dailyAttendance.count({
@@ -128,7 +134,7 @@ export async function adminDashboardRoutes(fastify: FastifyInstance) {
                       schoolId: school.id,
                       date: { gte: today, lt: addDaysUtc(today, 1) },
                       currentlyInSchool: true,
-                      student: { classId: { in: effectiveClassIds } },
+                      student: { classId: { in: effectiveClassIdsWithFallback } },
                     },
                   })
                 : Promise.resolve(0),
@@ -136,14 +142,14 @@ export async function adminDashboardRoutes(fastify: FastifyInstance) {
                 schoolId: school.id,
                 startDate: weekStart,
                 endDate: weekRangeEnd,
-                classIds: effectiveClassIds,
+                classIds: effectiveClassIdsWithFallback,
               }),
               prisma.student.groupBy({
                 by: ["classId"],
                 where: {
                   schoolId: school.id,
                   isActive: true,
-                  classId: { in: effectiveClassIds },
+                  classId: { in: effectiveClassIdsWithFallback },
                 },
                 _count: true,
               }),
@@ -157,7 +163,7 @@ export async function adminDashboardRoutes(fastify: FastifyInstance) {
             });
 
             const classesForSplit = classes
-              .filter((cls) => effectiveClassIds.includes(cls.id))
+              .filter((cls) => effectiveClassIdsWithFallback.includes(cls.id))
               .map((cls) => ({ id: cls.id, startTime: cls.startTime || null }));
             const noScanSplit = isToday
               ? (
@@ -165,7 +171,7 @@ export async function adminDashboardRoutes(fastify: FastifyInstance) {
                     schoolId: school.id,
                     dateStart: today,
                     dateEnd: addDaysUtc(today, 1),
-                    classIds: effectiveClassIds,
+                    classIds: effectiveClassIdsWithFallback,
                     classes: classesForSplit,
                     classStudentCounts,
                     absenceCutoffMinutes: school.absenceCutoffMinutes,
@@ -465,8 +471,16 @@ export default async function (fastify: FastifyInstance) {
             ? activeClassIds
             : startedClassIds
           : scopedClassIds;
+        const effectiveClassIdsWithFallback =
+          isToday &&
+          attendanceScope === "started" &&
+          effectiveClassIds.length === 0
+            ? scopedClassIds
+            : effectiveClassIds;
         const classIdFilterList =
-          effectiveClassIds.length > 0 ? effectiveClassIds : ["__none__"];
+          effectiveClassIdsWithFallback.length > 0
+            ? effectiveClassIdsWithFallback
+            : ["__none__"];
 
         const classScopeFilter: any = classId
           ? { classId }

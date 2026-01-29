@@ -1,6 +1,7 @@
 import { FastifyInstance, FastifyRequest } from "fastify";
 import prisma from "../../../prisma";
 import { attendanceEmitter, adminEmitter } from "../../../eventEmitter";
+import { markClassDirty, markSchoolDirty } from "../../../realtime/snapshotScheduler";
 import { MultipartFile } from "@fastify/multipart";
 import fs from "fs";
 import path from "path";
@@ -330,6 +331,11 @@ const handleAttendanceEvent = async (
       event: eventPayload.event,
     },
   });
+
+  markSchoolDirty(school.id);
+  if (eventPayload.event?.student?.classId) {
+    markClassDirty(school.id, eventPayload.event.student.classId);
+  }
 
   return { ok: true, event };
 };
