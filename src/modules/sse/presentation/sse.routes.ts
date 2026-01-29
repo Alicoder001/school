@@ -65,6 +65,7 @@ export default async function (fastify: FastifyInstance) {
 
       // Track connection
       trackConnection(schoolId, 'connect');
+      console.log(`[SSE] New connection - School events: ${schoolId}, Role: ${decoded.role}`);
 
       // Send initial connection message with stats
       reply.raw.write(`data: ${JSON.stringify({ 
@@ -105,6 +106,7 @@ export default async function (fastify: FastifyInstance) {
 
       // Cleanup on disconnect
       request.raw.on('close', () => {
+        console.log(`[SSE] Connection closed - School events: ${schoolId}, Role: ${decoded.role}`);
         trackConnection(schoolId, 'disconnect');
         attendanceEmitter.off('attendance', eventHandler);
         clearInterval(heartbeat);
@@ -148,6 +150,7 @@ export default async function (fastify: FastifyInstance) {
       reply.raw.setHeader("X-Accel-Buffering", "no");
 
       trackConnection(schoolId, "connect");
+      console.log(`[SSE] New connection - School snapshot: ${schoolId}, Role: ${decoded.role}`);
 
       reply.raw.write(
         `data: ${JSON.stringify({
@@ -186,6 +189,7 @@ export default async function (fastify: FastifyInstance) {
       }, 30000);
 
       request.raw.on("close", () => {
+        console.log(`[SSE] Connection closed - School snapshot: ${schoolId}, Role: ${decoded.role}`);
         trackConnection(schoolId, "disconnect");
         unsubscribe();
         clearInterval(heartbeat);
@@ -357,6 +361,7 @@ export default async function (fastify: FastifyInstance) {
 
       // Track connection
       trackConnection(`${schoolId}:${classId}`, 'connect');
+      console.log(`[SSE] New connection - Class events: ${schoolId}/${classId}, Role: ${decoded.role}`);
 
       // Send initial connection message
       reply.raw.write(`data: ${JSON.stringify({ 
@@ -430,6 +435,7 @@ export default async function (fastify: FastifyInstance) {
 
       // Track admin connection
       trackConnection('admin', 'connect');
+      console.log(`[SSE] New connection - Admin dashboard: ${decoded.email || decoded.sub}`);
 
       // Send initial connection message
       reply.raw.write(`data: ${JSON.stringify({ 
@@ -511,6 +517,7 @@ export default async function (fastify: FastifyInstance) {
 
       // Cleanup on disconnect
       request.raw.on('close', () => {
+        console.log(`[SSE] Connection closed - Admin dashboard: ${decoded.email || decoded.sub}`);
         trackConnection('admin', 'disconnect');
         adminEmitter.off('admin_update', adminEventHandler);
         attendanceEmitter.off('attendance', attendanceHandler);
