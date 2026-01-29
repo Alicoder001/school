@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import {
   Card,
   Tag,
@@ -116,6 +116,7 @@ const SuperAdminDashboard: React.FC = () => {
   const [data, setData] = useState<AdminDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [realtimeEvents, setRealtimeEvents] = useState<RealtimeEvent[]>([]);
+  const seenEventIdsRef = useRef<Set<string>>(new Set());
   
   // Vaqt filterlari
   const [selectedPeriod, setSelectedPeriod] = useState<PeriodType>('today');
@@ -156,6 +157,17 @@ const SuperAdminDashboard: React.FC = () => {
   const handleAttendanceEvent = useCallback((event: any) => {
     // Faqat bugun tanlangan bo'lsa real-time yangilash
     if (!isToday) return;
+
+    const incomingId = event?.event?.id;
+    if (incomingId) {
+      const seen = seenEventIdsRef.current;
+      if (seen.has(incomingId)) return;
+      seen.add(incomingId);
+      if (seen.size > 200) {
+        const first = seen.values().next().value;
+        if (first) seen.delete(first);
+      }
+    }
     
     const newEvent: RealtimeEvent = {
       id: event.event?.id || Date.now().toString(),

@@ -124,12 +124,12 @@ export function startSnapshotScheduler(options: SnapshotSchedulerOptions = {}) {
     try {
       const schools = await prisma.school.findMany({ select: { id: true } });
       await Promise.all(
-        schools.map((school) => flushSchoolSnapshots(school.id, true)),
+        schools.map((school) => flushSchoolSnapshots(school.id, false)),
       );
 
       const activeClassKeys = getActiveClassKeys();
       await Promise.all(
-        activeClassKeys.map((key) => flushClassSnapshots(key, true)),
+        activeClassKeys.map((key) => flushClassSnapshots(key, false)),
       );
     } catch (err) {
       configuredLogger.error?.("snapshot fallback failed", err);

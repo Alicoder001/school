@@ -1,6 +1,6 @@
 import { FastifyInstance, FastifyRequest } from "fastify";
 import prisma from "../../../prisma";
-import { attendanceEmitter, adminEmitter } from "../../../eventEmitter";
+import { attendanceEmitter } from "../../../eventEmitter";
 import { markClassDirty, markSchoolDirty } from "../../../realtime/snapshotScheduler";
 import { MultipartFile } from "@fastify/multipart";
 import fs from "fs";
@@ -321,16 +321,6 @@ const handleAttendanceEvent = async (
 
   // Emit to school-specific listeners
   attendanceEmitter.emit("attendance", eventPayload);
-
-  // Emit to admin dashboard listeners
-  adminEmitter.emit("admin_update", {
-    type: "attendance_event",
-    schoolId: school.id,
-    schoolName: school.name,
-    data: {
-      event: eventPayload.event,
-    },
-  });
 
   markSchoolDirty(school.id);
   if (eventPayload.event?.student?.classId) {
