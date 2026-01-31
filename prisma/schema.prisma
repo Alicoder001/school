@@ -24,6 +24,9 @@ model School {
   classes             Class[]
   students            Student[]
   devices             Device[]
+  nvrs                Nvr[]
+  cameraAreas         CameraArea[]
+  cameras             Camera[]
   attendanceEvents    AttendanceEvent[]
   dailyAttendances    DailyAttendance[]
   holidays            Holiday[]
@@ -134,6 +137,94 @@ model Device {
 enum DeviceType {
   ENTRANCE
   EXIT
+}
+
+enum NvrProtocol {
+  ONVIF
+  RTSP
+  HYBRID
+}
+
+enum CameraStatus {
+  ONLINE
+  OFFLINE
+  UNKNOWN
+}
+
+model Nvr {
+  id               String       @id @default(uuid())
+  schoolId         String
+  school           School       @relation(fields: [schoolId], references: [id])
+  name             String
+  vendor           String?
+  model            String?
+  host             String
+  httpPort         Int          @default(80)
+  onvifPort        Int          @default(80)
+  rtspPort         Int          @default(554)
+  username         String
+  passwordEncrypted String
+  protocol         NvrProtocol  @default(ONVIF)
+  isActive         Boolean      @default(true)
+  lastHealthCheckAt DateTime?
+  lastHealthStatus String?
+  lastHealthError  String?
+  lastSyncAt       DateTime?
+  lastSyncStatus   String?
+  lastSyncError    String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  cameras          Camera[]
+  areas            CameraArea[]
+
+  @@index([schoolId])
+  @@index([schoolId, isActive])
+  @@index([host])
+}
+
+model CameraArea {
+  id          String   @id @default(uuid())
+  schoolId    String
+  school      School   @relation(fields: [schoolId], references: [id])
+  nvrId       String?
+  nvr         Nvr?     @relation(fields: [nvrId], references: [id])
+  name        String
+  description String?
+  externalId  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  cameras     Camera[]
+
+  @@index([schoolId])
+  @@index([nvrId])
+  @@index([schoolId, name])
+  @@unique([nvrId, externalId])
+}
+
+model Camera {
+  id          String        @id @default(uuid())
+  schoolId    String
+  school      School        @relation(fields: [schoolId], references: [id])
+  nvrId       String?
+  nvr         Nvr?          @relation(fields: [nvrId], references: [id])
+  areaId      String?
+  area        CameraArea?   @relation(fields: [areaId], references: [id])
+  name        String
+  externalId  String?
+  channelNo   Int?
+  streamUrl   String?
+  status      CameraStatus  @default(UNKNOWN)
+  isActive    Boolean       @default(true)
+  lastSeenAt  DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([schoolId])
+  @@index([nvrId])
+  @@index([areaId])
+  @@index([schoolId, isActive])
+  @@unique([nvrId, externalId])
+  @@unique([nvrId, channelNo])
 }
 
 model AttendanceEvent {

@@ -13,6 +13,11 @@ if (IS_PROD && !JWT_SECRET) {
   throw new Error("JWT_SECRET must be set in production");
 }
 
+export const CREDENTIALS_SECRET = process.env.CREDENTIALS_SECRET || JWT_SECRET || "";
+if (IS_PROD && !CREDENTIALS_SECRET) {
+  throw new Error("CREDENTIALS_SECRET must be set in production");
+}
+
 export const CORS_ORIGINS = (process.env.CORS_ORIGINS || "")
   .split(",")
   .map((s) => s.trim())
@@ -25,8 +30,13 @@ export const SSE_TOKEN_TTL_SECONDS = Number(
   process.env.SSE_TOKEN_TTL_SECONDS || "300",
 );
 
-export const REDIS_URL = process.env.REDIS_URL || "";
+// Disable Redis in non-production to avoid local connection issues.
+export const REDIS_URL = IS_PROD ? process.env.REDIS_URL || "" : "";
 
 export const MIN_SCAN_INTERVAL_SECONDS = Number(
   process.env.MIN_SCAN_INTERVAL_SECONDS || "120",
+);
+
+export const NVR_HEALTH_TIMEOUT_MS = Number(
+  process.env.NVR_HEALTH_TIMEOUT_MS || "3000",
 );

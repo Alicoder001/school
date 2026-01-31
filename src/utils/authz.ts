@@ -65,6 +65,35 @@ export async function requireHolidaySchoolScope(user: any, holidayId: string) {
   return holiday;
 }
 
+export async function requireNvrSchoolScope(user: any, nvrId: string) {
+  const nvr = await prisma.nvr.findUnique({
+    where: { id: nvrId },
+  });
+  if (!nvr) throw new NotFoundError('not found');
+  requireSchoolScope(user, nvr.schoolId);
+  return nvr;
+}
+
+export async function requireCameraAreaSchoolScope(user: any, areaId: string) {
+  const area = await prisma.cameraArea.findUnique({
+    where: { id: areaId },
+    select: { id: true, schoolId: true },
+  });
+  if (!area) throw new NotFoundError('not found');
+  requireSchoolScope(user, area.schoolId);
+  return area;
+}
+
+export async function requireCameraSchoolScope(user: any, cameraId: string) {
+  const camera = await prisma.camera.findUnique({
+    where: { id: cameraId },
+    select: { id: true, schoolId: true },
+  });
+  if (!camera) throw new NotFoundError('not found');
+  requireSchoolScope(user, camera.schoolId);
+  return camera;
+}
+
 export async function requireAttendanceSchoolScope(user: any, attendanceId: string) {
   const att = await prisma.dailyAttendance.findUnique({
     where: { id: attendanceId },

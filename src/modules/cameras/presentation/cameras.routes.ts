@@ -1,34 +1,712 @@
 import { FastifyInstance } from "fastify";
-import { requireRoles, requireSchoolScope } from "../../../utils/authz";
+import prisma from "../../../prisma";
+import {
+  requireCameraAreaSchoolScope,
+  requireCameraSchoolScope,
+  requireNvrSchoolScope,
+  requireRoles,
+  requireSchoolScope,
+} from "../../../utils/authz";
+import { sendHttpError } from "../../../utils/httpErrors";
+import { encryptSecret } from "../../../utils/crypto";
+import {
+  checkNvrHealth,
+  sanitizeNvr,
+} from "../services/nvr.service";
+
+const ALLOWED_PROTOCOLS = new Set(["ONVIF", "RTSP", "HYBRID"]);
+const ALLOWED_CAMERA_STATUS = new Set(["ONLINE", "OFFLINE", "UNKNOWN"]);
+
+function badRequest(message: string) {
+  return Object.assign(new Error(message), { statusCode: 400 });
+}
+
+function isValidChannelNo(value: any): boolean {
+  const num = toNumber(value);
+  if (num === undefined) return false;
+  return Number.isInteger(num) && num > 0;
+}
+
+function toNumber(value: any): number | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  const num = Number(value);
+  if (!Number.isFinite(num)) return undefined;
+  return Math.trunc(num);
+}
+
+function isValidPort(value: any): boolean {
+  const num = toNumber(value);
+  if (num === undefined) return false;
+  return num > 0 && num <= 65535;
+}
 
 export default async function (fastify: FastifyInstance) {
+  // NVR CRUD
   fastify.get(
-    "/schools/:schoolId/camera-areas",
+    "/schools/:schoolId/nvrs",
     { preHandler: [(fastify as any).authenticate] } as any,
-    async (request: any) => {
-      const { schoolId } = request.params;
-      const user = request.user;
+    async (request: any, reply) => {
+      try {
+        const { schoolId } = request.params;
+        const user = request.user;
 
-      requireRoles(user, ["SCHOOL_ADMIN", "GUARD", "SUPER_ADMIN"]);
-      requireSchoolScope(user, schoolId);
+        requireRoles(user, ["SCHOOL_ADMIN", "GUARD", "SUPER_ADMIN"]);
+        requireSchoolScope(user, schoolId);
 
-      // TODO: replace with DB integration
-      return [];
+        const nvrs = await prisma.nvr.findMany({
+          where: { schoolId },
+          orderBy: { createdAt: "desc" },
+        });
+        return nvrs.map((nvr) => sanitizeNvr(nvr));
+      } catch (err) {
+        return sendHttpError(reply, err);
+      }
+    },
+  );
+
+  fastify.post(
+    "/schools/:schoolId/nvrs",
+    { preHandler: [(fastify as any).authenticate] } as any,
+    async (request: any, reply) => {
+      try {
+        const { schoolId } = request.params;
+        const user = request.user;
+        const {
+          name,
+          vendor,
+          model,
+          host,
+          httpPort,
+          onvifPort,
+          rtspPort,
+          username,
+          password,
+          protocol,
+          isActive,
+        } = request.body as any;
+
+        requireRoles(user, ["SCHOOL_ADMIN", "SUPER_ADMIN"]);
+        requireSchoolScope(user, schoolId);
+
+        if (!name || !host || !username || !password) {
+          return reply
+            .status(400)
+            .send({ error: "name, host, username, password required" });
+        }
+
+        if (protocol && !ALLOWED_PROTOCOLS.has(protocol)) {
+          return reply.status(400).send({ error: "invalid protocol" });
+        }
+
+        const httpPortNum = httpPort !== undefined ? toNumber(httpPort) : undefined;
+        const onvifPortNum = onvifPort !== undefined ? toNumber(onvifPort) : undefined;
+        const rtspPortNum = rtspPort !== undefined ? toNumber(rtspPort) : undefined;
+
+        if (
+          (httpPort !== undefined && !isValidPort(httpPort)) ||
+          (onvifPort !== undefined && !isValidPort(onvifPort)) ||
+          (rtspPort !== undefined && !isValidPort(rtspPort))
+        ) {
+          return reply.status(400).send({ error: "invalid port value" });
+        }
+
+        const nvr = await prisma.nvr.create({
+          data: {
+            schoolId,
+            name,
+            vendor,
+            model,
+            host,
+            httpPort: httpPortNum ?? undefined,
+            onvifPort: onvifPortNum ?? undefined,
+            rtspPort: rtspPortNum ?? undefined,
+            username,
+            passwordEncrypted: encryptSecret(String(password)),
+            protocol: protocol ?? undefined,
+            isActive: isActive ?? true,
+          },
+        });
+
+        return sanitizeNvr(nvr);
+      } catch (err) {
+        return sendHttpError(reply, err);
+      }
     },
   );
 
   fastify.get(
+    "/nvrs/:id",
+    { preHandler: [(fastify as any).authenticate] } as any,
+    async (request: any, reply) => {
+      try {
+        const { id } = request.params;
+        const user = request.user;
+
+        requireRoles(user, ["SCHOOL_ADMIN", "GUARD", "SUPER_ADMIN"]);
+        const nvr = await requireNvrSchoolScope(user, id);
+
+        return sanitizeNvr(nvr);
+      } catch (err) {
+        return sendHttpError(reply, err);
+      }
+    },
+  );
+
+  fastify.put(
+    "/nvrs/:id",
+    { preHandler: [(fastify as any).authenticate] } as any,
+    async (request: any, reply) => {
+      try {
+        const { id } = request.params;
+        const user = request.user;
+        const {
+          name,
+          vendor,
+          model,
+          host,
+          httpPort,
+          onvifPort,
+          rtspPort,
+          username,
+          password,
+          protocol,
+          isActive,
+        } = request.body as any;
+
+        requireRoles(user, ["SCHOOL_ADMIN", "SUPER_ADMIN"]);
+        await requireNvrSchoolScope(user, id);
+
+        if (protocol && !ALLOWED_PROTOCOLS.has(protocol)) {
+          return reply.status(400).send({ error: "invalid protocol" });
+        }
+
+        if (
+          (httpPort !== undefined && !isValidPort(httpPort)) ||
+          (onvifPort !== undefined && !isValidPort(onvifPort)) ||
+          (rtspPort !== undefined && !isValidPort(rtspPort))
+        ) {
+          return reply.status(400).send({ error: "invalid port value" });
+        }
+
+        if (password !== undefined && String(password).length === 0) {
+          return reply.status(400).send({ error: "password cannot be empty" });
+        }
+
+        const data: any = {
+          name,
+          vendor,
+          model,
+          host,
+          httpPort: httpPort !== undefined ? toNumber(httpPort) : undefined,
+          onvifPort: onvifPort !== undefined ? toNumber(onvifPort) : undefined,
+          rtspPort: rtspPort !== undefined ? toNumber(rtspPort) : undefined,
+          username,
+          protocol: protocol ?? undefined,
+          isActive,
+        };
+
+        if (password !== undefined) {
+          data.passwordEncrypted = encryptSecret(String(password));
+        }
+
+        const nvr = await prisma.nvr.update({ where: { id }, data });
+        return sanitizeNvr(nvr);
+      } catch (err) {
+        return sendHttpError(reply, err);
+      }
+    },
+  );
+
+  fastify.delete(
+    "/nvrs/:id",
+    { preHandler: [(fastify as any).authenticate] } as any,
+    async (request: any, reply) => {
+      try {
+        const { id } = request.params;
+        const user = request.user;
+
+        requireRoles(user, ["SCHOOL_ADMIN", "SUPER_ADMIN"]);
+        await requireNvrSchoolScope(user, id);
+
+        const deleted = await prisma.nvr.delete({ where: { id } });
+        return sanitizeNvr(deleted);
+      } catch (err) {
+        return sendHttpError(reply, err);
+      }
+    },
+  );
+
+  fastify.post(
+    "/nvrs/:id/test-connection",
+    { preHandler: [(fastify as any).authenticate] } as any,
+    async (request: any, reply) => {
+      try {
+        const { id } = request.params;
+        const user = request.user;
+
+        requireRoles(user, ["SCHOOL_ADMIN", "GUARD", "SUPER_ADMIN"]);
+        const nvr = await requireNvrSchoolScope(user, id);
+
+        const health = await checkNvrHealth({
+          host: nvr.host,
+          httpPort: nvr.httpPort,
+          onvifPort: nvr.onvifPort,
+          rtspPort: nvr.rtspPort,
+        });
+
+        const okCount = [health.http, health.onvif, health.rtsp].filter(
+          (p) => p.ok,
+        ).length;
+        const status =
+          okCount === 0 ? "offline" : okCount === 3 ? "ok" : "partial";
+        const errorSummary =
+          status === "ok"
+            ? null
+            : `http:${health.http.ok} onvif:${health.onvif.ok} rtsp:${health.rtsp.ok}`;
+
+        const updated = await prisma.nvr.update({
+          where: { id },
+          data: {
+            lastHealthCheckAt: new Date(),
+            lastHealthStatus: status,
+            lastHealthError: errorSummary,
+          },
+        });
+
+        return { nvr: sanitizeNvr(updated), health, status };
+      } catch (err) {
+        return sendHttpError(reply, err);
+      }
+    },
+  );
+
+  fastify.post(
+    "/nvrs/:id/sync",
+    { preHandler: [(fastify as any).authenticate] } as any,
+    async (request: any, reply) => {
+      try {
+        const { id } = request.params;
+        const user = request.user;
+        const { areas, cameras } = request.body as any;
+
+        requireRoles(user, ["SCHOOL_ADMIN", "SUPER_ADMIN"]);
+        const nvr = await requireNvrSchoolScope(user, id);
+
+        if ((!areas || !Array.isArray(areas)) && (!cameras || !Array.isArray(cameras))) {
+          return reply.status(400).send({ error: "areas or cameras required" });
+        }
+
+        const areaMap = new Map<string, string>();
+
+        await prisma.$transaction(async (tx) => {
+          if (Array.isArray(areas)) {
+            for (const area of areas) {
+              const { name, description, externalId } = area || {};
+              if (!name) {
+                throw badRequest("area name required");
+              }
+
+              let saved;
+              if (externalId) {
+                saved = await tx.cameraArea.upsert({
+                  where: {
+                    nvrId_externalId: { nvrId: nvr.id, externalId },
+                  },
+                  update: { name, description },
+                  create: {
+                    schoolId: nvr.schoolId,
+                    nvrId: nvr.id,
+                    name,
+                    description,
+                    externalId,
+                  },
+                });
+                areaMap.set(externalId, saved.id);
+              } else {
+                const existing = await tx.cameraArea.findFirst({
+                  where: { nvrId: nvr.id, name },
+                });
+                if (existing) {
+                  saved = await tx.cameraArea.update({
+                    where: { id: existing.id },
+                    data: { description },
+                  });
+                } else {
+                  saved = await tx.cameraArea.create({
+                    data: {
+                      schoolId: nvr.schoolId,
+                      nvrId: nvr.id,
+                      name,
+                      description,
+                    },
+                  });
+                }
+              }
+            }
+          }
+
+          if (Array.isArray(cameras)) {
+            for (const camera of cameras) {
+              const {
+                name,
+                externalId,
+                channelNo,
+                streamUrl,
+                status,
+                isActive,
+                areaId,
+                areaExternalId,
+              } = camera || {};
+
+              if (!name) {
+                throw badRequest("camera name required");
+              }
+
+              if (status && !ALLOWED_CAMERA_STATUS.has(status)) {
+                throw badRequest("invalid camera status");
+              }
+
+              const resolvedAreaId =
+                areaId || (areaExternalId ? areaMap.get(areaExternalId) : undefined);
+
+              if (externalId) {
+                await tx.camera.upsert({
+                  where: { nvrId_externalId: { nvrId: nvr.id, externalId } },
+                  update: {
+                    name,
+                    channelNo: channelNo !== undefined ? toNumber(channelNo) : undefined,
+                    streamUrl,
+                    status,
+                    isActive,
+                    areaId: resolvedAreaId ?? null,
+                  },
+                  create: {
+                    schoolId: nvr.schoolId,
+                    nvrId: nvr.id,
+                    name,
+                    externalId,
+                    channelNo: channelNo !== undefined ? toNumber(channelNo) : undefined,
+                    streamUrl,
+                    status,
+                    isActive: isActive ?? true,
+                    areaId: resolvedAreaId ?? null,
+                  },
+                });
+              } else if (channelNo !== undefined && isValidChannelNo(channelNo)) {
+                await tx.camera.upsert({
+                  where: {
+                    nvrId_channelNo: { nvrId: nvr.id, channelNo: toNumber(channelNo)! },
+                  },
+                  update: {
+                    name,
+                    streamUrl,
+                    status,
+                    isActive,
+                    areaId: resolvedAreaId ?? null,
+                  },
+                  create: {
+                    schoolId: nvr.schoolId,
+                    nvrId: nvr.id,
+                    name,
+                    channelNo: toNumber(channelNo),
+                    streamUrl,
+                    status,
+                    isActive: isActive ?? true,
+                    areaId: resolvedAreaId ?? null,
+                  },
+                });
+              } else {
+                throw badRequest("camera externalId or channelNo required");
+              }
+            }
+          }
+        });
+
+        const updated = await prisma.nvr.update({
+          where: { id },
+          data: {
+            lastSyncAt: new Date(),
+            lastSyncStatus: "ok",
+            lastSyncError: null,
+          },
+        });
+
+        return { nvr: sanitizeNvr(updated), status: "ok" };
+      } catch (err: any) {
+        const { id } = request.params as any;
+        try {
+          await prisma.nvr.update({
+            where: { id },
+            data: {
+              lastSyncAt: new Date(),
+              lastSyncStatus: "error",
+              lastSyncError: err?.message || "sync error",
+            },
+          });
+        } catch {
+          // ignore secondary error
+        }
+        return sendHttpError(reply, err);
+      }
+    },
+  );
+
+  // Camera Areas
+  fastify.get(
+    "/schools/:schoolId/camera-areas",
+    { preHandler: [(fastify as any).authenticate] } as any,
+    async (request: any, reply) => {
+      try {
+        const { schoolId } = request.params;
+        const user = request.user;
+
+        requireRoles(user, ["SCHOOL_ADMIN", "GUARD", "SUPER_ADMIN"]);
+        requireSchoolScope(user, schoolId);
+
+        return prisma.cameraArea.findMany({
+          where: { schoolId },
+          include: { _count: { select: { cameras: true } } },
+          orderBy: { createdAt: "desc" },
+        });
+      } catch (err) {
+        return sendHttpError(reply, err);
+      }
+    },
+  );
+
+  fastify.post(
+    "/schools/:schoolId/camera-areas",
+    { preHandler: [(fastify as any).authenticate] } as any,
+    async (request: any, reply) => {
+      try {
+        const { schoolId } = request.params;
+        const user = request.user;
+        const { name, description, nvrId, externalId } = request.body as any;
+
+        requireRoles(user, ["SCHOOL_ADMIN", "SUPER_ADMIN"]);
+        requireSchoolScope(user, schoolId);
+
+        if (!name) return reply.status(400).send({ error: "name required" });
+
+        if (nvrId) {
+          await requireNvrSchoolScope(user, nvrId);
+        }
+
+        return prisma.cameraArea.create({
+          data: {
+            schoolId,
+            name,
+            description,
+            nvrId,
+            externalId,
+          },
+        });
+      } catch (err) {
+        return sendHttpError(reply, err);
+      }
+    },
+  );
+
+  fastify.put(
+    "/camera-areas/:id",
+    { preHandler: [(fastify as any).authenticate] } as any,
+    async (request: any, reply) => {
+      try {
+        const { id } = request.params;
+        const user = request.user;
+        const { name, description, nvrId, externalId } = request.body as any;
+
+        requireRoles(user, ["SCHOOL_ADMIN", "SUPER_ADMIN"]);
+        await requireCameraAreaSchoolScope(user, id);
+
+        if (nvrId) {
+          await requireNvrSchoolScope(user, nvrId);
+        }
+
+        return prisma.cameraArea.update({
+          where: { id },
+          data: {
+            name,
+            description,
+            nvrId,
+            externalId,
+          },
+        });
+      } catch (err) {
+        return sendHttpError(reply, err);
+      }
+    },
+  );
+
+  fastify.delete(
+    "/camera-areas/:id",
+    { preHandler: [(fastify as any).authenticate] } as any,
+    async (request: any, reply) => {
+      try {
+        const { id } = request.params;
+        const user = request.user;
+
+        requireRoles(user, ["SCHOOL_ADMIN", "SUPER_ADMIN"]);
+        await requireCameraAreaSchoolScope(user, id);
+
+        return prisma.cameraArea.delete({ where: { id } });
+      } catch (err) {
+        return sendHttpError(reply, err);
+      }
+    },
+  );
+
+  // Cameras
+  fastify.get(
     "/schools/:schoolId/cameras",
     { preHandler: [(fastify as any).authenticate] } as any,
-    async (request: any) => {
-      const { schoolId } = request.params;
-      const user = request.user;
+    async (request: any, reply) => {
+      try {
+        const { schoolId } = request.params;
+        const user = request.user;
+        const { areaId, nvrId } = request.query as any;
 
-      requireRoles(user, ["SCHOOL_ADMIN", "GUARD", "SUPER_ADMIN"]);
-      requireSchoolScope(user, schoolId);
+        requireRoles(user, ["SCHOOL_ADMIN", "GUARD", "SUPER_ADMIN"]);
+        requireSchoolScope(user, schoolId);
 
-      // TODO: replace with DB integration
-      return [];
+        return prisma.camera.findMany({
+          where: {
+            schoolId,
+            areaId: areaId || undefined,
+            nvrId: nvrId || undefined,
+          },
+          orderBy: { createdAt: "desc" },
+        });
+      } catch (err) {
+        return sendHttpError(reply, err);
+      }
+    },
+  );
+
+  fastify.post(
+    "/schools/:schoolId/cameras",
+    { preHandler: [(fastify as any).authenticate] } as any,
+    async (request: any, reply) => {
+      try {
+        const { schoolId } = request.params;
+        const user = request.user;
+        const {
+          name,
+          nvrId,
+          areaId,
+          externalId,
+          channelNo,
+          streamUrl,
+          status,
+          isActive,
+        } = request.body as any;
+
+        requireRoles(user, ["SCHOOL_ADMIN", "SUPER_ADMIN"]);
+        requireSchoolScope(user, schoolId);
+
+        if (!name) return reply.status(400).send({ error: "name required" });
+        if (status && !ALLOWED_CAMERA_STATUS.has(status)) {
+          return reply.status(400).send({ error: "invalid status" });
+        }
+        if (channelNo !== undefined && !isValidChannelNo(channelNo)) {
+          return reply.status(400).send({ error: "invalid channelNo" });
+        }
+
+        if (nvrId) {
+          await requireNvrSchoolScope(user, nvrId);
+        }
+        if (areaId) {
+          await requireCameraAreaSchoolScope(user, areaId);
+        }
+
+        return prisma.camera.create({
+          data: {
+            schoolId,
+            nvrId,
+            areaId,
+            name,
+            externalId,
+            channelNo: channelNo !== undefined ? toNumber(channelNo) : undefined,
+            streamUrl,
+            status,
+            isActive: isActive ?? true,
+          },
+        });
+      } catch (err) {
+        return sendHttpError(reply, err);
+      }
+    },
+  );
+
+  fastify.put(
+    "/cameras/:id",
+    { preHandler: [(fastify as any).authenticate] } as any,
+    async (request: any, reply) => {
+      try {
+        const { id } = request.params;
+        const user = request.user;
+        const {
+          name,
+          nvrId,
+          areaId,
+          externalId,
+          channelNo,
+          streamUrl,
+          status,
+          isActive,
+        } = request.body as any;
+
+        requireRoles(user, ["SCHOOL_ADMIN", "SUPER_ADMIN"]);
+        await requireCameraSchoolScope(user, id);
+
+        if (status && !ALLOWED_CAMERA_STATUS.has(status)) {
+          return reply.status(400).send({ error: "invalid status" });
+        }
+        if (channelNo !== undefined && !isValidChannelNo(channelNo)) {
+          return reply.status(400).send({ error: "invalid channelNo" });
+        }
+
+        if (nvrId) {
+          await requireNvrSchoolScope(user, nvrId);
+        }
+        if (areaId) {
+          await requireCameraAreaSchoolScope(user, areaId);
+        }
+
+        return prisma.camera.update({
+          where: { id },
+          data: {
+            name,
+            nvrId,
+            areaId,
+            externalId,
+            channelNo: channelNo !== undefined ? toNumber(channelNo) : undefined,
+            streamUrl,
+            status,
+            isActive,
+          },
+        });
+      } catch (err) {
+        return sendHttpError(reply, err);
+      }
+    },
+  );
+
+  fastify.delete(
+    "/cameras/:id",
+    { preHandler: [(fastify as any).authenticate] } as any,
+    async (request: any, reply) => {
+      try {
+        const { id } = request.params;
+        const user = request.user;
+
+        requireRoles(user, ["SCHOOL_ADMIN", "SUPER_ADMIN"]);
+        await requireCameraSchoolScope(user, id);
+
+        return prisma.camera.delete({ where: { id } });
+      } catch (err) {
+        return sendHttpError(reply, err);
+      }
     },
   );
 }
