@@ -22,12 +22,8 @@ import camerasRoutes from "./src/routes/cameras";
 import searchRoutes from "./src/routes/search";
 import { registerJobs } from "./src/cron/jobs";
 import { startSnapshotScheduler } from "./src/realtime/snapshotScheduler";
-import {
-  CORS_ORIGINS,
-  IS_PROD,
-  JWT_SECRET,
-  PORT,
-} from "./src/config";
+import { startMediaMtxAuto } from "./src/modules/cameras/services/mediamtx-runner.service";
+import { CORS_ORIGINS, IS_PROD, JWT_SECRET, PORT } from "./src/config";
 
 const server = Fastify({ logger: true });
 
@@ -102,6 +98,12 @@ const start = async () => {
     await prisma.$connect();
     registerJobs(server);
     startSnapshotScheduler({ logger: server.log });
+
+    // MediaMTX'ni avtomatik ishga tushirish (agar o'chirilmagan bo'lsa)
+    if (process.env.MEDIAMTX_AUTO_START !== "false") {
+      startMediaMtxAuto();
+    }
+
     await server.listen({ port: PORT, host: "0.0.0.0" });
     console.log(`Server listening on ${PORT}`);
   } catch (err) {
