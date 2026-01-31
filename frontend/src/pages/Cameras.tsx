@@ -36,7 +36,11 @@ import {
 } from "../shared/ui";
 import type { Camera, CameraArea, CameraStreamInfo, Nvr } from "../types";
 import { cameraApi, CAMERA_API_MODE, getStatusBadge } from "../entities/camera";
-import { CAMERA_SNAPSHOT_REFRESH_MS } from "../config";
+import {
+  CAMERA_SNAPSHOT_REFRESH_MS,
+  buildHlsUrl,
+  buildWebrtcWhepUrl,
+} from "../config";
 import dayjs from "dayjs";
 
 const { Text } = Typography;
@@ -162,6 +166,7 @@ const Cameras: React.FC = () => {
     deployForm.resetFields();
     deployForm.setFieldsValue({
       mode: saved.mode || "local",
+      autoDeployOnSave: saved.autoDeployOnSave ?? false,
       sshHost: saved.sshHost || "",
       sshPort: saved.sshPort || 22,
       sshUser: saved.sshUser || "",
@@ -174,7 +179,9 @@ const Cameras: React.FC = () => {
       localPath:
         saved.localPath ||
         "d:\\projects-advanced\\school\\tools\\mediamtx\\mediamtx.yml",
-      localRestartCommand: saved.localRestartCommand || "",
+      localRestartCommand:
+        saved.localRestartCommand ||
+        "d:\\projects-advanced\\school\\tools\\mediamtx\\restart-mediamtx.bat",
     });
     setDeployModalOpen(true);
   };
@@ -331,11 +338,18 @@ const Cameras: React.FC = () => {
         externalId: camera.externalId || undefined,
         channelNo: camera.channelNo || undefined,
         streamUrl: camera.streamUrl || undefined,
+        streamProfile: camera.streamProfile || "main",
+        autoGenerateUrl: camera.autoGenerateUrl ?? true,
         status: camera.status,
         isActive: camera.isActive ?? true,
       });
     } else {
-      cameraForm.setFieldsValue({ status: "UNKNOWN", isActive: true });
+      cameraForm.setFieldsValue({
+        status: "UNKNOWN",
+        isActive: true,
+        streamProfile: "sub", // Default: H.264 for WebRTC compatibility
+        autoGenerateUrl: true,
+      });
     }
     setCameraDrawerOpen(true);
   };
@@ -393,6 +407,17 @@ const Cameras: React.FC = () => {
       }
       setCameraDrawerOpen(false);
       await load();
+
+      // Avtomatik MediaMTX deploy
+      const saved = getSavedDeploySettings();
+      if (saved.autoDeployOnSave) {
+        try {
+          await cameraApi.deploySchoolMediaMtx(schoolId, saved);
+          message.success("MediaMTX config avtomatik yangilandi");
+        } catch (deployErr) {
+          message.warning("Kamera saqlandi, lekin MediaMTX deploy xatosi");
+        }
+      }
     } catch (err) {
       message.error(getErrorMessage(err));
     }
@@ -425,6 +450,29 @@ const Cameras: React.FC = () => {
       await load();
     } catch (err) {
       message.error(getErrorMessage(err));
+    }
+  };
+
+  const handleTestCameraStream = async (camera: Camera) => {
+    try {
+      message.loading({
+        content: "Stream test qilinmoqda...",
+        key: "stream-test",
+      });
+      const result = await cameraApi.testCameraStream(camera.id);
+      if (result.success) {
+        message.success({
+          content: `✅ ${result.message}`,
+          key: "stream-test",
+        });
+      } else {
+        message.error({
+          content: `❌ ${result.message || result.error}`,
+          key: "stream-test",
+        });
+      }
+    } catch (err) {
+      message.error({ content: getErrorMessage(err), key: "stream-test" });
     }
   };
 
@@ -767,6 +815,15 @@ const Cameras: React.FC = () => {
       render: (_, record) => (
         <Space>
           {canManage && (
+            <Button
+              size="small"
+              type="default"
+              onClick={() => handleTestCameraStream(record)}
+            >
+              Test
+            </Button>
+          )}
+          {canManage && (
             <Button size="small" onClick={() => openCameraDrawer(record)}>
               Tahrirlash
             </Button>
@@ -1015,19 +1072,48 @@ const Cameras: React.FC = () => {
       <Modal
         open={!!selectedCamera}
         onCancel={() => setSelectedCamera(null)}
-        title={selectedCamera?.name}
+        title={
+          <Space>
+            {selectedCamera?.name}
+            {streamInfo?.codec && (
+              <Tag color={streamInfo.isH265 ? "orange" : "green"}>
+                {streamInfo.codec}
+              </Tag>
+            )}
+          </Space>
+        }
         footer={null}
         width={720}
       >
         {selectedCamera ? (
           <Space direction="vertical" size={12} style={{ width: "100%" }}>
-            {/* HLS Player - H.265 qo'llab-quvvatli */}
-            {streamInfo?.webrtcPath && (
-              <HlsPlayer
-                key={`hls-${selectedCamera.id}-${webrtcConfigVersion}`}
-                hlsUrl={`http://localhost:8888/${streamInfo.webrtcPath}/index.m3u8`}
-                onError={(err) => console.log("HLS error:", err)}
+            {/* Player - codec ga qarab avtomatik tanlash */}
+            {streamInfo?.isH265 ? (
+              // H.265 - HLS Player ishlatish
+              streamInfo?.webrtcPath && (
+                <HlsPlayer
+                  key={`hls-${selectedCamera.id}-${webrtcConfigVersion}`}
+                  hlsUrl={
+                    streamInfo.hlsUrl || buildHlsUrl(streamInfo.webrtcPath)
+                  }
+                  onError={(err) => console.log("HLS error:", err)}
+                />
+              )
+            ) : // H.264 - WebRTC Player ishlatish
+            streamInfo?.webrtcPath ? (
+              <WebRtcPlayer
+                key={`webrtc-${selectedCamera.id}-${webrtcConfigVersion}`}
+                whepUrl={buildWebrtcWhepUrl(streamInfo.webrtcPath)}
+                onError={(err) => console.log("WebRTC error:", err)}
               />
+            ) : (
+              streamInfo?.webrtcPath && (
+                <HlsPlayer
+                  key={`hls-${selectedCamera.id}-${webrtcConfigVersion}`}
+                  hlsUrl={buildHlsUrl(streamInfo.webrtcPath)}
+                  onError={(err) => console.log("HLS error:", err)}
+                />
+              )
             )}
 
             {/* Fallback: Snapshot */}
@@ -1039,17 +1125,25 @@ const Cameras: React.FC = () => {
               />
             )}
 
-            {streamInfo?.rtspUrl && (
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                RTSP: {streamInfo.rtspUrl}
-              </Text>
-            )}
-
-            {streamInfo?.webrtcPath && (
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                HLS: http://localhost:8888/{streamInfo.webrtcPath}/index.m3u8
-              </Text>
-            )}
+            {/* Stream Info */}
+            <Space direction="vertical" size={4}>
+              {streamInfo?.codec && (
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  Codec: {streamInfo.codec} | Player:{" "}
+                  {streamInfo.recommendedPlayer?.toUpperCase()}
+                </Text>
+              )}
+              {streamInfo?.rtspUrl && (
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  RTSP: {streamInfo.rtspUrl}
+                </Text>
+              )}
+              {streamInfo?.hlsUrl && (
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  HLS: {streamInfo.hlsUrl}
+                </Text>
+              )}
+            </Space>
 
             {!streamInfo?.webrtcPath && !selectedCamera.snapshotUrl && (
               <Text type="secondary">
@@ -1076,8 +1170,21 @@ const Cameras: React.FC = () => {
           <Form.Item name="name" label="NVR nomi" rules={[{ required: true }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="vendor" label="Vendor">
-            <Input />
+          <Form.Item
+            name="vendor"
+            label="Vendor"
+            tooltip="RTSP URL formati vendor ga qarab o'zgaradi"
+          >
+            <Select
+              allowClear
+              placeholder="Vendor tanlang"
+              options={[
+                { value: "hikvision", label: "Hikvision" },
+                { value: "dahua", label: "Dahua" },
+                { value: "seetong", label: "Seetong" },
+                { value: "generic", label: "Generic ONVIF" },
+              ]}
+            />
           </Form.Item>
           <Form.Item name="model" label="Model">
             <Input />
@@ -1192,6 +1299,7 @@ const Cameras: React.FC = () => {
           <Form.Item name="nvrId" label="NVR">
             <Select
               allowClear
+              placeholder="NVR tanlang (avtomatik URL uchun)"
               options={nvrs.map((nvr) => ({
                 value: nvr.id,
                 label: `${nvr.name} (${nvr.host})`,
@@ -1207,21 +1315,56 @@ const Cameras: React.FC = () => {
               }))}
             />
           </Form.Item>
-          <Form.Item name="externalId" label="External ID">
-            <Input />
+          <Form.Item
+            name="channelNo"
+            label="Kanal raqami"
+            tooltip="NVR'dagi kamera kanali (1, 2, 3...)"
+          >
+            <InputNumber min={1} style={{ width: "100%" }} placeholder="1" />
           </Form.Item>
-          <Form.Item name="channelNo" label="Channel">
-            <InputNumber min={1} style={{ width: "100%" }} />
+          <Form.Item
+            name="streamProfile"
+            label="Stream sifati"
+            tooltip="main - yuqori sifat (H.265), sub - past sifat (H.264)"
+          >
+            <Select
+              options={[
+                { value: "main", label: "Main (Yuqori sifat - H.265)" },
+                {
+                  value: "sub",
+                  label: "Sub (Past sifat - H.264, WebRTC uchun)",
+                },
+              ]}
+            />
           </Form.Item>
-          <Form.Item name="streamUrl" label="Stream URL">
-            <Input />
+          <Form.Item
+            name="autoGenerateUrl"
+            label="URL avtomatik yaratish"
+            valuePropName="checked"
+            tooltip="NVR va kanal asosida URL avtomatik generatsiya qilinadi"
+          >
+            <Switch />
+          </Form.Item>
+          <Form.Item
+            name="streamUrl"
+            label="Stream URL"
+            tooltip="Avtomatik yaratish o'chirilgan bo'lsa, to'liq RTSP URL kiriting"
+          >
+            <Input placeholder="rtsp://user:pass@192.168.1.1:554/ch1/main/av_stream" />
+          </Form.Item>
+          <Form.Item
+            name="externalId"
+            label="External ID"
+            tooltip="Tashqi tizim bilan integratsiya uchun"
+          >
+            <Input placeholder="cam-001" />
           </Form.Item>
           <Form.Item name="status" label="Status" rules={[{ required: true }]}>
             <Select
               options={[
-                { value: "ONLINE", label: "ONLINE" },
-                { value: "OFFLINE", label: "OFFLINE" },
-                { value: "UNKNOWN", label: "UNKNOWN" },
+                { value: "ONLINE", label: "🟢 ONLINE" },
+                { value: "OFFLINE", label: "🔴 OFFLINE" },
+                { value: "UNKNOWN", label: "⚪ UNKNOWN" },
               ]}
             />
           </Form.Item>
@@ -1347,6 +1490,15 @@ const Cameras: React.FC = () => {
                 { value: "docker", label: "Docker" },
               ]}
             />
+          </Form.Item>
+
+          <Form.Item
+            name="autoDeployOnSave"
+            label="Kamera saqlanganida avtomatik deploy"
+            valuePropName="checked"
+            tooltip="Kamera qo'shilganida yoki yangilanganida MediaMTX config avtomatik yangilanadi"
+          >
+            <Switch />
           </Form.Item>
 
           <Form.Item shouldUpdate>

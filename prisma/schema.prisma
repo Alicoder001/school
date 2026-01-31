@@ -202,22 +202,24 @@ model CameraArea {
 }
 
 model Camera {
-  id          String        @id @default(uuid())
-  schoolId    String
-  school      School        @relation(fields: [schoolId], references: [id])
-  nvrId       String?
-  nvr         Nvr?          @relation(fields: [nvrId], references: [id])
-  areaId      String?
-  area        CameraArea?   @relation(fields: [areaId], references: [id])
-  name        String
-  externalId  String?
-  channelNo   Int?
-  streamUrl   String?
-  status      CameraStatus  @default(UNKNOWN)
-  isActive    Boolean       @default(true)
-  lastSeenAt  DateTime?
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  id              String        @id @default(uuid())
+  schoolId        String
+  school          School        @relation(fields: [schoolId], references: [id])
+  nvrId           String?
+  nvr             Nvr?          @relation(fields: [nvrId], references: [id])
+  areaId          String?
+  area            CameraArea?   @relation(fields: [areaId], references: [id])
+  name            String
+  externalId      String?
+  channelNo       Int?
+  streamUrl       String?
+  streamProfile   String        @default("main") // "main" or "sub"
+  autoGenerateUrl Boolean       @default(true)   // Auto-generate URL from NVR
+  status          CameraStatus  @default(UNKNOWN)
+  isActive        Boolean       @default(true)
+  lastSeenAt      DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
 
   @@index([schoolId])
   @@index([nvrId])

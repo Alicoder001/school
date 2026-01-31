@@ -6,12 +6,12 @@ const { Text } = Typography;
 type WebRtcPlayerProps = {
   whepUrl?: string | null;
   autoPlay?: boolean;
+  onError?: (error: string) => void;
 };
 
 const resolveIceServers = () => {
   const local = localStorage.getItem("webrtcIceServers") || "";
-  const env =
-    (import.meta as any).env?.VITE_WEBRTC_ICE_SERVERS || "";
+  const env = (import.meta as any).env?.VITE_WEBRTC_ICE_SERVERS || "";
   const raw = local || env;
   if (!raw) return undefined;
   try {
@@ -25,10 +25,16 @@ const resolveIceServers = () => {
   return undefined;
 };
 
-const WebRtcPlayer: React.FC<WebRtcPlayerProps> = ({ whepUrl, autoPlay = true }) => {
+const WebRtcPlayer: React.FC<WebRtcPlayerProps> = ({
+  whepUrl,
+  autoPlay = true,
+  onError,
+}) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
-  const [status, setStatus] = useState<"idle" | "loading" | "playing" | "error">("idle");
+  const [status, setStatus] = useState<
+    "idle" | "loading" | "playing" | "error"
+  >("idle");
   const [error, setError] = useState<string | null>(null);
 
   const cleanup = () => {
@@ -56,8 +62,10 @@ const WebRtcPlayer: React.FC<WebRtcPlayerProps> = ({ whepUrl, autoPlay = true })
 
   const start = async () => {
     if (!whepUrl) {
-      setError("WebRTC URL yo'q");
+      const msg = "WebRTC URL yo'q";
+      setError(msg);
       setStatus("error");
+      onError?.(msg);
       return;
     }
     cleanup();
@@ -65,9 +73,7 @@ const WebRtcPlayer: React.FC<WebRtcPlayerProps> = ({ whepUrl, autoPlay = true })
     setError(null);
     try {
       const iceServers = resolveIceServers();
-      const pc = new RTCPeerConnection(
-        iceServers ? { iceServers } : undefined,
-      );
+      const pc = new RTCPeerConnection(iceServers ? { iceServers } : undefined);
       pcRef.current = pc;
 
       pc.addTransceiver("video", { direction: "recvonly" });
@@ -99,8 +105,10 @@ const WebRtcPlayer: React.FC<WebRtcPlayerProps> = ({ whepUrl, autoPlay = true })
 
       setStatus("playing");
     } catch (err: any) {
-      setError(err?.message || "WebRTC xatolik");
+      const msg = err?.message || "WebRTC xatolik";
+      setError(msg);
       setStatus("error");
+      onError?.(msg);
     }
   };
 

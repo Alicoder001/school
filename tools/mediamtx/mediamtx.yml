@@ -1,5 +1,6 @@
-# H.265 (HEVC) - HLS orqali ko'rsatiladi
-# Main stream - yuqori sifat
+# Auto-generated MediaMTX config
+hlsAllowOrigin: "*"
+webrtcAllowOrigin: "*"
 
 paths:
   # Kamera 1 - MAIN STREAM (H.265)

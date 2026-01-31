@@ -1,5 +1,10 @@
 import type { Camera, CameraArea, CameraStreamInfo, Nvr } from "../../../types";
-import { getMockAreas, getMockCameras, getMockNvrs, getMockStreamInfo } from "./mock";
+import {
+  getMockAreas,
+  getMockCameras,
+  getMockNvrs,
+  getMockStreamInfo,
+} from "./mock";
 import api from "../../../services/api";
 
 type CameraApiMode = "mock" | "live";
@@ -131,16 +136,16 @@ export const cameraApi = {
     if (CAMERA_API_MODE === "mock") {
       return getMockCameras(schoolId);
     }
-    const response = await api.get<Camera[]>(
-      `/schools/${schoolId}/cameras`,
-    );
+    const response = await api.get<Camera[]>(`/schools/${schoolId}/cameras`);
     return response.data;
   },
   async getCameraStream(cameraId: string): Promise<CameraStreamInfo> {
     if (CAMERA_API_MODE === "mock") {
       return getMockStreamInfo(cameraId);
     }
-    const response = await api.get<CameraStreamInfo>(`/cameras/${cameraId}/stream`);
+    const response = await api.get<CameraStreamInfo>(
+      `/cameras/${cameraId}/stream`,
+    );
     return response.data;
   },
   async createCamera(schoolId: string, payload: Record<string, any>) {
@@ -165,6 +170,44 @@ export const cameraApi = {
       throw new Error("Camera API is in mock mode");
     }
     const response = await api.delete<Camera>(`/cameras/${id}`);
+    return response.data;
+  },
+  async testCameraStream(id: string): Promise<{
+    success: boolean;
+    rtspUrl?: string;
+    host?: string;
+    port?: number;
+    streamProfile?: string;
+    message?: string;
+    error?: string;
+  }> {
+    if (CAMERA_API_MODE === "mock") {
+      return { success: true, message: "Mock mode - no real test" };
+    }
+    const response = await api.post(`/cameras/${id}/test-stream`);
+    return response.data;
+  },
+  async previewRtspUrl(
+    schoolId: string,
+    payload: {
+      nvrId: string;
+      channelNo: number;
+      streamProfile?: string;
+    },
+  ): Promise<{
+    rtspUrl: string;
+    vendor: string;
+    profile: string;
+    host: string;
+    port: number;
+  }> {
+    if (CAMERA_API_MODE === "mock") {
+      throw new Error("Camera API is in mock mode");
+    }
+    const response = await api.post(
+      `/schools/${schoolId}/preview-rtsp-url`,
+      payload,
+    );
     return response.data;
   },
 };
