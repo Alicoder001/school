@@ -110,8 +110,10 @@ const buildMediaMtxConfig = (params: {
   const { cameras, nvrAuthById } = params;
   const lines: string[] = [
     "# Auto-generated MediaMTX config",
+    "logLevel: info",
     "hlsAllowOrigin: '*'",
     "webrtcAllowOrigin: '*'",
+    "hlsAlwaysRemux: yes",
     "",
     "paths:",
   ];

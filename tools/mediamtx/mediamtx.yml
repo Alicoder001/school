@@ -1,6 +1,8 @@
 # Auto-generated MediaMTX config
+logLevel: info
 hlsAllowOrigin: "*"
 webrtcAllowOrigin: "*"
+hlsAlwaysRemux: yes
 
 paths:
   # Kamera 1 - MAIN STREAM (H.265)
