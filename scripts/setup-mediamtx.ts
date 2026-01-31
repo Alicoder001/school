@@ -33,8 +33,9 @@ function downloadFile(url: string, dest: string): Promise<void> {
 
         response.pipe(file);
         file.on("finish", () => {
-          file.close();
-          resolve();
+          file.close(() => {
+            resolve(); // Fayl to'liq yopilgandan keyin resolve qilamiz
+          });
         });
       })
       .on("error", (err) => {
@@ -64,6 +65,9 @@ async function setup() {
     await downloadFile(DOWNLOAD_URL, DEST_FILE);
 
     console.log("📦 Arxiv ochilmoqda...");
+
+    // OS fayl yopilishini to'liq yakunlashi uchun biroz kutamiz
+    await new Promise((r) => setTimeout(r, 1000));
 
     if (os.platform() === "win32") {
       execSync(
