@@ -382,7 +382,7 @@ export default async function (fastify: FastifyInstance) {
         const { id } = request.params;
         const user = request.user;
 
-        requireRoles(user, ["SCHOOL_ADMIN", "GUARD", "SUPER_ADMIN"]);
+        requireRoles(user, ["SCHOOL_ADMIN", "GUARD", "SUPER_ADMIN", "AGENT"]);
         const nvr = await requireNvrSchoolScope(user, id);
 
         const health = await checkNvrHealth({

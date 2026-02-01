@@ -101,6 +101,54 @@ Universal natija modeli:
 
 Amaliy implement: `scripts/agent/scan.ts` (ts-node) universal skan va vendor fingerprint logikasini beradi.
 
+#### 5.2.2 Provisioning (scan natijasini ulash)
+Scan natijasi **to‘g‘ridan-to‘g‘ri DBga yozilmaydi**. Admin mapping faylini tayyorlaydi (public host/ports + credential).
+
+Minimal JSON mapping misol:
+```json
+{
+  "nvrs": [
+    {
+      "name": "NVR-1",
+      "vendor": "hikvision",
+      "model": "DS-7608",
+      "host": "nvr1.school.example",
+      "httpPort": 80,
+      "onvifPort": 80,
+      "rtspPort": 554,
+      "username": "admin",
+      "password": "strong-pass",
+      "protocol": "ONVIF",
+      "syncOnvif": true
+    }
+  ],
+  "cameras": [
+    {
+      "name": "Gate Cam",
+      "streamUrl": "rtsp://user:pass@203.0.113.10:554/Streaming/Channels/101",
+      "streamProfile": "sub",
+      "autoGenerateUrl": false
+    }
+  ],
+  "deploy": {
+    "mode": "ssh",
+    "ssh": {
+      "host": "mediamtx.school.example",
+      "port": 22,
+      "user": "root",
+      "remotePath": "/etc/mediamtx.yml",
+      "restartCommand": "systemctl restart mediamtx"
+    }
+  }
+}
+```
+
+CLI:
+- Scan: `npm run agent:scan -- --subnet 192.168.1.0/24 --pretty`
+- Provision: `npm run agent:provision -- --api https://api.example --token <agent_jwt> --schoolId <id> --input mapping.json --test --sync --deploy`
+
+**Best practice**: provisioning faqat admin tasdig‘i bilan, audit log yoziladi.
+
 ### 5.3 Public mapping (admin input)
 Har topilgan NVR uchun agent UI’da admin kiritadi:
 - `publicHost` (DDNS yoki public IP)

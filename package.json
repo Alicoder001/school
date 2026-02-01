@@ -13,7 +13,8 @@
     "db:seed": "ts-node prisma/seed.ts",
     "db:studio": "prisma studio",
     "setup:mtx": "ts-node scripts/setup-mediamtx.ts",
-    "agent:scan": "ts-node scripts/agent/scan.ts"
+    "agent:scan": "ts-node scripts/agent/scan.ts",
+    "agent:provision": "ts-node scripts/agent/provision.ts"
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"
