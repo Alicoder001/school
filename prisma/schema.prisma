@@ -32,6 +32,7 @@ model School {
   attendanceEvents    AttendanceEvent[]
   dailyAttendances    DailyAttendance[]
   holidays            Holiday[]
+  agentPairings       AgentPairing[]
 
   @@index([mediaNodeId])
 }
@@ -49,6 +50,20 @@ model MediaNode {
   schools          School[]
 
   @@index([isActive])
+}
+
+model AgentPairing {
+  id              String   @id @default(uuid())
+  schoolId        String
+  school          School   @relation(fields: [schoolId], references: [id])
+  code            String   @unique
+  expiresAt       DateTime
+  usedAt          DateTime?
+  createdAt       DateTime @default(now())
+  createdByUserId String?
+
+  @@index([schoolId])
+  @@index([expiresAt])
 }
 
 model User {

@@ -21,6 +21,13 @@ export const AUTH_RETURN_TOKEN_IN_PROD =
   process.env.AUTH_RETURN_TOKEN_IN_PROD === "true" ||
   process.env.AUTH_RETURN_TOKEN_IN_PROD === "1";
 
+export const AGENT_PAIRING_TTL_MINUTES = Number(
+  process.env.AGENT_PAIRING_TTL_MINUTES || "10",
+);
+export const AGENT_TOKEN_TTL_SECONDS = Number(
+  process.env.AGENT_TOKEN_TTL_SECONDS || "1800",
+);
+
 export const CREDENTIALS_SECRET = process.env.CREDENTIALS_SECRET || JWT_SECRET || "";
 if (IS_PROD && !CREDENTIALS_SECRET) {
   throw new Error("CREDENTIALS_SECRET must be set in production");

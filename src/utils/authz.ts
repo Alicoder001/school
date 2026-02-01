@@ -1,6 +1,6 @@
 import prisma from '../prisma';
 
-export type AppRole = 'SUPER_ADMIN' | 'SCHOOL_ADMIN' | 'TEACHER' | 'GUARD';
+export type AppRole = 'SUPER_ADMIN' | 'SCHOOL_ADMIN' | 'TEACHER' | 'GUARD' | 'AGENT';
 
 export class ForbiddenError extends Error {
   statusCode = 403;
