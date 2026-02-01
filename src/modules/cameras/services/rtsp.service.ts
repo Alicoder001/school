@@ -10,6 +10,30 @@ export type RtspVendor = "hikvision" | "seetong" | "dahua" | "generic";
 
 const encodeAuth = (value: string) => encodeURIComponent(value);
 
+export function buildRtspUrlFromTemplate(params: {
+  template: string;
+  nvr: NvrShape;
+  channelNo: number;
+  profile?: RtspProfile;
+}): string {
+  const { template, nvr, channelNo, profile = "main" } = params;
+  const streamId = profile === "main" ? 1 : 2;
+  const channel = channelNo * 100 + streamId;
+  const replacements: Record<string, string> = {
+    host: nvr.host,
+    rtspPort: String(nvr.rtspPort),
+    username: encodeAuth(nvr.username),
+    password: encodeAuth(nvr.password),
+    channelNo: String(channelNo),
+    profile,
+    streamId: String(streamId),
+    channel: String(channel),
+  };
+  return template.replace(/\{(\w+)\}/g, (match, key) => {
+    return key in replacements ? replacements[key] : match;
+  });
+}
+
 /**
  * Build RTSP URL for Hikvision cameras/NVRs
  * Format: rtsp://user:pass@host:port/Streaming/Channels/{channel}

@@ -37,9 +37,10 @@ type ProvisionNvr = {
   httpPort?: number;
   onvifPort?: number;
   rtspPort?: number;
+  rtspUrlTemplate?: string;
   username: string;
   password: string;
-  protocol?: "ONVIF" | "RTSP" | "HYBRID";
+  protocol?: "ONVIF" | "RTSP" | "HYBRID" | "GB28181";
   isActive?: boolean;
   syncOnvif?: boolean;
   overwriteNames?: boolean;
@@ -192,6 +193,7 @@ const main = async () => {
       httpPort: nvr.httpPort ?? 80,
       onvifPort: nvr.onvifPort ?? 80,
       rtspPort: nvr.rtspPort ?? 554,
+      rtspUrlTemplate: nvr.rtspUrlTemplate,
       username: nvr.username,
       password: nvr.password,
       protocol: nvr.protocol ?? "ONVIF",

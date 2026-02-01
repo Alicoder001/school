@@ -12,6 +12,7 @@ import { decryptSecret, encryptSecret } from "../../../utils/crypto";
 import { checkNvrHealth, probeTcp, sanitizeNvr } from "../services/nvr.service";
 import {
   buildRtspUrl,
+  buildRtspUrlFromTemplate,
   RtspVendor,
 } from "../services/rtsp.service";
 import {
@@ -33,7 +34,7 @@ import {
 } from "../../../config";
 import path from "path";
 
-const ALLOWED_PROTOCOLS = new Set(["ONVIF", "RTSP", "HYBRID"]);
+const ALLOWED_PROTOCOLS = new Set(["ONVIF", "RTSP", "HYBRID", "GB28181"]);
 const ALLOWED_CAMERA_STATUS = new Set(["ONLINE", "OFFLINE", "UNKNOWN"]);
 
 function badRequest(message: string) {
@@ -99,6 +100,14 @@ function isSafeRemotePath(value: string): boolean {
   return value.startsWith("/") && !value.includes("..") && !value.includes("~");
 }
 
+function isSafeRtspTemplate(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("rtsp://")) return false;
+  if (trimmed.length > 1024) return false;
+  if (trimmed.includes("\n") || trimmed.includes("\r")) return false;
+  return true;
+}
+
 function isSafeLocalPath(value: string): boolean {
   if (!path.isAbsolute(value)) return false;
   if (value.includes("..")) return false;
@@ -136,6 +145,7 @@ function buildRtspUrlForCamera(params: {
     username: string;
     passwordEncrypted: string;
     vendor: string | null;
+    rtspUrlTemplate?: string | null;
   } | null;
 }) {
   const { camera, nvr } = params;
@@ -154,20 +164,33 @@ function buildRtspUrlForCamera(params: {
     nvr.username
   ) {
     const password = decryptSecret(nvr.passwordEncrypted);
+    const template = nvr.rtspUrlTemplate?.trim();
     const vendor = (nvr.vendor?.toLowerCase() || "hikvision") as RtspVendor;
     const profile = (camera.streamProfile as "main" | "sub") || "main";
     return {
-      rtspUrl: buildRtspUrl({
-        nvr: {
-          host: nvr.host,
-          rtspPort: nvr.rtspPort,
-          username: nvr.username,
-          password,
-        },
-        channelNo: camera.channelNo,
-        profile,
-        vendor,
-      }),
+      rtspUrl: template
+        ? buildRtspUrlFromTemplate({
+            template,
+            nvr: {
+              host: nvr.host,
+              rtspPort: nvr.rtspPort,
+              username: nvr.username,
+              password,
+            },
+            channelNo: camera.channelNo,
+            profile,
+          })
+        : buildRtspUrl({
+            nvr: {
+              host: nvr.host,
+              rtspPort: nvr.rtspPort,
+              username: nvr.username,
+              password,
+            },
+            channelNo: camera.channelNo,
+            profile,
+            vendor,
+          }),
       rtspSource: `auto:${vendor}`,
     };
   }
@@ -214,6 +237,7 @@ export default async function (fastify: FastifyInstance) {
           httpPort,
           onvifPort,
           rtspPort,
+          rtspUrlTemplate,
           username,
           password,
           protocol,
@@ -248,6 +272,14 @@ export default async function (fastify: FastifyInstance) {
           return reply.status(400).send({ error: "invalid port value" });
         }
 
+        if (
+          rtspUrlTemplate &&
+          typeof rtspUrlTemplate === "string" &&
+          !isSafeRtspTemplate(rtspUrlTemplate)
+        ) {
+          return reply.status(400).send({ error: "invalid rtsp template" });
+        }
+
         const nvr = await prisma.nvr.create({
           data: {
             schoolId,
@@ -258,6 +290,9 @@ export default async function (fastify: FastifyInstance) {
             httpPort: httpPortNum ?? undefined,
             onvifPort: onvifPortNum ?? undefined,
             rtspPort: rtspPortNum ?? undefined,
+            rtspUrlTemplate: rtspUrlTemplate
+              ? String(rtspUrlTemplate).trim()
+              : undefined,
             username,
             passwordEncrypted: encryptSecret(String(password)),
             protocol: protocol ?? undefined,
@@ -305,6 +340,7 @@ export default async function (fastify: FastifyInstance) {
           httpPort,
           onvifPort,
           rtspPort,
+          rtspUrlTemplate,
           username,
           password,
           protocol,
@@ -326,6 +362,14 @@ export default async function (fastify: FastifyInstance) {
           return reply.status(400).send({ error: "invalid port value" });
         }
 
+        if (
+          rtspUrlTemplate &&
+          typeof rtspUrlTemplate === "string" &&
+          !isSafeRtspTemplate(rtspUrlTemplate)
+        ) {
+          return reply.status(400).send({ error: "invalid rtsp template" });
+        }
+
         if (password !== undefined && String(password).length === 0) {
           return reply.status(400).send({ error: "password cannot be empty" });
         }
@@ -338,6 +382,11 @@ export default async function (fastify: FastifyInstance) {
           httpPort: httpPort !== undefined ? toNumber(httpPort) : undefined,
           onvifPort: onvifPort !== undefined ? toNumber(onvifPort) : undefined,
           rtspPort: rtspPort !== undefined ? toNumber(rtspPort) : undefined,
+          rtspUrlTemplate: rtspUrlTemplate
+            ? String(rtspUrlTemplate).trim()
+            : rtspUrlTemplate === null
+              ? null
+              : undefined,
           username,
           protocol: protocol ?? undefined,
           isActive,
@@ -1523,17 +1572,30 @@ export default async function (fastify: FastifyInstance) {
         const vendor = (nvr.vendor?.toLowerCase() || "hikvision") as RtspVendor;
         const profile = streamProfile || "main";
 
-        const rtspUrl = buildRtspUrl({
-          nvr: {
-            host: nvr.host,
-            rtspPort: nvr.rtspPort,
-            username: nvr.username,
-            password,
-          },
-          channelNo: parseInt(channelNo, 10),
-          profile,
-          vendor,
-        });
+        const template = nvr.rtspUrlTemplate?.trim();
+        const rtspUrl = template
+          ? buildRtspUrlFromTemplate({
+              template,
+              nvr: {
+                host: nvr.host,
+                rtspPort: nvr.rtspPort,
+                username: nvr.username,
+                password,
+              },
+              channelNo: parseInt(channelNo, 10),
+              profile,
+            })
+          : buildRtspUrl({
+              nvr: {
+                host: nvr.host,
+                rtspPort: nvr.rtspPort,
+                username: nvr.username,
+                password,
+              },
+              channelNo: parseInt(channelNo, 10),
+              profile,
+              vendor,
+            });
 
         const includePassword =
           includeRtspPassword === "1" ||

@@ -15,7 +15,7 @@ export type DeviceType = "ENTRANCE" | "EXIT";
 export type EventType = "IN" | "OUT";
 
 // NVR
-export type NvrProtocol = "ONVIF" | "RTSP" | "HYBRID";
+export type NvrProtocol = "ONVIF" | "RTSP" | "HYBRID" | "GB28181";
 export interface Nvr {
   id: string;
   schoolId: string;
@@ -26,6 +26,7 @@ export interface Nvr {
   httpPort: number;
   onvifPort: number;
   rtspPort: number;
+  rtspUrlTemplate?: string | null;
   username: string;
   protocol: NvrProtocol;
   isActive: boolean;

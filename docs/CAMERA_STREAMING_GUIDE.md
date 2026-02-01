@@ -108,6 +108,18 @@ Bizning backend **GB28181 SIP** ni to‘g‘ridan‑to‘g‘ri qabul qilmaydi. 
    - `streamUrl = gateway RTSP URL`
    - `streamProfile = sub (H.264)`
 
+### RTSP Template (dinamik, universal)
+GB28181 yoki boshqa gateway bo‘lsa, NVR’da **RTSP URL Template** ni kiritish mumkin:
+- `rtsp://{username}:{password}@{host}:{rtspPort}/Streaming/Channels/{channel}`
+- `rtsp://{username}:{password}@{host}:{rtspPort}/gb28181/{channelNo}`
+
+**Placeholderlar:**
+- `{host}` `{rtspPort}` `{username}` `{password}`
+- `{channelNo}` (1,2,3...)
+- `{profile}` (`main` yoki `sub`)
+- `{streamId}` (main=1, sub=2)
+- `{channel}` (Hikvision uslubida: `channelNo*100 + streamId`)
+
 **Xavfsizlik:**
 - Public mode bo‘lsa, gateway serverda SIP/RTP portlari ochiladi.
 - NVR internetga ochilmaydi (NVR faqat gateway’ga OUTBOUND ulanadi).

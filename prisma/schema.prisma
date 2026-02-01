@@ -177,6 +177,7 @@ enum NvrProtocol {
   ONVIF
   RTSP
   HYBRID
+  GB28181
 }
 
 enum CameraStatus {
@@ -196,6 +197,7 @@ model Nvr {
   httpPort         Int          @default(80)
   onvifPort        Int          @default(80)
   rtspPort         Int          @default(554)
+  rtspUrlTemplate  String?
   username         String
   passwordEncrypted String
   protocol         NvrProtocol  @default(ONVIF)

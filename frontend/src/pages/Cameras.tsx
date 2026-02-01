@@ -330,6 +330,7 @@ const Cameras: React.FC = () => {
         httpPort: nvr.httpPort,
         onvifPort: nvr.onvifPort,
         rtspPort: nvr.rtspPort,
+        rtspUrlTemplate: nvr.rtspUrlTemplate || undefined,
         username: nvr.username,
         protocol: nvr.protocol,
         isActive: nvr.isActive,
@@ -393,6 +394,9 @@ const Cameras: React.FC = () => {
       const values = await nvrForm.validateFields();
       const payload = { ...values } as Record<string, any>;
       if (!payload.password) delete payload.password;
+      if (payload.rtspUrlTemplate === "") {
+        payload.rtspUrlTemplate = null;
+      }
       if (editingNvr) {
         await cameraApi.updateNvr(editingNvr.id, payload);
         message.success("NVR yangilandi");
@@ -1246,7 +1250,7 @@ const Cameras: React.FC = () => {
                 { value: "hikvision", label: "Hikvision" },
                 { value: "dahua", label: "Dahua" },
                 { value: "seetong", label: "Seetong" },
-                { value: "generic", label: "Generic ONVIF" },
+                { value: "generic", label: "Generic / Gateway" },
               ]}
             />
           </Form.Item>
@@ -1295,7 +1299,18 @@ const Cameras: React.FC = () => {
                 { value: "ONVIF", label: "ONVIF" },
                 { value: "RTSP", label: "RTSP" },
                 { value: "HYBRID", label: "HYBRID" },
+                { value: "GB28181", label: "GB28181 (SIP Gateway)" },
               ]}
+            />
+          </Form.Item>
+          <Form.Item
+            name="rtspUrlTemplate"
+            label="RTSP URL Template (ixtiyoriy)"
+            tooltip="Universal/gateway uchun. Placeholderlar: {host} {rtspPort} {username} {password} {channelNo} {channel} {profile} {streamId}"
+          >
+            <Input.TextArea
+              rows={2}
+              placeholder="rtsp://{username}:{password}@{host}:{rtspPort}/Streaming/Channels/{channel}"
             />
           </Form.Item>
           <Form.Item name="isActive" label="Faol" valuePropName="checked">

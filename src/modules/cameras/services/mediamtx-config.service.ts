@@ -1,6 +1,6 @@
 import prisma from "../../../prisma";
 import { decryptSecret } from "../../../utils/crypto";
-import { buildRtspUrl, RtspVendor } from "./rtsp.service";
+import { buildRtspUrl, buildRtspUrlFromTemplate, RtspVendor } from "./rtsp.service";
 
 function sanitizePathSegment(value: string): string {
   return value.replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -26,6 +26,7 @@ type NvrAuth = {
   username: string;
   password: string;
   vendor: string | null;
+  rtspUrlTemplate?: string | null;
 };
 
 export function buildMediaMtxConfig(params: {
@@ -81,18 +82,34 @@ export function buildMediaMtxConfig(params: {
     ) {
       const nvr = nvrAuthById.get(camera.nvrId);
       if (nvr) {
-        const vendor = (nvr.vendor?.toLowerCase() || "hikvision") as RtspVendor;
-        rtspUrl = buildRtspUrl({
-          nvr: {
-            host: nvr.host,
-            rtspPort: nvr.rtspPort,
-            username: nvr.username,
-            password: nvr.password,
-          },
-          channelNo: camera.channelNo,
-          profile: (camera.streamProfile as "main" | "sub") || "main",
-          vendor,
-        });
+        const template = nvr.rtspUrlTemplate?.trim();
+        const profile = (camera.streamProfile as "main" | "sub") || "main";
+        if (template) {
+          rtspUrl = buildRtspUrlFromTemplate({
+            template,
+            nvr: {
+              host: nvr.host,
+              rtspPort: nvr.rtspPort,
+              username: nvr.username,
+              password: nvr.password,
+            },
+            channelNo: camera.channelNo,
+            profile,
+          });
+        } else {
+          const vendor = (nvr.vendor?.toLowerCase() || "hikvision") as RtspVendor;
+          rtspUrl = buildRtspUrl({
+            nvr: {
+              host: nvr.host,
+              rtspPort: nvr.rtspPort,
+              username: nvr.username,
+              password: nvr.password,
+            },
+            channelNo: camera.channelNo,
+            profile,
+            vendor,
+          });
+        }
       }
     }
 
@@ -139,6 +156,7 @@ export async function buildLocalMediaMtxConfigFromDb(): Promise<string> {
       username: true,
       passwordEncrypted: true,
       vendor: true,
+      rtspUrlTemplate: true,
     },
   });
 
@@ -152,6 +170,7 @@ export async function buildLocalMediaMtxConfigFromDb(): Promise<string> {
       username: nvr.username,
       password,
       vendor: nvr.vendor,
+      rtspUrlTemplate: nvr.rtspUrlTemplate,
     });
   });
 
@@ -197,6 +216,7 @@ export async function buildMediaMtxConfigForNode(
       username: true,
       passwordEncrypted: true,
       vendor: true,
+      rtspUrlTemplate: true,
     },
   });
 
@@ -210,6 +230,7 @@ export async function buildMediaMtxConfigForNode(
       username: nvr.username,
       password,
       vendor: nvr.vendor,
+      rtspUrlTemplate: nvr.rtspUrlTemplate,
     });
   });
 
