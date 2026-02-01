@@ -76,6 +76,44 @@ cd d:\projects-advanced\school\tools\mediamtx
 
 ---
 
+## 📡 GB28181 (SIP) NVR integratsiyasi (rasmdagi kabi)
+
+Rasmdagi sozlama **GB28181/SIP** protokoli bo‘lib, bu RTSP/ONVIF’dan boshqa yo‘l.
+
+### A) Agar NVR RTSP/ONVIF qo‘llasa (tavsiya)
+1. NVR’da RTSP/ONVIF ni yoqing.
+2. Oddiy NVR qo‘shish oqimi bilan ulang (yuqoridagi 1‑bo‘lim).
+3. MediaMTX **pull** ishlaydi (bizning tizim default).
+
+### B) Agar NVR faqat GB28181 bo‘lsa
+Bizning backend **GB28181 SIP** ni to‘g‘ridan‑to‘g‘ri qabul qilmaydi. Shuning uchun **GB28181 gateway** kerak bo‘ladi:
+
+**Tavsiya arxitektura:**
+- GB28181 server (SIP 5060 + RTP port range) → streamni **RTSP** (yoki HLS/WebRTC) ga chiqaradi.
+- MediaMTX shu RTSP’ni **pull** qiladi (bizning tizimga mos).
+
+**NVR konfiguratsiya (rasmga mos):**
+- **SIP Server IP/Port**: gateway server (LAN yoki VPS).
+- **SIP Server ID / Domain**: platforma ID (GB28181 standart).
+- **SIP User Auth ID/Password**: device ID + parol (platformada mos).
+- **Local SIP Port**: 5060.
+- **Stream Type**: `Sub Stream` (H.264 tavsiya).
+- **Channel reporting**: ON (kanallar ro‘yxati kelishi uchun).
+
+**Keyingi qadam:**
+1. Gateway’da NVR ro‘yxatdan o‘tadi, kanallar ID (3402...) hosil bo‘ladi.
+2. Gateway RTSP URL beradi (har kanal uchun).
+3. Bizning tizimga kameralarni **manual** qo‘shing:
+   - `autoGenerateUrl = false`
+   - `streamUrl = gateway RTSP URL`
+   - `streamProfile = sub (H.264)`
+
+**Xavfsizlik:**
+- Public mode bo‘lsa, gateway serverda SIP/RTP portlari ochiladi.
+- NVR internetga ochilmaydi (NVR faqat gateway’ga OUTBOUND ulanadi).
+
+---
+
 ## 🎥 Stream Ko'rish
 
 ### Codec bo'yicha Player
