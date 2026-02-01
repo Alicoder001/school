@@ -12,7 +12,8 @@
     "db:migrate": "prisma migrate dev --name init",
     "db:seed": "ts-node prisma/seed.ts",
     "db:studio": "prisma studio",
-    "setup:mtx": "ts-node scripts/setup-mediamtx.ts"
+    "setup:mtx": "ts-node scripts/setup-mediamtx.ts",
+    "agent:scan": "ts-node scripts/agent/scan.ts"
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"

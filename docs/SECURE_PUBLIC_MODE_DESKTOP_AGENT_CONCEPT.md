@@ -80,6 +80,27 @@ Agent LAN’da quyidagilarni qiladi:
 Natija: topilgan obyektlar ro‘yxati:
 - `localIp`, `vendorGuess`, `localRtspPort`, `localHttpPort`, `localOnvifPort`, `model/serial` (imkon bo‘lsa).
 
+#### 5.2.1 Universal scan pipeline (best practice)
+Skanner universal bo‘lishi uchun discovery 3 qatlamda ishlaydi:
+1) **Host discovery**: subnet bo‘yicha TCP probe (80/443/554/8000/8080/8899/37777/34567/5060).
+2) **Service fingerprint**: HTTP/HTTPS banner + `WWW-Authenticate` realm + `<title>` dan vendor guess.
+3) **Optional ONVIF enrich**: faqat admin kiritgan credential bilan ONVIF device info/profiles (brute-force yo‘q).
+
+Universal natija modeli:
+- `deviceKind`: `NVR` / `CAMERA` / `UNKNOWN` (heuristic + confidence bilan)
+- `vendorGuess`: `hikvision`, `dahua`, `uniview`, `axis`, `reolink`, `seetong` va h.k.
+- `openPorts`, `fingerprints`, `reasons`
+- `onvif` (ixtiyoriy): `manufacturer`, `model`, `profiles`
+
+**Best practice qoidalari:**
+- Scan **faqat LAN** ichida (public IP range yo‘q).
+- Concurrency limit + timeout (tarmoqni bo‘g‘maslik uchun).
+- Max-host limit (masalan /24 default).
+- Hech qachon default passwordni brute-force qilmaslik.
+- Natija **admin tomonidan tasdiqlanadi** (auto-create emas).
+
+Amaliy implement: `scripts/agent/scan.ts` (ts-node) universal skan va vendor fingerprint logikasini beradi.
+
 ### 5.3 Public mapping (admin input)
 Har topilgan NVR uchun agent UI’da admin kiritadi:
 - `publicHost` (DDNS yoki public IP)
