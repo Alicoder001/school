@@ -22,11 +22,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const [user, setUser] = useState<User | null>(null);
     const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
     const [loading, setLoading] = useState(true);
+    const isProd = import.meta.env.PROD;
 
     useEffect(() => {
         const initAuth = async () => {
             const storedToken = localStorage.getItem('token');
-            if (storedToken) {
+            if (storedToken || isProd) {
                 try {
                     const userData = await authService.getMe();
                     setUser(userData);
@@ -41,19 +42,24 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             setLoading(false);
         };
         initAuth();
-    }, []);
+    }, [isProd]);
 
     const login = async (email: string, password: string) => {
         const response = await authService.login(email, password);
-        localStorage.setItem('token', response.token);
+        if (!isProd && response.token) {
+            localStorage.setItem('token', response.token);
+            setToken(response.token);
+        } else {
+            localStorage.removeItem('token');
+            setToken(null);
+        }
         localStorage.setItem('user', JSON.stringify(response.user));
-        setToken(response.token);
         setUser(response.user);
         return response.user;
     };
 
     const logout = () => {
-        authService.logout();
+        void authService.logout();
         setToken(null);
         setUser(null);
     };
@@ -66,7 +72,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 loading,
                 login,
                 logout,
-                isAuthenticated: !!token && !!user,
+                isAuthenticated: isProd ? !!user : !!token && !!user,
             }}
         >
             {children}

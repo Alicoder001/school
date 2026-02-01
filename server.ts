@@ -23,9 +23,21 @@ import searchRoutes from "./src/routes/search";
 import { registerJobs } from "./src/cron/jobs";
 import { startSnapshotScheduler } from "./src/realtime/snapshotScheduler";
 import { startMediaMtxAuto } from "./src/modules/cameras/services/mediamtx-runner.service";
-import { CORS_ORIGINS, IS_PROD, JWT_SECRET, PORT } from "./src/config";
+import { AUTH_COOKIE_NAME, CORS_ORIGINS, IS_PROD, JWT_SECRET, PORT } from "./src/config";
 
 const server = Fastify({ logger: true });
+
+const getCookie = (cookieHeader: string | undefined, name: string) => {
+  if (!cookieHeader) return undefined;
+  const parts = cookieHeader.split(";");
+  for (const part of parts) {
+    const [key, ...valueParts] = part.trim().split("=");
+    if (key === name) {
+      return decodeURIComponent(valueParts.join("="));
+    }
+  }
+  return undefined;
+};
 
 server.register(helmet, {
   global: true,
@@ -71,6 +83,14 @@ server.register(fastifyStatic, {
 // decorate request with auth verify
 server.decorate("authenticate", async function (request: any, reply: any) {
   try {
+    const authHeader = request.headers.authorization;
+    if (!authHeader) {
+      const cookieToken = getCookie(request.headers.cookie, AUTH_COOKIE_NAME);
+      if (cookieToken) {
+        await request.jwtVerify({ token: cookieToken });
+        return;
+      }
+    }
     await request.jwtVerify();
   } catch (err) {
     reply.send(err);

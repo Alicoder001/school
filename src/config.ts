@@ -13,6 +13,14 @@ if (IS_PROD && !JWT_SECRET) {
   throw new Error("JWT_SECRET must be set in production");
 }
 
+export const AUTH_COOKIE_NAME = process.env.AUTH_COOKIE_NAME || "auth_token";
+export const AUTH_COOKIE_TTL_SECONDS = Number(
+  process.env.AUTH_COOKIE_TTL_SECONDS || "604800",
+);
+export const AUTH_RETURN_TOKEN_IN_PROD =
+  process.env.AUTH_RETURN_TOKEN_IN_PROD === "true" ||
+  process.env.AUTH_RETURN_TOKEN_IN_PROD === "1";
+
 export const CREDENTIALS_SECRET = process.env.CREDENTIALS_SECRET || JWT_SECRET || "";
 if (IS_PROD && !CREDENTIALS_SECRET) {
   throw new Error("CREDENTIALS_SECRET must be set in production");
@@ -25,6 +33,26 @@ export const CORS_ORIGINS = (process.env.CORS_ORIGINS || "")
 
 export const WEBHOOK_ENFORCE_SECRET = IS_PROD;
 export const WEBHOOK_SECRET_HEADER = "x-webhook-secret";
+export const WEBHOOK_IP_ALLOWLIST = (process.env.WEBHOOK_IP_ALLOWLIST || "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+export const WEBHOOK_TRUST_PROXY =
+  process.env.WEBHOOK_TRUST_PROXY === "true" ||
+  process.env.WEBHOOK_TRUST_PROXY === "1";
+export const WEBHOOK_REQUIRE_SIGNATURE =
+  process.env.WEBHOOK_REQUIRE_SIGNATURE === "true" ||
+  process.env.WEBHOOK_REQUIRE_SIGNATURE === "1" ||
+  (IS_PROD && process.env.WEBHOOK_REQUIRE_SIGNATURE !== "false");
+export const WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS = Number(
+  process.env.WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS || "120",
+);
+export const WEBHOOK_IDEMPOTENCY_TTL_SECONDS = Number(
+  process.env.WEBHOOK_IDEMPOTENCY_TTL_SECONDS || "600",
+);
+export const WEBHOOK_ALLOW_PICTURES =
+  process.env.WEBHOOK_ALLOW_PICTURES === "true" ||
+  process.env.WEBHOOK_ALLOW_PICTURES === "1";
 
 // Devices (FaceID terminals) - auto provision on first valid webhook event.
 // Recommended only when webhook secrets are enforced (production).

@@ -47,7 +47,7 @@ export const useClassSnapshotSSE = (
       import.meta.env.PROD ||
       import.meta.env.VITE_SSE_USE_TOKEN_ENDPOINT === "true";
     let token = localStorage.getItem("token");
-    if (!token) {
+    if (!token && !useShortToken) {
       setError("No auth token");
       return;
     }

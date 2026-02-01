@@ -341,6 +341,6 @@ export interface PaginatedResponse<T> {
 
 // Login response
 export interface LoginResponse {
-  token: string;
+  token?: string;
   user: User;
 }

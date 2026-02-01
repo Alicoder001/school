@@ -1,4 +1,5 @@
 import { FastifyInstance, FastifyRequest } from "fastify";
+import { Prisma } from "@prisma/client";
 import prisma from "../../../prisma";
 import { emitAttendance } from "../../../eventEmitter";
 import { markClassDirty, markSchoolDirty } from "../../../realtime/snapshotScheduler";
@@ -7,15 +8,24 @@ import path from "path";
 import crypto from "crypto";
 import { getDateOnlyInZone, getTimePartsInZone } from "../../../utils/date";
 import { logAudit } from "../../../utils/audit";
+import { checkAndStoreNonce } from "../../../utils/webhookReplay";
 import {
   IS_PROD,
   DEVICE_AUTO_REGISTER_ENABLED,
   MIN_SCAN_INTERVAL_SECONDS,
   WEBHOOK_ENFORCE_SECRET,
   WEBHOOK_SECRET_HEADER,
+  WEBHOOK_IP_ALLOWLIST,
+  WEBHOOK_TRUST_PROXY,
+  WEBHOOK_REQUIRE_SIGNATURE,
+  WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS,
+  WEBHOOK_IDEMPOTENCY_TTL_SECONDS,
+  WEBHOOK_ALLOW_PICTURES,
 } from "../../../config";
 
 const UPLOADS_DIR = path.join(process.cwd(), "uploads");
+const WEBHOOK_TIMESTAMP_HEADER = "x-webhook-timestamp";
+const WEBHOOK_NONCE_HEADER = "x-webhook-nonce";
 
 type NormalizedEvent = {
   employeeNoString: string;
@@ -82,10 +92,18 @@ const handleAttendanceEvent = async (
   const dateOnly = getDateOnlyInZone(new Date(dateTime), schoolTimeZone);
   const todayDate = getDateOnlyInZone(new Date(), schoolTimeZone);
   const isTodayEvent = dateOnly.getTime() === todayDate.getTime();
-  const eventKey = crypto
-    .createHash("sha256")
-    .update(`${deviceID}:${employeeNoString}:${dateTime}:${direction}`)
-    .digest("hex");
+  const outerEvent = accessEventJson;
+  const innerEvent = accessEventJson.AccessControllerEvent || accessEventJson;
+  const rawEventId =
+    innerEvent?.eventId ||
+    innerEvent?.eventID ||
+    innerEvent?.eventIdString ||
+    outerEvent?.eventId ||
+    outerEvent?.eventID;
+  const eventKeySeed = rawEventId
+    ? `eventId:${deviceID}:${String(rawEventId)}:${direction}`
+    : `fallback:${deviceID}:${employeeNoString}:${dateTime}:${direction}`;
+  const eventKey = crypto.createHash("sha256").update(eventKeySeed).digest("hex");
 
   // ✅ OPTIMIZATION 1: Parallel queries - device va student ni bir vaqtda olish
   const [deviceFound, studentWithClass] = await Promise.all([
@@ -353,7 +371,7 @@ const handleAttendanceEvent = async (
 
     event = txResult.event;
   } catch (err: any) {
-    if (err?.code === "P2002") {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
       audit({
         action: "webhook.duplicate_event",
         level: "info",
@@ -392,14 +410,7 @@ const handleAttendanceEvent = async (
     });
   }
 
-  if (student && savedPicturePath) {
-    prisma.student
-      .update({
-        where: { id: student.id },
-        data: { photoUrl: savedPicturePath },
-      })
-      .catch(() => {});
-  }
+  // Do not update student profile photo from webhook events (policy)
 
   // ✅ OPTIMIZATION 5: Event emission - sinxron emas, fire-and-forget
   const eventPayload = {
@@ -493,6 +504,26 @@ export default async function (fastify: FastifyInstance) {
       console.log("Content-Type:", request.headers["content-type"]);
     }
 
+    if (WEBHOOK_IP_ALLOWLIST.length > 0) {
+      const forwarded = request.headers["x-forwarded-for"];
+      const forwardedIp = Array.isArray(forwarded)
+        ? forwarded[0]
+        : forwarded?.split(",")[0];
+      const remoteIp = WEBHOOK_TRUST_PROXY && forwardedIp
+        ? forwardedIp.trim()
+        : request.ip;
+      if (!WEBHOOK_IP_ALLOWLIST.includes(remoteIp)) {
+        logAudit(fastify, {
+          action: "webhook.ip.blocked",
+          level: "warn",
+          message: "Webhook IP not allowlisted",
+          schoolId: school.id,
+          extra: { ip: remoteIp },
+        });
+        return reply.status(403).send({ error: "IP not allowed" });
+      }
+    }
+
     if (WEBHOOK_ENFORCE_SECRET) {
       const secretFromQuery = request.query?.secret as string | undefined;
       const secretFromHeader = request.headers[WEBHOOK_SECRET_HEADER] as
@@ -504,7 +535,78 @@ export default async function (fastify: FastifyInstance) {
           ? school.webhookSecretIn
           : school.webhookSecretOut;
       if (!providedSecret || providedSecret !== expected) {
+        logAudit(fastify, {
+          action: "webhook.secret.invalid",
+          level: "warn",
+          message: "Invalid webhook secret",
+          schoolId: school.id,
+          extra: { direction: params.direction },
+        });
         return reply.status(403).send({ error: "Invalid webhook secret" });
+      }
+    }
+
+    const query = request.query as any;
+    const timestampHeader =
+      (request.headers[WEBHOOK_TIMESTAMP_HEADER] as string | undefined) ||
+      (query?.ts as string | undefined) ||
+      (query?.timestamp as string | undefined);
+    const nonceHeader =
+      (request.headers[WEBHOOK_NONCE_HEADER] as string | undefined) ||
+      (query?.nonce as string | undefined);
+
+    if (WEBHOOK_REQUIRE_SIGNATURE && (!timestampHeader || !nonceHeader)) {
+      logAudit(fastify, {
+        action: "webhook.signature.missing",
+        level: "warn",
+        message: "Missing webhook signature headers",
+        schoolId: school.id,
+        extra: { direction: params.direction },
+      });
+      return reply.status(403).send({ error: "Missing webhook signature" });
+    }
+
+    if (timestampHeader) {
+      const rawTs = Number(timestampHeader);
+      if (!Number.isFinite(rawTs)) {
+        logAudit(fastify, {
+          action: "webhook.timestamp.invalid",
+          level: "warn",
+          message: "Invalid webhook timestamp",
+          schoolId: school.id,
+          extra: { direction: params.direction },
+        });
+        return reply.status(400).send({ error: "Invalid webhook timestamp" });
+      }
+      const tsMs = rawTs < 1e12 ? rawTs * 1000 : rawTs;
+      const skewMs = Math.abs(Date.now() - tsMs);
+      if (skewMs > WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS * 1000) {
+        logAudit(fastify, {
+          action: "webhook.timestamp.skew",
+          level: "warn",
+          message: "Webhook timestamp out of range",
+          schoolId: school.id,
+          extra: { direction: params.direction, skewMs },
+        });
+        return reply.status(401).send({ error: "Webhook timestamp out of range" });
+      }
+    }
+
+    if (nonceHeader) {
+      const nonceKey = `webhook:${school.id}:${nonceHeader}`;
+      const ok = await checkAndStoreNonce(
+        nonceKey,
+        Math.max(60, WEBHOOK_IDEMPOTENCY_TTL_SECONDS),
+      );
+      if (!ok) {
+        logAudit(fastify, {
+          action: "webhook.duplicate_event",
+          level: "info",
+          message: "Duplicate webhook nonce rejected",
+          schoolId: school.id,
+          extra: { nonce: nonceHeader },
+        });
+        return reply.send({ ok: true, ignored: true, reason: "duplicate_nonce" });
       }
     }
 
@@ -634,9 +736,9 @@ export default async function (fastify: FastifyInstance) {
       console.log("  - studentName:", normalized.studentName);
     }
 
-    // save picture (if provided) - addToBody gives us Buffer or array
+    // save picture (if provided) - disabled by default for security
     let savedPicturePath: string | null = null;
-    if (picture) {
+    if (picture && WEBHOOK_ALLOW_PICTURES) {
       try {
         await fs.promises.mkdir(UPLOADS_DIR, { recursive: true });
         const filename = `${Date.now()}-face.jpg`;
@@ -656,10 +758,19 @@ export default async function (fastify: FastifyInstance) {
         savedPicturePath = path
           .relative(process.cwd(), filepath)
           .replace(/\\\\/g, "/");
-        console.log("Picture saved:", savedPicturePath);
+        if (!IS_PROD) {
+          console.log("Picture saved:", savedPicturePath);
+        }
       } catch (err) {
         console.error("Picture save error:", err);
       }
+    } else if (picture) {
+      logAudit(fastify, {
+        action: "webhook.picture.ignored",
+        level: "warn",
+        message: "Picture payload ignored by policy",
+        schoolId: school.id,
+      });
     }
 
     const result = await handleAttendanceEvent(
