@@ -18,6 +18,7 @@ import Users from "./pages/Users";
 import { UiGallery } from "./shared/ui";
 import Cameras from "./pages/Cameras";
 import CamerasSuperAdmin from "./pages/CamerasSuperAdmin";
+import AgentOnboarding from "./pages/AgentOnboarding";
 
 function App() {
   return (
@@ -167,14 +168,24 @@ function App() {
                     </ProtectedRoute>
                   }
                 />
-              <Route
-                path="schools/:schoolId/settings"
-                element={
-                  <ProtectedRoute requiredRoles={["SCHOOL_ADMIN"]}>
-                    <Settings />
-                  </ProtectedRoute>
-                }
-              />
+                <Route
+                  path="schools/:schoolId/settings"
+                  element={
+                    <ProtectedRoute requiredRoles={["SCHOOL_ADMIN"]}>
+                      <Settings />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="schools/:schoolId/agent"
+                  element={
+                    <ProtectedRoute
+                      requiredRoles={["SCHOOL_ADMIN", "SUPER_ADMIN"]}
+                    >
+                      <AgentOnboarding />
+                    </ProtectedRoute>
+                  }
+                />
 
               {/* Dev-only UI gallery */}
               {import.meta.env.DEV && (

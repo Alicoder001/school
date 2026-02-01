@@ -9,6 +9,7 @@ import {
   TeamOutlined,
   VideoCameraOutlined,
   LeftOutlined,
+  DesktopOutlined,
 } from "@ant-design/icons";
 
 export type UserRole = "SUPER_ADMIN" | "SCHOOL_ADMIN" | "TEACHER" | "GUARD";
@@ -81,6 +82,11 @@ export function buildMenuItems(params: {
       key: `${prefix}/devices`,
       icon: <ApiOutlined />,
       label: "Qurilmalar",
+    });
+    items.push({
+      key: `${prefix}/agent`,
+      icon: <DesktopOutlined />,
+      label: "Agent",
     });
     items.push({
       key: `${prefix}/holidays`,
