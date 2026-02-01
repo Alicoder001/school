@@ -185,7 +185,7 @@ export default async function (fastify: FastifyInstance) {
         const { schoolId } = request.params;
         const user = request.user;
 
-        requireRoles(user, ["SCHOOL_ADMIN", "GUARD", "SUPER_ADMIN"]);
+        requireRoles(user, ["SCHOOL_ADMIN", "GUARD", "SUPER_ADMIN", "AGENT"]);
         requireSchoolScope(user, schoolId);
 
         const nvrs = await prisma.nvr.findMany({
@@ -220,7 +220,7 @@ export default async function (fastify: FastifyInstance) {
           isActive,
         } = request.body as any;
 
-        requireRoles(user, ["SCHOOL_ADMIN", "SUPER_ADMIN"]);
+        requireRoles(user, ["SCHOOL_ADMIN", "SUPER_ADMIN", "AGENT"]);
         requireSchoolScope(user, schoolId);
 
         if (!name || !host || !username || !password) {
@@ -280,7 +280,7 @@ export default async function (fastify: FastifyInstance) {
         const { id } = request.params;
         const user = request.user;
 
-        requireRoles(user, ["SCHOOL_ADMIN", "GUARD", "SUPER_ADMIN"]);
+        requireRoles(user, ["SCHOOL_ADMIN", "GUARD", "SUPER_ADMIN", "AGENT"]);
         const nvr = await requireNvrSchoolScope(user, id);
 
         return sanitizeNvr(nvr);
@@ -311,7 +311,7 @@ export default async function (fastify: FastifyInstance) {
           isActive,
         } = request.body as any;
 
-        requireRoles(user, ["SCHOOL_ADMIN", "SUPER_ADMIN"]);
+        requireRoles(user, ["SCHOOL_ADMIN", "SUPER_ADMIN", "AGENT"]);
         await requireNvrSchoolScope(user, id);
 
         if (protocol && !ALLOWED_PROTOCOLS.has(protocol)) {
@@ -427,7 +427,7 @@ export default async function (fastify: FastifyInstance) {
         const user = request.user;
         const { areas, cameras } = request.body as any;
 
-        requireRoles(user, ["SCHOOL_ADMIN", "SUPER_ADMIN"]);
+        requireRoles(user, ["SCHOOL_ADMIN", "SUPER_ADMIN", "AGENT"]);
         const nvr = await requireNvrSchoolScope(user, id);
 
         if (
@@ -610,7 +610,7 @@ export default async function (fastify: FastifyInstance) {
         const user = request.user;
         const { overwriteNames, disableMissing = true } = request.body as any;
 
-        requireRoles(user, ["SCHOOL_ADMIN", "SUPER_ADMIN"]);
+        requireRoles(user, ["SCHOOL_ADMIN", "SUPER_ADMIN", "AGENT"]);
         const nvr = await requireNvrSchoolScope(user, id);
         const password = decryptSecret(nvr.passwordEncrypted);
 
@@ -730,7 +730,7 @@ export default async function (fastify: FastifyInstance) {
         const { schoolId } = request.params;
         const user = request.user;
 
-        requireRoles(user, ["SCHOOL_ADMIN", "GUARD", "SUPER_ADMIN"]);
+        requireRoles(user, ["SCHOOL_ADMIN", "GUARD", "SUPER_ADMIN", "AGENT"]);
         requireSchoolScope(user, schoolId);
 
         return prisma.cameraArea.findMany({
@@ -836,7 +836,7 @@ export default async function (fastify: FastifyInstance) {
         const user = request.user;
         const { areaId, nvrId } = request.query as any;
 
-        requireRoles(user, ["SCHOOL_ADMIN", "GUARD", "SUPER_ADMIN"]);
+        requireRoles(user, ["SCHOOL_ADMIN", "GUARD", "SUPER_ADMIN", "AGENT"]);
         requireSchoolScope(user, schoolId);
 
         const canViewRtsp =
@@ -914,9 +914,16 @@ export default async function (fastify: FastifyInstance) {
         const streamProfile =
           (camera.streamProfile as "main" | "sub") || "main";
         const isH265 = streamProfile === "main";
-        const recommendedPlayer = isH265 ? "hls" : "webrtc";
 
         const hlsUrl = buildHlsUrl(webrtcPath, mediaNode?.hlsBaseUrl);
+        const hasWebrtc = Boolean(webrtcUrl);
+        const hasHls = Boolean(hlsUrl);
+        const recommendedPlayer =
+          hasWebrtc && hasHls
+            ? "both"
+            : hasHls
+              ? "hls"
+              : "webrtc";
 
         const includePassword =
           includeRtspPassword === "1" ||
@@ -954,7 +961,7 @@ export default async function (fastify: FastifyInstance) {
         const { id } = request.params;
         const user = request.user;
 
-        requireRoles(user, ["SCHOOL_ADMIN", "SUPER_ADMIN"]);
+        requireRoles(user, ["SCHOOL_ADMIN", "SUPER_ADMIN", "AGENT"]);
         const nvr = await requireNvrSchoolScope(user, id);
         const password = decryptSecret(nvr.passwordEncrypted);
 
@@ -1353,7 +1360,7 @@ export default async function (fastify: FastifyInstance) {
           isActive,
         } = request.body as any;
 
-        requireRoles(user, ["SCHOOL_ADMIN", "SUPER_ADMIN"]);
+        requireRoles(user, ["SCHOOL_ADMIN", "SUPER_ADMIN", "AGENT"]);
         const existing = await requireCameraSchoolScope(user, id);
 
         if (status && !ALLOWED_CAMERA_STATUS.has(status)) {
@@ -1498,7 +1505,7 @@ export default async function (fastify: FastifyInstance) {
         const { nvrId, channelNo, streamProfile } = request.body as any;
         const { includeRtspPassword } = request.query as any;
 
-        requireRoles(user, ["SCHOOL_ADMIN", "SUPER_ADMIN"]);
+        requireRoles(user, ["SCHOOL_ADMIN", "SUPER_ADMIN", "AGENT"]);
         requireSchoolScope(user, schoolId);
 
         if (!nvrId || !channelNo) {

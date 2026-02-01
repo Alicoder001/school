@@ -11,6 +11,7 @@ import {
   Form,
   Input,
   InputNumber,
+  Segmented,
   Modal,
   Pagination,
   Popconfirm,
@@ -80,6 +81,9 @@ const Cameras: React.FC = () => {
   const [search, setSearch] = useState("");
   const [selectedCamera, setSelectedCamera] = useState<Camera | null>(null);
   const [streamInfo, setStreamInfo] = useState<CameraStreamInfo | null>(null);
+  const [playerMode, setPlayerMode] = useState<"auto" | "webrtc" | "hls">(
+    "auto",
+  );
   const [snapshotTick, setSnapshotTick] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(8);
@@ -228,6 +232,7 @@ const Cameras: React.FC = () => {
         setStreamInfo(null);
         return;
       }
+      setPlayerMode("auto");
       try {
         const data = await cameraApi.getCameraStream(selectedCamera.id);
         setStreamInfo(data);
@@ -250,6 +255,34 @@ const Cameras: React.FC = () => {
       return { ...c, area: areaMap.get(c.areaId) };
     });
   }, [cameras, areaMap]);
+
+  const resolvedWebrtcUrl =
+    streamInfo?.webrtcUrl ||
+    (streamInfo?.webrtcPath ? buildWebrtcWhepUrl(streamInfo.webrtcPath) : null);
+  const resolvedHlsUrl =
+    streamInfo?.hlsUrl ||
+    (streamInfo?.webrtcPath ? buildHlsUrl(streamInfo.webrtcPath) : null);
+  const hasWebrtc = Boolean(resolvedWebrtcUrl);
+  const hasHls = Boolean(resolvedHlsUrl);
+  const autoMode =
+    streamInfo?.recommendedPlayer === "hls"
+      ? "hls"
+      : streamInfo?.recommendedPlayer === "webrtc"
+        ? "webrtc"
+        : streamInfo?.isH265
+          ? "hls"
+          : "webrtc";
+  const preferredMode = playerMode === "auto" ? autoMode : playerMode;
+  const effectiveMode =
+    preferredMode === "webrtc" && !hasWebrtc
+      ? hasHls
+        ? "hls"
+        : "webrtc"
+      : preferredMode === "hls" && !hasHls
+        ? hasWebrtc
+          ? "webrtc"
+          : "hls"
+        : preferredMode;
 
   const filtered = useMemo(() => {
     return camerasWithArea.filter((c) => {
@@ -1087,42 +1120,56 @@ const Cameras: React.FC = () => {
       >
         {selectedCamera ? (
           <Space direction="vertical" size={12} style={{ width: "100%" }}>
-            {/* Player - codec ga qarab avtomatik tanlash */}
-            {streamInfo?.isH265 ? (
-              // H.265 - HLS Player ishlatish
-              streamInfo?.webrtcPath && (
-                <HlsPlayer
-                  key={`hls-${selectedCamera.id}-${webrtcConfigVersion}`}
-                  hlsUrl={
-                    streamInfo.hlsUrl || buildHlsUrl(streamInfo.webrtcPath)
+            {(hasWebrtc || hasHls) && (
+              <Space wrap align="center">
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  Player:
+                </Text>
+                <Segmented
+                  size="small"
+                  value={playerMode}
+                  onChange={(value) =>
+                    setPlayerMode(value as "auto" | "webrtc" | "hls")
                   }
-                  onError={(err) => console.log("HLS error:", err)}
+                  options={[
+                    { label: "Auto", value: "auto" },
+                    {
+                      label: "WebRTC (H.264)",
+                      value: "webrtc",
+                      disabled: !hasWebrtc,
+                    },
+                    {
+                      label: "HLS (H.265/Compat)",
+                      value: "hls",
+                      disabled: !hasHls,
+                    },
+                  ]}
                 />
-              )
-            ) : // H.264 - WebRTC Player ishlatish
-            streamInfo?.webrtcPath ? (
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  {playerMode === "auto"
+                    ? `Auto → ${effectiveMode.toUpperCase()}`
+                    : effectiveMode.toUpperCase()}
+                </Text>
+              </Space>
+            )}
+
+            {effectiveMode === "webrtc" && hasWebrtc && resolvedWebrtcUrl && (
               <WebRtcPlayer
                 key={`webrtc-${selectedCamera.id}-${webrtcConfigVersion}`}
-                whepUrl={
-                  streamInfo.webrtcUrl ||
-                  buildWebrtcWhepUrl(streamInfo.webrtcPath)
-                }
+                whepUrl={resolvedWebrtcUrl}
                 onError={(err) => console.log("WebRTC error:", err)}
               />
-            ) : (
-              streamInfo?.webrtcPath && (
-                <HlsPlayer
-                  key={`hls-${selectedCamera.id}-${webrtcConfigVersion}`}
-                  hlsUrl={
-                    streamInfo.hlsUrl || buildHlsUrl(streamInfo.webrtcPath)
-                  }
-                  onError={(err) => console.log("HLS error:", err)}
-                />
-              )
+            )}
+            {effectiveMode === "hls" && hasHls && resolvedHlsUrl && (
+              <HlsPlayer
+                key={`hls-${selectedCamera.id}-${webrtcConfigVersion}`}
+                hlsUrl={resolvedHlsUrl}
+                onError={(err) => console.log("HLS error:", err)}
+              />
             )}
 
             {/* Fallback: Snapshot */}
-            {!streamInfo?.webrtcPath && selectedCamera.snapshotUrl && (
+            {!hasWebrtc && !hasHls && selectedCamera.snapshotUrl && (
               <img
                 src={`${selectedCamera.snapshotUrl}?t=${snapshotTick}`}
                 alt={selectedCamera.name}
@@ -1134,8 +1181,15 @@ const Cameras: React.FC = () => {
             <Space direction="vertical" size={4}>
               {streamInfo?.codec && (
                 <Text type="secondary" style={{ fontSize: 12 }}>
-                  Codec: {streamInfo.codec} | Player:{" "}
-                  {streamInfo.recommendedPlayer?.toUpperCase()}
+                  Codec: {streamInfo.codec} | Auto: {autoMode.toUpperCase()} |
+                  Available:{" "}
+                  {hasWebrtc && hasHls
+                    ? "WEBRTC + HLS"
+                    : hasWebrtc
+                      ? "WEBRTC"
+                      : hasHls
+                        ? "HLS"
+                        : "-"}
                 </Text>
               )}
               {streamInfo?.rtspUrl && (
@@ -1143,14 +1197,19 @@ const Cameras: React.FC = () => {
                   RTSP: {streamInfo.rtspUrl}
                 </Text>
               )}
-              {streamInfo?.hlsUrl && (
+              {resolvedWebrtcUrl && (
                 <Text type="secondary" style={{ fontSize: 12 }}>
-                  HLS: {streamInfo.hlsUrl}
+                  WebRTC: {resolvedWebrtcUrl}
+                </Text>
+              )}
+              {resolvedHlsUrl && (
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  HLS: {resolvedHlsUrl}
                 </Text>
               )}
             </Space>
 
-            {!streamInfo?.webrtcPath && !selectedCamera.snapshotUrl && (
+            {!hasWebrtc && !hasHls && !selectedCamera.snapshotUrl && (
               <Text type="secondary">
                 Stream sozlanmagan. MediaMTX server va path to'g'ri bo'lishi
                 kerak.
