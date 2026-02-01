@@ -500,6 +500,14 @@ Deliverable: monitoring dashboards + alert policies.
 Maqsad: UX refinements, docs, privacy, retention policies.  
 Deliverable: prod release checklist va qonunchilikka moslik.
 
+### 15.1.1 Status checklist (2026-02-01)
+- [x] Phase 1 — Security hardening (cookie auth, webhook replay/allowlist, audit)
+- [x] Phase 2 — MediaMTX multi-node (MediaNode modeli, node-aware URL, per-node deploy)
+- [x] Phase 3 — Desktop Agent MVP (scan CLI + provision CLI + pairing API + onboarding UI)
+- [ ] Phase 3+ — Tauri wizard (scan → mapping → provision) + WS-Discovery
+- [ ] Phase 4 — Observability + Auto-recovery
+- [ ] Phase 5 — Polishing + Compliance
+
 ### 15.2 Branch strategiya (professional yondashuv)
 - Har bir faza alohida branch: `phase-1-security`, `phase-2-mediamtx`, ...
 - Har fazadan so'ng **typecheck + build** majburiy (backend va frontend).
