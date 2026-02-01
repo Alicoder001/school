@@ -96,7 +96,10 @@ paths:
     source: rtsp://user:pass@192.168.1.50:554/Streaming/Channels/101
 ```
 
-The UI will request `WEBRTC_BASE_URL + /whep/schools/<schoolId>/cameras/<cameraId|externalId>`.
+The UI will request WHEP at `WEBRTC_BASE_URL + /schools/<schoolId>/cameras/<cameraId|externalId>/whep`.
+
+Security note:
+- RTSP URLs returned by the API are masked by default to avoid password leakage. Only `SUPER_ADMIN` can request the full RTSP URL by adding `?includeRtspPassword=true` to `GET /cameras/:id/stream` (and to `POST /schools/:schoolId/preview-rtsp-url`).
 
 ONVIF Auto-Sync
 

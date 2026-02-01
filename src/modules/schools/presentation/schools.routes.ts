@@ -5,6 +5,7 @@ import bcrypt from "bcryptjs";
 import { requireRoles, requireSchoolScope } from "../../../utils/authz";
 import { sendHttpError } from "../../../utils/httpErrors";
 import { addDaysUtc, getDateOnlyInZone } from "../../../utils/date";
+import { WEBHOOK_ENFORCE_SECRET, WEBHOOK_SECRET_HEADER } from "../../../config";
 import {
   calculateAttendancePercent,
   getActiveClassIds,
@@ -17,6 +18,13 @@ import {
   computeNoScanSplit,
   getStatusCountsByRange,
 } from "../../attendance";
+
+function sanitizeSchool<T extends { webhookSecretIn?: string; webhookSecretOut?: string }>(
+  school: T,
+) {
+  const { webhookSecretIn, webhookSecretOut, ...rest } = school as any;
+  return rest as Omit<T, "webhookSecretIn" | "webhookSecretOut">;
+}
 
 export default async function (fastify: FastifyInstance) {
   fastify.get(
@@ -244,7 +252,7 @@ export default async function (fastify: FastifyInstance) {
 
         const school = await prisma.school.findUnique({ where: { id } });
         if (!school) return reply.status(404).send({ error: "not found" });
-        return school;
+        return sanitizeSchool(school);
       } catch (err) {
         return sendHttpError(reply, err);
       }
@@ -324,9 +332,24 @@ export default async function (fastify: FastifyInstance) {
 
         const school = await prisma.school.findUnique({ where: { id } });
         if (!school) return reply.status(404).send({ error: "Not found" });
+
+        const inPath = `/webhook/${school.id}/in`;
+        const outPath = `/webhook/${school.id}/out`;
         return {
-          inUrl: `/webhook/${school.id}/in?secret=${school.webhookSecretIn}`,
-          outUrl: `/webhook/${school.id}/out?secret=${school.webhookSecretOut}`,
+          enforceSecret: WEBHOOK_ENFORCE_SECRET,
+          secretHeaderName: WEBHOOK_SECRET_HEADER,
+
+          // Base endpoints (recommended to keep secrets out of URLs when possible)
+          inUrl: inPath,
+          outUrl: outPath,
+
+          // Hikvision/Device-friendly URLs (most devices can only set a URL, not custom headers)
+          inUrlWithSecret: `${inPath}?secret=${school.webhookSecretIn}`,
+          outUrlWithSecret: `${outPath}?secret=${school.webhookSecretOut}`,
+
+          // For integrations that can send headers (server-to-server, custom clients, etc.)
+          inSecret: school.webhookSecretIn,
+          outSecret: school.webhookSecretOut,
         };
       } catch (err) {
         return sendHttpError(reply, err);

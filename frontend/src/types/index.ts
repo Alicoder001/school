@@ -46,8 +46,8 @@ export interface School {
   address?: string;
   phone?: string;
   email?: string;
-  webhookSecretIn: string;
-  webhookSecretOut: string;
+  webhookSecretIn?: string;
+  webhookSecretOut?: string;
   lateThresholdMinutes: number;
   absenceCutoffMinutes: number;
   timezone: string;
