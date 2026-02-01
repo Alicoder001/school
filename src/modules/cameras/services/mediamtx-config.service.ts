@@ -158,3 +158,61 @@ export async function buildLocalMediaMtxConfigFromDb(): Promise<string> {
   return buildMediaMtxConfig({ cameras, nvrAuthById });
 }
 
+export async function buildMediaMtxConfigForNode(
+  mediaNodeId: string,
+): Promise<string> {
+  const schools = await prisma.school.findMany({
+    where: { mediaNodeId },
+    select: { id: true },
+  });
+  const schoolIds = schools.map((s) => s.id);
+  if (schoolIds.length === 0) {
+    return buildMediaMtxConfig({ cameras: [], nvrAuthById: new Map() });
+  }
+
+  const cameras = await prisma.camera.findMany({
+    where: { schoolId: { in: schoolIds }, isActive: true },
+    orderBy: [{ schoolId: "asc" }, { channelNo: "asc" }],
+    select: {
+      id: true,
+      schoolId: true,
+      externalId: true,
+      streamUrl: true,
+      streamProfile: true,
+      autoGenerateUrl: true,
+      channelNo: true,
+      nvrId: true,
+    },
+  });
+
+  const nvrIds = Array.from(
+    new Set(cameras.map((c) => c.nvrId).filter(Boolean) as string[]),
+  );
+  const nvrs = await prisma.nvr.findMany({
+    where: { id: { in: nvrIds } },
+    select: {
+      id: true,
+      host: true,
+      rtspPort: true,
+      username: true,
+      passwordEncrypted: true,
+      vendor: true,
+    },
+  });
+
+  const nvrAuthById = new Map<string, NvrAuth>();
+  nvrs.forEach((nvr) => {
+    const password = decryptSecret(nvr.passwordEncrypted);
+    nvrAuthById.set(nvr.id, {
+      id: nvr.id,
+      host: nvr.host,
+      rtspPort: nvr.rtspPort,
+      username: nvr.username,
+      password,
+      vendor: nvr.vendor,
+    });
+  });
+
+  return buildMediaMtxConfig({ cameras, nvrAuthById });
+}
+

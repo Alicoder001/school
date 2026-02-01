@@ -184,6 +184,7 @@ export interface CameraStreamInfo {
   codec?: string;
   isH265?: boolean;
   recommendedPlayer?: "webrtc" | "hls" | "both";
+  mediaNodeId?: string | null;
 }
 
 export type SearchItem = {

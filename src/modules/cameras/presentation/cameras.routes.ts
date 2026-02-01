@@ -22,6 +22,7 @@ import {
   buildMediaMtxConfig,
   getWebrtcPath,
 } from "../services/mediamtx-config.service";
+import { deployMediaMtxConfig } from "../services/mediamtx-deploy.service";
 import { maskRtspUrl, parseRtspUrl } from "../services/rtsp-url.util";
 import {
   MEDIAMTX_DEPLOY_ENABLED,
@@ -30,10 +31,7 @@ import {
   ONVIF_TIMEOUT_MS,
   WEBRTC_BASE_URL,
 } from "../../../config";
-import fs from "fs/promises";
-import os from "os";
 import path from "path";
-import { spawn } from "child_process";
 
 const ALLOWED_PROTOCOLS = new Set(["ONVIF", "RTSP", "HYBRID"]);
 const ALLOWED_CAMERA_STATUS = new Set(["ONLINE", "OFFLINE", "UNKNOWN"]);
@@ -42,36 +40,23 @@ function badRequest(message: string) {
   return Object.assign(new Error(message), { statusCode: 400 });
 }
 
-function buildWebrtcUrl(path: string): string | null {
-  if (!WEBRTC_BASE_URL) return null;
-  const trimmed = WEBRTC_BASE_URL.replace(/\/+$/, "");
+function normalizeBaseUrl(value?: string | null): string | null {
+  if (!value) return null;
+  return value.replace(/\/+$/, "");
+}
+
+function buildWebrtcUrl(path: string, baseUrl?: string | null): string | null {
+  const trimmed = normalizeBaseUrl(baseUrl || WEBRTC_BASE_URL);
+  if (!trimmed) return null;
   // MediaMTX WHEP endpoint format: /{path}/whep
   return `${trimmed}/${path}/whep`;
 }
 
-const runCommand = (
-  command: string,
-  args: string[],
-): Promise<{ stdout: string; stderr: string }> =>
-  new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (data) => {
-      stdout += data.toString();
-    });
-    child.stderr.on("data", (data) => {
-      stderr += data.toString();
-    });
-    child.on("error", (err) => reject(err));
-    child.on("close", (code) => {
-      if (code === 0) {
-        resolve({ stdout, stderr });
-      } else {
-        reject(new Error(`${command} exited with code ${code}: ${stderr}`));
-      }
-    });
-  });
+function buildHlsUrl(path: string, baseUrl?: string | null): string | null {
+  const trimmed = normalizeBaseUrl(baseUrl);
+  if (!trimmed) return null;
+  return `${trimmed}/${path}/index.m3u8`;
+}
 
 type NvrAuth = {
   id: string;
@@ -82,90 +67,6 @@ type NvrAuth = {
   vendor: string | null;
 };
 
-const deployMediaMtxConfig = async (params: {
-  content: string;
-  mode: "ssh" | "docker" | "local";
-  ssh?: {
-    host: string;
-    port?: number;
-    user: string;
-    remotePath: string;
-    restartCommand?: string;
-  };
-  docker?: {
-    container: string;
-    configPath: string;
-    restart?: boolean;
-  };
-  local?: {
-    path: string;
-    restartCommand?: string;
-  };
-}) => {
-  const tempPath = path.join(
-    os.tmpdir(),
-    `mediamtx_${Date.now()}_${Math.random().toString(16).slice(2)}.yml`,
-  );
-  await fs.writeFile(tempPath, params.content, "utf8");
-
-  try {
-    if (params.mode === "local") {
-      if (!params.local?.path) {
-        throw new Error("local path required");
-      }
-      await fs.writeFile(params.local.path, params.content, "utf8");
-      if (params.local.restartCommand) {
-        await runCommand("cmd", ["/c", params.local.restartCommand]);
-      }
-      return { mode: "local" };
-    }
-
-    if (params.mode === "ssh") {
-      if (!params.ssh) {
-        throw new Error("ssh config required");
-      }
-      const port = params.ssh.port || 22;
-      await runCommand("scp", [
-        "-P",
-        String(port),
-        tempPath,
-        `${params.ssh.user}@${params.ssh.host}:${params.ssh.remotePath}`,
-      ]);
-      if (params.ssh.restartCommand) {
-        await runCommand("ssh", [
-          "-p",
-          String(port),
-          `${params.ssh.user}@${params.ssh.host}`,
-          params.ssh.restartCommand,
-        ]);
-      }
-      return { mode: "ssh", port };
-    }
-
-    if (params.mode === "docker") {
-      if (!params.docker) {
-        throw new Error("docker config required");
-      }
-      await runCommand("docker", [
-        "cp",
-        tempPath,
-        `${params.docker.container}:${params.docker.configPath}`,
-      ]);
-      if (params.docker.restart !== false) {
-        await runCommand("docker", ["restart", params.docker.container]);
-      }
-      return { mode: "docker" };
-    }
-
-    throw new Error("invalid deploy mode");
-  } finally {
-    try {
-      await fs.unlink(tempPath);
-    } catch {
-      // ignore
-    }
-  }
-};
 
 function isValidChannelNo(value: any): boolean {
   const num = toNumber(value);
@@ -988,12 +889,26 @@ export default async function (fastify: FastifyInstance) {
           rtspSource = built.rtspSource;
         }
 
+        const school = await prisma.school.findUnique({
+          where: { id: camera.schoolId },
+          select: {
+            mediaNode: {
+              select: {
+                id: true,
+                webrtcBaseUrl: true,
+                hlsBaseUrl: true,
+              },
+            },
+          },
+        });
+        const mediaNode = school?.mediaNode || null;
+
         const webrtcPath = getWebrtcPath({
           schoolId: camera.schoolId,
           cameraId: camera.id,
           externalId: camera.externalId,
         });
-        const webrtcUrl = buildWebrtcUrl(webrtcPath);
+        const webrtcUrl = buildWebrtcUrl(webrtcPath, mediaNode?.webrtcBaseUrl);
 
         // Codec detection based on stream profile
         const streamProfile =
@@ -1001,8 +916,7 @@ export default async function (fastify: FastifyInstance) {
         const isH265 = streamProfile === "main";
         const recommendedPlayer = isH265 ? "hls" : "webrtc";
 
-        // HLS URL for H.265 streams - frontend builds this dynamically
-        const hlsUrl = null;
+        const hlsUrl = buildHlsUrl(webrtcPath, mediaNode?.hlsBaseUrl);
 
         const includePassword =
           includeRtspPassword === "1" ||
@@ -1024,6 +938,7 @@ export default async function (fastify: FastifyInstance) {
           codec: isH265 ? "H.265 (HEVC)" : "H.264 (AVC)",
           isH265,
           recommendedPlayer,
+          mediaNodeId: mediaNode?.id || null,
         };
       } catch (err) {
         return sendHttpError(reply, err);

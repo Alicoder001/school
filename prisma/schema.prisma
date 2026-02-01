@@ -15,6 +15,8 @@ model School {
   email               String?
   webhookSecretIn     String   @default(uuid())
   webhookSecretOut    String   @default(uuid())
+  mediaNodeId         String?
+  mediaNode           MediaNode? @relation(fields: [mediaNodeId], references: [id])
   lateThresholdMinutes Int     @default(15)
   absenceCutoffMinutes Int     @default(180)
   timezone            String   @default("Asia/Tashkent")
@@ -30,6 +32,23 @@ model School {
   attendanceEvents    AttendanceEvent[]
   dailyAttendances    DailyAttendance[]
   holidays            Holiday[]
+
+  @@index([mediaNodeId])
+}
+
+model MediaNode {
+  id               String   @id @default(uuid())
+  name             String
+  webrtcBaseUrl    String
+  hlsBaseUrl       String?
+  rtspPullEgressIp String?
+  isActive         Boolean  @default(true)
+  capacityWeight   Int      @default(1)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  schools          School[]
+
+  @@index([isActive])
 }
 
 model User {

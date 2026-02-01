@@ -1093,7 +1093,9 @@ const Cameras: React.FC = () => {
               streamInfo?.webrtcPath && (
                 <HlsPlayer
                   key={`hls-${selectedCamera.id}-${webrtcConfigVersion}`}
-                  hlsUrl={buildHlsUrl(streamInfo.webrtcPath)}
+                  hlsUrl={
+                    streamInfo.hlsUrl || buildHlsUrl(streamInfo.webrtcPath)
+                  }
                   onError={(err) => console.log("HLS error:", err)}
                 />
               )
@@ -1101,14 +1103,19 @@ const Cameras: React.FC = () => {
             streamInfo?.webrtcPath ? (
               <WebRtcPlayer
                 key={`webrtc-${selectedCamera.id}-${webrtcConfigVersion}`}
-                whepUrl={buildWebrtcWhepUrl(streamInfo.webrtcPath)}
+                whepUrl={
+                  streamInfo.webrtcUrl ||
+                  buildWebrtcWhepUrl(streamInfo.webrtcPath)
+                }
                 onError={(err) => console.log("WebRTC error:", err)}
               />
             ) : (
               streamInfo?.webrtcPath && (
                 <HlsPlayer
                   key={`hls-${selectedCamera.id}-${webrtcConfigVersion}`}
-                  hlsUrl={buildHlsUrl(streamInfo.webrtcPath)}
+                  hlsUrl={
+                    streamInfo.hlsUrl || buildHlsUrl(streamInfo.webrtcPath)
+                  }
                   onError={(err) => console.log("HLS error:", err)}
                 />
               )

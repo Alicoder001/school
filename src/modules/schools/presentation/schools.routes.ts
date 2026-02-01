@@ -356,4 +356,46 @@ export default async function (fastify: FastifyInstance) {
       }
     },
   );
+
+  fastify.put(
+    "/:id/media-node",
+    { preHandler: [(fastify as any).authenticate] } as any,
+    async (request: any, reply) => {
+      try {
+        const { id } = request.params;
+        const user = request.user;
+        requireRoles(user, ["SUPER_ADMIN"]);
+
+        const { mediaNodeId } = request.body as any;
+        if (mediaNodeId) {
+          const node = await prisma.mediaNode.findUnique({
+            where: { id: mediaNodeId },
+          });
+          if (!node) {
+            return reply.status(400).send({ error: "Media node not found" });
+          }
+        }
+
+        const school = await prisma.school.update({
+          where: { id },
+          data: { mediaNodeId: mediaNodeId || null },
+        });
+
+        logAudit(fastify, {
+          action: "school.media_node.update",
+          level: "info",
+          message: "School media node updated",
+          userId: user.sub,
+          userRole: user.role,
+          requestId: request.id,
+          schoolId: school.id,
+          extra: { mediaNodeId: mediaNodeId || null },
+        });
+
+        return school;
+      } catch (err) {
+        return sendHttpError(reply, err);
+      }
+    },
+  );
 }
