@@ -94,6 +94,7 @@ Universal natija modeli:
 
 **Best practice qoidalari:**
 - Scan **faqat LAN** ichida (public IP range yo‘q).
+- Agar private subnet topilmasa, scan **rad etiladi** (override uchun `--allowPublic`, lekin tavsiya qilinmaydi).
 - Concurrency limit + timeout (tarmoqni bo‘g‘maslik uchun).
 - Max-host limit (masalan /24 default).
 - Hech qachon default passwordni brute-force qilmaslik.

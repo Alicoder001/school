@@ -53,6 +53,7 @@ type ScanOptions = {
   httpTimeoutMs: number;
   concurrency: number;
   maxHosts: number;
+  allowPublic: boolean;
   onvifUser?: string;
   onvifPass?: string;
   onvifTimeoutMs: number;
@@ -123,6 +124,22 @@ const netmaskToPrefix = (netmask: string) =>
     .map((v) => Number(v).toString(2).padStart(8, "0"))
     .join("")
     .replace(/0.*$/, "").length;
+
+const isPrivateIp = (ip: string) => {
+  const [a, b] = ip.split(".").map((v) => Number(v));
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return false;
+  if (a === 10) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 169 && b === 254) return true;
+  return false;
+};
+
+const isPrivateCidr = (cidr: string) => {
+  const [ip] = cidr.split("/");
+  if (!ip) return false;
+  return isPrivateIp(ip);
+};
 
 const expandCidr = (cidr: string) => {
   const [ip, prefixStr] = cidr.split("/");
@@ -391,6 +408,7 @@ const buildOptions = (): ScanOptions => {
     httpTimeoutMs: Number(args.httpTimeout ?? 1200),
     concurrency: Number(args.concurrency ?? 128),
     maxHosts: Number(args.maxHosts ?? 1024),
+    allowPublic: Boolean(args.allowPublic),
     onvifUser: typeof args.onvifUser === "string" ? args.onvifUser : undefined,
     onvifPass: typeof args.onvifPass === "string" ? args.onvifPass : undefined,
     onvifTimeoutMs: Number(args.onvifTimeout ?? 2000),
@@ -400,7 +418,16 @@ const buildOptions = (): ScanOptions => {
 };
 
 const scan = async (options: ScanOptions): Promise<ScanResult> => {
-  const subnets = options.subnets.length ? options.subnets : getLocalSubnets();
+  let subnets = options.subnets.length ? options.subnets : getLocalSubnets();
+  if (!options.allowPublic) {
+    const privateSubnets = subnets.filter((cidr) => isPrivateCidr(cidr));
+    if (privateSubnets.length === 0) {
+      throw new Error(
+        "No private subnets detected. Pass --allowPublic to override (not recommended).",
+      );
+    }
+    subnets = privateSubnets;
+  }
   const hosts = subnets.flatMap((cidr) => expandCidr(cidr));
   if (hosts.length > options.maxHosts) {
     throw new Error(`Host count ${hosts.length} exceeds maxHosts ${options.maxHosts}`);
