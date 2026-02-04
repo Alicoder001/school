@@ -1,0 +1,30 @@
+{
+  "build": {
+    "beforeBuildCommand": "npm run build",
+    "beforeDevCommand": "npm run dev",
+    "devPath": "http://localhost:5173",
+    "distDir": "dist"
+  },
+  "package": {
+    "productName": "Student Registrator",
+    "version": "0.1.0"
+  },
+  "tauri": {
+    "allowlist": {
+      "all": false
+    },
+    "bundle": {
+      "identifier": "com.school.studentregistrator",
+      "externalBin": ["bin/student-registrator-server"],
+      "resources": ["../server/dist/**"]
+    },
+    "windows": [
+      {
+        "title": "Student Registrator",
+        "width": 1200,
+        "height": 800,
+        "resizable": true
+      }
+    ]
+  }
+}
