@@ -271,18 +271,20 @@ function App() {
           </p>
           {deviceError && <p className="notice error">{deviceError}</p>}
           <form onSubmit={handleDeviceSubmit} className="device-form">
-            <label className="label">Device Name</label>
-            <input
-              className="input"
-              value={deviceForm.name}
-              onChange={(event) =>
-                setDeviceForm((prev) => ({ ...prev, name: event.target.value }))
-              }
-              placeholder="Main Entrance"
-              required
-            />
+            <div className="form-group">
+              <label className="label">Device Name</label>
+              <input
+                className="input"
+                value={deviceForm.name}
+                onChange={(event) =>
+                  setDeviceForm((prev) => ({ ...prev, name: event.target.value }))
+                }
+                placeholder="Main Entrance"
+                required
+              />
+            </div>
             <div className="row">
-              <div>
+              <div className="form-group">
                 <label className="label">Host (IP)</label>
                 <input
                   className="input"
@@ -294,7 +296,7 @@ function App() {
                   required
                 />
               </div>
-              <div>
+              <div className="form-group">
                 <label className="label">Port</label>
                 <input
                   className="input"
@@ -311,7 +313,7 @@ function App() {
               </div>
             </div>
             <div className="row">
-              <div>
+              <div className="form-group">
                 <label className="label">Username</label>
                 <input
                   className="input"
@@ -325,7 +327,7 @@ function App() {
                   required
                 />
               </div>
-              <div>
+              <div className="form-group">
                 <label className="label">Password</label>
                 <input
                   className="input"
@@ -405,37 +407,43 @@ function App() {
               </div>
             </div>
           )}
-          <form onSubmit={handleRegisterSubmit}>
-            <label className="label">Student Name</label>
-            <input
-              className="input"
-              value={registerName}
-              onChange={(event) => setRegisterName(event.target.value)}
-              placeholder="Full name"
-              required
-            />
-            <label className="label">Gender</label>
-            <select
-              className="select"
-              value={registerGender}
-              onChange={(event) => setRegisterGender(event.target.value)}
-            >
-              {genders.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-            <label className="label">Face Image (JPG/PNG)</label>
-            <input
-              className="input"
-              type="file"
-              accept="image/*"
-              onChange={(event) =>
-                setRegisterFile(event.target.files ? event.target.files[0] : null)
-              }
-              required
-            />
+          <form onSubmit={handleRegisterSubmit} className="device-form">
+            <div className="form-group">
+              <label className="label">Student Name</label>
+              <input
+                className="input"
+                value={registerName}
+                onChange={(event) => setRegisterName(event.target.value)}
+                placeholder="Full name"
+                required
+              />
+            </div>
+            <div className="form-group">
+              <label className="label">Gender</label>
+              <select
+                className="select"
+                value={registerGender}
+                onChange={(event) => setRegisterGender(event.target.value)}
+              >
+                {genders.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="label">Face Image (JPG/PNG)</label>
+              <input
+                className="input"
+                type="file"
+                accept="image/*"
+                onChange={(event) =>
+                  setRegisterFile(event.target.files ? event.target.files[0] : null)
+                }
+                required
+              />
+            </div>
             <button className="button" type="submit" disabled={registerLoading}>
               {registerLoading ? "Registering..." : "Register Student"}
             </button>
@@ -444,7 +452,8 @@ function App() {
 
         <section className="card">
           <h2>Registered Users</h2>
-          <div className="row">
+          <div className="form-group">
+            <label className="label">Select Device</label>
             <select
               className="select"
               value={selectedDeviceId}

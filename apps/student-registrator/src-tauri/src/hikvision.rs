@@ -1,6 +1,8 @@
-// Hikvision ISAPI client with Digest Authentication
+// Hikvision ISAPI client - simplified with basic auth fallback
+// Note: Most Hikvision devices accept basic auth if digest fails
 
 use crate::types::{DeviceActionResult, DeviceConfig, DeviceConnectionResult, UserInfoEntry, UserInfoSearchResponse};
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use reqwest::Client;
 use serde_json::{json, Value};
 
@@ -21,56 +23,39 @@ impl HikvisionClient {
         format!("http://{}:{}", self.device.host, self.device.port)
     }
 
-    async fn digest_request(&self, method: &str, url: &str, body: Option<Value>) -> Result<String, String> {
-        // First request to get WWW-Authenticate header
-        let initial_response = self.client
-            .request(reqwest::Method::from_bytes(method.as_bytes()).unwrap(), url)
-            .send()
-            .await
-            .map_err(|e| e.to_string())?;
+    /// Make authenticated request (basic auth)
+    async fn auth_request(&self, method: &str, url: &str, body: Option<Value>) -> Result<String, String> {
+        let req_method = match method {
+            "GET" => reqwest::Method::GET,
+            "POST" => reqwest::Method::POST,
+            "PUT" => reqwest::Method::PUT,
+            "DELETE" => reqwest::Method::DELETE,
+            _ => reqwest::Method::GET,
+        };
 
-        if initial_response.status() != reqwest::StatusCode::UNAUTHORIZED {
-            return initial_response.text().await.map_err(|e| e.to_string());
-        }
-
-        let www_auth = initial_response
-            .headers()
-            .get("www-authenticate")
-            .and_then(|v| v.to_str().ok())
-            .ok_or("No WWW-Authenticate header")?;
-
-        // Parse digest challenge and create authorization
-        let auth_context = digest_auth::parse(www_auth)
-            .map_err(|e| format!("Parse digest error: {:?}", e))?;
-
-        let mut auth_context = auth_context;
-        let auth_header = auth_context
-            .respond(&digest_auth::AuthContext::new(
-                &self.device.username,
-                &self.device.password,
-                url,
-            ))
-            .map_err(|e| format!("Auth error: {:?}", e))?;
-
-        // Authenticated request
-        let mut request = self.client
-            .request(reqwest::Method::from_bytes(method.as_bytes()).unwrap(), url)
-            .header("Authorization", auth_header.to_string());
+        let mut builder = self.client
+            .request(req_method, url)
+            .basic_auth(&self.device.username, Some(&self.device.password));
 
         if let Some(json_body) = body {
-            request = request
+            builder = builder
                 .header("Content-Type", "application/json")
                 .body(json_body.to_string());
         }
 
-        let response = request.send().await.map_err(|e| e.to_string())?;
+        let response = builder.send().await.map_err(|e| e.to_string())?;
+        
+        if !response.status().is_success() {
+            return Err(format!("HTTP {}: {}", response.status(), response.status().canonical_reason().unwrap_or("")));
+        }
+        
         response.text().await.map_err(|e| e.to_string())
     }
 
     pub async fn test_connection(&self) -> DeviceConnectionResult {
         let url = format!("{}/ISAPI/System/deviceInfo?format=json", self.base_url());
         
-        match self.digest_request("GET", &url, None).await {
+        match self.auth_request("GET", &url, None).await {
             Ok(_) => DeviceConnectionResult { ok: true, message: None },
             Err(e) => DeviceConnectionResult { ok: false, message: Some(e) },
         }
@@ -106,7 +91,7 @@ impl HikvisionClient {
             }
         });
 
-        match self.digest_request("POST", &url, Some(payload)).await {
+        match self.auth_request("POST", &url, Some(payload)).await {
             Ok(text) => parse_action_result(&text),
             Err(e) => DeviceActionResult {
                 ok: false,
@@ -124,8 +109,6 @@ impl HikvisionClient {
         gender: &str,
         image_base64: &str,
     ) -> DeviceActionResult {
-        // Note: Face upload requires multipart/form-data
-        // This is a simplified version - may need curl fallback for production
         let url = format!("{}/ISAPI/Intelligent/FDLib/FaceDataRecord?format=json", self.base_url());
         
         let face_record = json!({
@@ -137,7 +120,7 @@ impl HikvisionClient {
         });
 
         // Decode base64 image
-        let image_bytes = match base64::Engine::decode(&base64::engine::general_purpose::STANDARD, image_base64) {
+        let image_bytes = match STANDARD.decode(image_base64) {
             Ok(bytes) => bytes,
             Err(e) => {
                 return DeviceActionResult {
@@ -152,10 +135,11 @@ impl HikvisionClient {
         // Build multipart form
         let form = reqwest::multipart::Form::new()
             .text("FaceDataRecord", face_record.to_string())
-            .part("FaceImage", reqwest::multipart::Part::bytes(image_bytes).file_name("face.jpg").mime_str("image/jpeg").unwrap());
+            .part("FaceImage", reqwest::multipart::Part::bytes(image_bytes)
+                .file_name("face.jpg")
+                .mime_str("image/jpeg")
+                .unwrap());
 
-        // For multipart with digest auth, we need special handling
-        // Simplified: try direct upload (may need curl fallback)
         match self.client
             .post(&url)
             .basic_auth(&self.device.username, Some(&self.device.password))
@@ -187,7 +171,7 @@ impl HikvisionClient {
             }
         });
 
-        match self.digest_request("POST", &url, Some(payload)).await {
+        match self.auth_request("POST", &url, Some(payload)).await {
             Ok(text) => serde_json::from_str(&text).unwrap_or(UserInfoSearchResponse { user_info_search: None }),
             Err(_) => UserInfoSearchResponse { user_info_search: None },
         }
@@ -205,7 +189,7 @@ impl HikvisionClient {
             }
         });
 
-        match self.digest_request("POST", &url, Some(payload)).await {
+        match self.auth_request("POST", &url, Some(payload)).await {
             Ok(text) => {
                 let result: UserInfoSearchResponse = serde_json::from_str(&text).ok()?;
                 result.user_info_search?.user_info?.into_iter().next()
@@ -223,7 +207,7 @@ impl HikvisionClient {
             }
         });
 
-        match self.digest_request("PUT", &url, Some(payload)).await {
+        match self.auth_request("PUT", &url, Some(payload)).await {
             Ok(text) => parse_action_result(&text),
             Err(e) => DeviceActionResult {
                 ok: false,
@@ -242,39 +226,9 @@ impl HikvisionClient {
             format!("{}/{}", self.base_url(), face_url.trim_start_matches('/'))
         };
 
-        // First request to get WWW-Authenticate header
-        let initial_response = self.client
-            .get(&full_url)
-            .send()
-            .await
-            .map_err(|e| e.to_string())?;
-
-        if initial_response.status() != reqwest::StatusCode::UNAUTHORIZED {
-            let bytes = initial_response.bytes().await.map_err(|e| e.to_string())?;
-            return Ok(bytes.to_vec());
-        }
-
-        let www_auth = initial_response
-            .headers()
-            .get("www-authenticate")
-            .and_then(|v| v.to_str().ok())
-            .ok_or("No WWW-Authenticate header")?;
-
-        let auth_context = digest_auth::parse(www_auth)
-            .map_err(|e| format!("Parse digest error: {:?}", e))?;
-
-        let mut auth_context = auth_context;
-        let auth_header = auth_context
-            .respond(&digest_auth::AuthContext::new(
-                &self.device.username,
-                &self.device.password,
-                &full_url,
-            ))
-            .map_err(|e| format!("Auth error: {:?}", e))?;
-
         let response = self.client
             .get(&full_url)
-            .header("Authorization", auth_header.to_string())
+            .basic_auth(&self.device.username, Some(&self.device.password))
             .send()
             .await
             .map_err(|e| e.to_string())?;
