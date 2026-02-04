@@ -5,9 +5,10 @@ import {
   deleteUser,
   fetchDevices,
   fetchUsers,
-  recreateUser,
   registerStudent,
   updateDevice,
+  fileToBase64,
+  recreateUser,
   type DeviceConfig,
   type RegisterResult,
   type UserInfoEntry,
@@ -147,11 +148,13 @@ function App() {
 
     setRegisterLoading(true);
     try {
-      const formData = new FormData();
-      formData.append("name", registerName.trim());
-      formData.append("gender", registerGender);
-      formData.append("faceImage", registerFile);
-      const result = await registerStudent(formData);
+      // Convert file to base64 for Tauri invoke
+      const faceImageBase64 = await fileToBase64(registerFile);
+      const result = await registerStudent(
+        registerName.trim(),
+        registerGender,
+        faceImageBase64,
+      );
       setRegisterResult(result);
       setRegisterName("");
       setRegisterFile(null);
@@ -213,15 +216,21 @@ function App() {
       return;
     }
     try {
-      const formData = new FormData();
-      formData.append("name", editName.trim());
-      formData.append("gender", editGender);
-      formData.append("newEmployeeNo", String(editNewId));
-      formData.append("reuseExistingFace", String(editReuseFace));
+      // Convert file to base64 if provided
+      let faceImageBase64: string | undefined;
       if (editFile) {
-        formData.append("faceImage", editFile);
+        faceImageBase64 = await fileToBase64(editFile);
       }
-      await recreateUser(selectedDeviceId, editingUser.employeeNo, formData);
+      
+      await recreateUser(
+        selectedDeviceId,
+        editingUser.employeeNo,
+        editName.trim(),
+        editGender,
+        editNewId,
+        editReuseFace,
+        faceImageBase64,
+      );
       cancelEditUser();
       handleFetchUsers();
     } catch (err) {

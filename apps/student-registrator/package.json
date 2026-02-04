@@ -5,12 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:server": "npm --prefix server run dev",
-    "dev:desktop": "concurrently -k \"npm run dev:server\" \"tauri dev\"",
+    "dev:desktop": "tauri dev",
     "build": "tsc -b && vite build",
-    "build:server": "npm --prefix server run build",
-    "build:sidecar": "npm --prefix server run build:binary && npm --prefix server run prepare:tauri",
-    "build:desktop": "npm run build:server && npm run build:sidecar && tauri build",
+    "build:desktop": "tauri build",
     "preview": "vite preview",
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.app.json --noEmit"

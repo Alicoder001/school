@@ -1,4 +1,8 @@
-﻿export interface DeviceConfig {
+﻿// API Client using Tauri invoke
+
+import { invoke } from '@tauri-apps/api';
+
+export interface DeviceConfig {
   id: string;
   name: string;
   host: string;
@@ -43,98 +47,120 @@ export interface UserInfoSearchResponse {
   };
 }
 
-const API_BASE = "http://localhost:5050";
+// Backend URL - can be configured via environment
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
 
-async function handleResponse<T>(res: Response): Promise<T> {
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || `Request failed: ${res.status}`);
-  }
-  return (await res.json()) as T;
-}
+// ============ Device Management ============
 
 export async function fetchDevices(): Promise<DeviceConfig[]> {
-  const res = await fetch(`${API_BASE}/devices`);
-  const data = await handleResponse<{ devices: DeviceConfig[] }>(res);
-  return data.devices;
+  return invoke<DeviceConfig[]>('get_devices');
 }
 
 export async function createDevice(
-  device: Omit<DeviceConfig, "id">,
+  device: Omit<DeviceConfig, 'id'>,
 ): Promise<DeviceConfig> {
-  const res = await fetch(`${API_BASE}/devices`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(device),
+  return invoke<DeviceConfig>('create_device', {
+    name: device.name,
+    host: device.host,
+    port: device.port,
+    username: device.username,
+    password: device.password,
   });
-  const data = await handleResponse<{ device: DeviceConfig }>(res);
-  return data.device;
 }
 
 export async function updateDevice(
   id: string,
-  device: Omit<DeviceConfig, "id">,
+  device: Omit<DeviceConfig, 'id'>,
 ): Promise<DeviceConfig> {
-  const res = await fetch(`${API_BASE}/devices/${id}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(device),
+  return invoke<DeviceConfig>('update_device', {
+    id,
+    name: device.name,
+    host: device.host,
+    port: device.port,
+    username: device.username,
+    password: device.password,
   });
-  const data = await handleResponse<{ device: DeviceConfig }>(res);
-  return data.device;
 }
 
-export async function deleteDevice(id: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/devices/${id}`, { method: "DELETE" });
-  await handleResponse<{ ok: boolean }>(res);
+export async function deleteDevice(id: string): Promise<boolean> {
+  return invoke<boolean>('delete_device', { id });
 }
 
-export async function registerStudent(formData: FormData): Promise<RegisterResult> {
-  const res = await fetch(`${API_BASE}/register`, {
-    method: "POST",
-    body: formData,
-  });
-  return handleResponse<RegisterResult>(res);
+export async function testDeviceConnection(deviceId: string): Promise<boolean> {
+  return invoke<boolean>('test_device_connection', { deviceId });
 }
+
+// ============ Student Registration ============
+
+export async function registerStudent(
+  name: string,
+  gender: string,
+  faceImageBase64: string,
+): Promise<RegisterResult> {
+  return invoke<RegisterResult>('register_student', {
+    name,
+    gender,
+    faceImageBase64,
+    backendUrl: BACKEND_URL,
+  });
+}
+
+// ============ User Management ============
 
 export async function fetchUsers(deviceId: string): Promise<UserInfoSearchResponse> {
-  const res = await fetch(`${API_BASE}/users?deviceId=${encodeURIComponent(deviceId)}`);
-  return handleResponse<UserInfoSearchResponse>(res);
-}
-
-export async function updateUser(
-  deviceId: string,
-  employeeNo: string,
-  payload: Record<string, unknown>,
-): Promise<Record<string, unknown>> {
-  const res = await fetch(`${API_BASE}/users/${employeeNo}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ deviceId, payload }),
+  return invoke<UserInfoSearchResponse>('fetch_users', { 
+    deviceId,
+    offset: 0,
+    limit: 30,
   });
-  return handleResponse<Record<string, unknown>>(res);
 }
 
 export async function deleteUser(
   deviceId: string,
   employeeNo: string,
-): Promise<Record<string, unknown>> {
-  const res = await fetch(
-    `${API_BASE}/users/${employeeNo}?deviceId=${encodeURIComponent(deviceId)}`,
-    { method: "DELETE" },
-  );
-  return handleResponse<Record<string, unknown>>(res);
+): Promise<boolean> {
+  return invoke<boolean>('delete_user', { deviceId, employeeNo });
+}
+
+export interface RecreateUserResult {
+  employeeNo: string;
+  deleteResult: { ok: boolean; statusString?: string; errorMsg?: string };
+  createResult: { ok: boolean; statusString?: string; errorMsg?: string };
+  faceUpload: { ok: boolean; statusString?: string; errorMsg?: string };
 }
 
 export async function recreateUser(
   deviceId: string,
   employeeNo: string,
-  formData: FormData,
-): Promise<Record<string, unknown>> {
-  formData.append("deviceId", deviceId);
-  const res = await fetch(`${API_BASE}/users/${employeeNo}/recreate`, {
-    method: "POST",
-    body: formData,
+  name: string,
+  gender: string,
+  newEmployeeNo: boolean,
+  reuseExistingFace: boolean,
+  faceImageBase64?: string,
+): Promise<RecreateUserResult> {
+  return invoke<RecreateUserResult>('recreate_user', {
+    deviceId,
+    employeeNo,
+    name,
+    gender,
+    newEmployeeNo,
+    reuseExistingFace,
+    faceImageBase64,
   });
-  return handleResponse<Record<string, unknown>>(res);
+}
+
+// ============ Helper Functions ============
+
+export async function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      // Remove data:image/xxx;base64, prefix
+      const base64 = result.split(',')[1] || result;
+      resolve(base64);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
