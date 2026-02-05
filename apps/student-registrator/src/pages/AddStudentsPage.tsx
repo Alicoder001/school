@@ -163,7 +163,8 @@ export function AddStudentsPage() {
       // Check if all rows have classId
       const withoutClass = resized.filter(r => !r.classId);
       if (withoutClass.length > 0) {
-        console.warn('[Excel Import] Rows without classId:', withoutClass.map(r => r.name));
+        const missingNames = withoutClass.map((r) => `${r.lastName || ''} ${r.firstName || ''}`.trim());
+        console.warn('[Excel Import] Rows without classId:', missingNames);
         addToast(`${withoutClass.length} ta o'quvchining sinfi topilmadi!`, 'error');
       }
       
@@ -238,11 +239,12 @@ export function AddStudentsPage() {
   // Add empty row handler
   const handleAddRow = () => {
     addStudent({
-      name: '',
+      firstName: '',
+      lastName: '',
+      fatherName: undefined,
       gender: 'male',
       classId: undefined,
       className: undefined,
-      parentName: undefined,
       parentPhone: undefined,
       imageBase64: undefined,
     });

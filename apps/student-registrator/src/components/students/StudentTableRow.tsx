@@ -15,6 +15,7 @@ interface StudentTableRowProps {
 export function StudentTableRow({ index, student, availableClasses, onEdit, onDelete, onSave }: StudentTableRowProps) {
   const [isSaving, setIsSaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const fullName = `${student.lastName || ''} ${student.firstName || ''}`.trim();
 
   const handleChange = (field: keyof StudentRow, value: any) => {
     console.log(`[Table Row] Editing ${field}:`, value);
@@ -54,9 +55,18 @@ export function StudentTableRow({ index, student, availableClasses, onEdit, onDe
       <td>
         <input
           className="input input-sm table-input"
-          value={student.name}
-          onChange={(e) => handleChange('name', e.target.value)}
-          placeholder="Ism va familiya"
+          value={student.lastName}
+          onChange={(e) => handleChange('lastName', e.target.value)}
+          placeholder="Familiya"
+          disabled={student.status === 'success'}
+        />
+      </td>
+      <td>
+        <input
+          className="input input-sm table-input"
+          value={student.firstName}
+          onChange={(e) => handleChange('firstName', e.target.value)}
+          placeholder="Ism"
           disabled={student.status === 'success'}
         />
       </td>
@@ -93,9 +103,9 @@ export function StudentTableRow({ index, student, availableClasses, onEdit, onDe
       <td>
         <input
           className="input input-sm table-input"
-          value={student.parentName || ''}
-          onChange={(e) => handleChange('parentName', e.target.value)}
-          placeholder="Ota-ona"
+          value={student.fatherName || ''}
+          onChange={(e) => handleChange('fatherName', e.target.value)}
+          placeholder="Otasining ismi"
           disabled={student.status === 'success'}
         />
       </td>
@@ -114,7 +124,7 @@ export function StudentTableRow({ index, student, availableClasses, onEdit, onDe
             <div className="image-preview-wrapper">
               <img 
                 src={`data:image/jpeg;base64,${student.imageBase64}`}
-                alt={student.name}
+                alt={fullName || 'Student'}
                 className="image-preview"
                 title="Rasm ko'rish"
               />

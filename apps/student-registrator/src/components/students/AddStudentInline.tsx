@@ -10,17 +10,18 @@ interface AddStudentInlineProps {
 }
 
 export function AddStudentInline({ availableClasses, onAdd, onCancel }: AddStudentInlineProps) {
-  const [name, setName] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [gender, setGender] = useState('male');
   const [classId, setClassId] = useState('');
-  const [parentName, setParentName] = useState('');
+  const [fatherName, setFatherName] = useState('');
   const [parentPhone, setParentPhone] = useState('');
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async () => {
-    if (!name.trim()) {
-      alert("Ism majburiy!");
+    if (!firstName.trim() || !lastName.trim()) {
+      alert("Ism va familiya majburiy!");
       return;
     }
 
@@ -34,20 +35,22 @@ export function AddStudentInline({ availableClasses, onAdd, onCancel }: AddStude
       const selectedClass = availableClasses.find(c => c.id === classId);
 
       onAdd({
-        name: name.trim(),
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        fatherName: fatherName.trim() || undefined,
         gender,
         classId: classId || undefined,
         className: selectedClass?.name,
-        parentName: parentName.trim() || undefined,
         parentPhone: parentPhone.trim() || undefined,
         imageBase64,
       });
 
       // Reset form
-      setName('');
+      setFirstName('');
+      setLastName('');
       setGender('male');
       setClassId('');
-      setParentName('');
+      setFatherName('');
       setParentPhone('');
       setImageFile(null);
       onCancel();
@@ -66,12 +69,22 @@ export function AddStudentInline({ availableClasses, onAdd, onCancel }: AddStude
       
       <div className="inline-form-grid">
         <div className="form-group">
+          <label>Familiya *</label>
+          <input
+            className="input"
+            value={lastName}
+            onChange={(e) => setLastName(e.target.value)}
+            placeholder="Familiya"
+          />
+        </div>
+
+        <div className="form-group">
           <label>Ism *</label>
           <input
             className="input"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Ism va familiya"
+            value={firstName}
+            onChange={(e) => setFirstName(e.target.value)}
+            placeholder="Ism"
           />
         </div>
 
@@ -97,12 +110,12 @@ export function AddStudentInline({ availableClasses, onAdd, onCancel }: AddStude
         </div>
 
         <div className="form-group">
-          <label>Ota-ona</label>
+          <label>Otasining ismi</label>
           <input
             className="input"
-            value={parentName}
-            onChange={(e) => setParentName(e.target.value)}
-            placeholder="Ota-ona ismi"
+            value={fatherName}
+            onChange={(e) => setFatherName(e.target.value)}
+            placeholder="Otasining ismi"
           />
         </div>
 

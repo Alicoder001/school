@@ -136,9 +136,11 @@ pub async fn test_device_connection(device_id: String) -> Result<DeviceConnectio
 #[tauri::command]
 pub async fn register_student(
     name: String,
+    first_name: Option<String>,
+    last_name: Option<String>,
+    father_name: Option<String>,
     gender: String,
     face_image_base64: String,
-    parent_name: Option<String>,
     parent_phone: Option<String>,
     class_id: Option<String>,
     target_device_ids: Option<Vec<String>>,
@@ -164,6 +166,13 @@ pub async fn register_student(
     let backend_token = backend_token.filter(|v| !v.trim().is_empty());
     let school_id = school_id.filter(|v| !v.trim().is_empty());
 
+    let full_name = {
+        let first = first_name.clone().unwrap_or_default().trim().to_string();
+        let last = last_name.clone().unwrap_or_default().trim().to_string();
+        let combined = format!("{} {}", last, first).trim().to_string();
+        if combined.is_empty() { name.trim().to_string() } else { combined }
+    };
+
     let mut employee_no = generate_employee_no();
     let mut provisioning_id: Option<String> = None;
     let mut api_client: Option<ApiClient> = None;
@@ -179,10 +188,12 @@ pub async fn register_student(
         let provisioning = client
             .start_provisioning(
                 &school_id,
-                &name,
+                &full_name,
                 Some(&employee_no), // keep numeric device_student_id for Hikvision
                 class_id.as_deref(), // classId - to'g'ri o'rinda!
-                parent_name.as_deref(),
+                first_name.as_deref(),
+                last_name.as_deref(),
+                father_name.as_deref(),
                 parent_phone.as_deref(),
                 target_device_ids.as_deref(),
                 &request_id,
@@ -274,7 +285,7 @@ pub async fn register_student(
         // Create user
         let user_create = client.create_user(
             &employee_no,
-            &name,
+            &full_name,
             &gender,
             &begin_time,
             &end_time,
@@ -309,7 +320,7 @@ pub async fn register_student(
         // Upload face
         let face_upload = client.upload_face(
             &employee_no,
-            &name,
+            &full_name,
             &gender,
             &face_image_base64,
         ).await;
@@ -347,7 +358,7 @@ pub async fn register_student(
     // Sync to main backend if URL provided
     if let Some(url) = backend_url {
         let client = api_client.unwrap_or_else(|| ApiClient::new(url, backend_token));
-        let _ = client.sync_student(&employee_no, &name, &gender).await;
+        let _ = client.sync_student(&employee_no, &full_name, &gender).await;
     }
 
     Ok(RegisterResult {

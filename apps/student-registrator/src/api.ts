@@ -269,7 +269,14 @@ export async function registerStudent(
   name: string,
   gender: string,
   faceImageBase64: string,
-  options?: { parentName?: string; parentPhone?: string; classId?: string; targetDeviceIds?: string[] },
+  options?: {
+    firstName?: string;
+    lastName?: string;
+    fatherName?: string;
+    parentPhone?: string;
+    classId?: string;
+    targetDeviceIds?: string[];
+  },
 ): Promise<RegisterResult> {
   const token = getAuthToken();
   const user = getAuthUser();
@@ -278,7 +285,9 @@ export async function registerStudent(
     name,
     gender,
     faceImageBase64,
-    parentName: options?.parentName,
+    firstName: options?.firstName,
+    lastName: options?.lastName,
+    fatherName: options?.fatherName,
     parentPhone: options?.parentPhone,
     classId: options?.classId,
     targetDeviceIds: options?.targetDeviceIds,

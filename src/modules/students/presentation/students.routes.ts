@@ -38,6 +38,28 @@ function normalizeHeader(value: string): string {
     .toLowerCase();
 }
 
+function normalizeNamePart(value: string): string {
+  return String(value || "").trim();
+}
+
+function buildFullName(lastName: string, firstName: string): string {
+  const parts = [normalizeNamePart(lastName), normalizeNamePart(firstName)].filter(Boolean);
+  return parts.join(" ").trim();
+}
+
+function splitFullName(fullName: string): { firstName: string; lastName: string } {
+  const cleaned = normalizeNamePart(fullName);
+  if (!cleaned) return { firstName: "", lastName: "" };
+  const parts = cleaned.split(/\s+/);
+  if (parts.length === 1) {
+    return { firstName: parts[0], lastName: "" };
+  }
+  return {
+    lastName: parts[0],
+    firstName: parts.slice(1).join(" "),
+  };
+}
+
 type ProvisioningAuth = { user: any | null; tokenAuth: boolean };
 
 async function ensureProvisioningAuth(
@@ -385,8 +407,46 @@ export default async function (fastify: FastifyInstance) {
           return reply.status(400).send({ error: "Bunday sinf topilmadi" });
         }
 
+        const firstName = normalizeNamePart(body.firstName || "");
+        const lastName = normalizeNamePart(body.lastName || "");
+        const fatherName = normalizeNamePart(body.fatherName || body.parentName || "");
+        const fullName =
+          firstName || lastName
+            ? buildFullName(lastName, firstName)
+            : normalizeNamePart(body.name || "");
+
+        if (!firstName || !lastName) {
+          return reply
+            .status(400)
+            .send({ error: "Ism va familiya majburiy" });
+        }
+
+        const existing = await prisma.student.findFirst({
+          where: {
+            schoolId,
+            classId: body.classId,
+            firstName,
+            lastName,
+            isActive: true,
+          },
+          select: { id: true },
+        });
+        if (existing) {
+          return reply
+            .status(409)
+            .send({ error: "Bu sinfda bunday o'quvchi mavjud" });
+        }
+
         const student = await prisma.student.create({
-          data: { ...body, schoolId },
+          data: {
+            ...body,
+            schoolId,
+            name: fullName,
+            firstName,
+            lastName,
+            fatherName: fatherName || null,
+            parentName: fatherName || null,
+          },
         });
         return student;
       } catch (err) {
@@ -415,19 +475,21 @@ export default async function (fastify: FastifyInstance) {
         const wb = new ExcelJS.Workbook();
         const ws = wb.addWorksheet("Students");
         ws.columns = [
-          { header: "Name", key: "name", width: 30 },
+          { header: "Last Name", key: "lastName", width: 18 },
+          { header: "First Name", key: "firstName", width: 18 },
+          { header: "Father Name", key: "fatherName", width: 18 },
           { header: "Device ID", key: "deviceStudentId", width: 15 },
           { header: "Class", key: "class", width: 15 },
-          { header: "Parent Name", key: "parentName", width: 25 },
           { header: "Parent Phone", key: "parentPhone", width: 20 },
         ];
 
         students.forEach((s) => {
           ws.addRow({
-            name: s.name,
+            lastName: s.lastName || "",
+            firstName: s.firstName || "",
+            fatherName: s.fatherName || s.parentName || "",
             deviceStudentId: s.deviceStudentId,
             class: s.class?.name || "",
-            parentName: s.parentName || "",
             parentPhone: s.parentPhone || "",
           });
         });
@@ -570,12 +632,20 @@ export default async function (fastify: FastifyInstance) {
             texts.includes("person id") &&
             (texts.includes("person name") ||
               texts.includes("name") ||
-              texts.includes("ism"))
+              texts.includes("ism") ||
+              (texts.includes("first name") && texts.includes("last name")) ||
+              (texts.includes("ism") && texts.includes("familiya")))
           ) {
             headerRowNumber = r;
             break;
           }
-          if (texts.includes("device id") && (texts.includes("name") || texts.includes("ism"))) {
+          if (
+            texts.includes("device id") &&
+            (texts.includes("name") ||
+              texts.includes("ism") ||
+              (texts.includes("first name") && texts.includes("last name")) ||
+              (texts.includes("ism") && texts.includes("familiya")))
+          ) {
             headerRowNumber = r;
             break;
           }
@@ -604,10 +674,16 @@ export default async function (fastify: FastifyInstance) {
           headerMap.has("parent phone");
 
         const isNewInternal =
-          (headerMap.has("name") || headerMap.has("ism")) &&
+          (headerMap.has("name") ||
+            headerMap.has("ism") ||
+            (headerMap.has("first name") && headerMap.has("last name")) ||
+            (headerMap.has("ism") && headerMap.has("familiya"))) &&
           headerMap.has("person id") &&
           (headerMap.has("class") || headerMap.has("sinf")) &&
-          (headerMap.has("parent name") || headerMap.has("ota-ona ismi")) &&
+          (headerMap.has("parent name") ||
+            headerMap.has("ota-ona ismi") ||
+            headerMap.has("father name") ||
+            headerMap.has("otasining ismi")) &&
           (headerMap.has("parent phone") || headerMap.has("ota-ona telefoni"));
 
         if (!isIvmsTemplate && !isLegacyInternal && !isNewInternal) {
@@ -619,6 +695,10 @@ export default async function (fastify: FastifyInstance) {
         const dataStartRow = headerRowNumber + 1;
         const colName =
           headerMap.get("person name") ?? headerMap.get("name") ?? headerMap.get("ism");
+        const colFirstName =
+          headerMap.get("first name") ?? headerMap.get("ism");
+        const colLastName =
+          headerMap.get("last name") ?? headerMap.get("familiya");
         const colPersonId =
           headerMap.get("person id") ?? headerMap.get("device id");
         const colClass =
@@ -626,7 +706,10 @@ export default async function (fastify: FastifyInstance) {
           headerMap.get("class") ??
           headerMap.get("sinf");
         const colParentName =
-          headerMap.get("parent name") ?? headerMap.get("ota-ona ismi");
+          headerMap.get("parent name") ??
+          headerMap.get("ota-ona ismi") ??
+          headerMap.get("father name") ??
+          headerMap.get("otasining ismi");
         const colParentPhone =
           headerMap.get("parent phone") ?? headerMap.get("ota-ona telefoni") ?? headerMap.get("contact");
 
@@ -639,6 +722,7 @@ export default async function (fastify: FastifyInstance) {
         );
 
         const seenDeviceIds = new Set<string>();
+        const seenNameKeys = new Set<string>();
         let importedCount = 0;
         let skippedCount = 0;
         const errors: Array<{ row: number; message: string }> = [];
@@ -647,9 +731,11 @@ export default async function (fastify: FastifyInstance) {
         const rows: Array<{
           row: number;
           name: string;
+          firstName: string;
+          lastName: string;
+          fatherName: string;
           deviceStudentId: string;
           className: string;
-          parentName: string;
           parentPhone: string;
         }> = [];
         const missingClassNames = new Set<string>();
@@ -657,24 +743,34 @@ export default async function (fastify: FastifyInstance) {
         for (let i = dataStartRow; i <= lastRow; i++) {
           const row = ws.getRow(i);
           const name = colName ? row.getCell(colName).text.trim() : "";
+          const firstNameRaw = colFirstName
+            ? row.getCell(colFirstName).text.trim()
+            : "";
+          const lastNameRaw = colLastName
+            ? row.getCell(colLastName).text.trim()
+            : "";
+          const nameParts =
+            firstNameRaw || lastNameRaw ? { firstName: firstNameRaw, lastName: lastNameRaw } : splitFullName(name);
+          const firstName = normalizeNamePart(nameParts.firstName);
+          const lastName = normalizeNamePart(nameParts.lastName);
           const deviceStudentId = colPersonId
             ? row.getCell(colPersonId).text.trim()
             : "";
           const className = colClass ? row.getCell(colClass).text.trim() : "";
-          const parentName = colParentName
+          const fatherName = colParentName
             ? row.getCell(colParentName).text.trim()
             : "";
           const parentPhone = colParentPhone
             ? row.getCell(colParentPhone).text.trim()
             : "";
 
-          if (!name || !deviceStudentId) {
+          if ((!firstName || !lastName) || !deviceStudentId) {
             skippedCount++;
             errors.push({
               row: i,
               message: isIvmsTemplate
                 ? "Person Name and Person ID are required"
-                : "Name and Person ID are required",
+                : "Ism, familiya va Person ID majburiy",
             });
             continue;
           }
@@ -684,6 +780,14 @@ export default async function (fastify: FastifyInstance) {
             continue;
           }
           seenDeviceIds.add(deviceStudentId);
+
+          const nameKey = `${className.toLowerCase()}|${lastName.toLowerCase()}|${firstName.toLowerCase()}`;
+          if (seenNameKeys.has(nameKey)) {
+            skippedCount++;
+            errors.push({ row: i, message: "Duplicate name in class (file)" });
+            continue;
+          }
+          seenNameKeys.add(nameKey);
 
           if (className) {
             const key = className.toLowerCase();
@@ -702,10 +806,12 @@ export default async function (fastify: FastifyInstance) {
 
           rows.push({
             row: i,
-            name,
+            name: buildFullName(lastName, firstName),
+            firstName,
+            lastName,
+            fatherName,
             deviceStudentId,
             className,
-            parentName,
             parentPhone,
           });
         }
@@ -722,11 +828,43 @@ export default async function (fastify: FastifyInstance) {
           });
         }
 
-        const ops = rows.map((r) => {
+        const classIdsToCheck = Array.from(
+          new Set(
+            rows
+              .map((r) => classMap.get(r.className.toLowerCase())?.id || null)
+              .filter((id): id is string => Boolean(id)),
+          ),
+        );
+        const existingStudents = classIdsToCheck.length
+          ? await prisma.student.findMany({
+              where: {
+                schoolId,
+                classId: { in: classIdsToCheck },
+                isActive: true,
+              },
+              select: { classId: true, firstName: true, lastName: true },
+            })
+          : [];
+        const existingKeys = new Set(
+          existingStudents.map(
+            (s) =>
+              `${s.classId}|${s.lastName?.toLowerCase() || ""}|${s.firstName?.toLowerCase() || ""}`,
+          ),
+        );
+
+        const ops = rows.flatMap((r) => {
           const classId = r.className
             ? classMap.get(r.className.toLowerCase())?.id || null
             : null;
-          return prisma.student.upsert({
+          if (classId) {
+            const key = `${classId}|${r.lastName.toLowerCase()}|${r.firstName.toLowerCase()}`;
+            if (existingKeys.has(key)) {
+              skippedCount++;
+              errors.push({ row: r.row, message: "Bu sinfda bunday o'quvchi mavjud" });
+              return [];
+            }
+          }
+          return [prisma.student.upsert({
             where: {
               schoolId_deviceStudentId: {
                 schoolId,
@@ -735,20 +873,26 @@ export default async function (fastify: FastifyInstance) {
             },
             update: {
               name: r.name,
+              firstName: r.firstName,
+              lastName: r.lastName,
+              fatherName: r.fatherName || null,
               classId,
-              parentName: r.parentName || null,
+              parentName: r.fatherName || null,
               parentPhone: r.parentPhone || null,
               isActive: true,
             },
             create: {
               name: r.name,
+              firstName: r.firstName,
+              lastName: r.lastName,
+              fatherName: r.fatherName || null,
               deviceStudentId: r.deviceStudentId,
               classId,
-              parentName: r.parentName || null,
+              parentName: r.fatherName || null,
               parentPhone: r.parentPhone || null,
               schoolId,
             },
-          });
+          })];
         });
 
         const chunkSize = 200;
@@ -870,26 +1014,34 @@ export default async function (fastify: FastifyInstance) {
         const studentScope = await requireStudentSchoolScope(user, id);
 
         // Allowlist fields and normalize empty strings to null
+        const firstName = normalizeNamePart(data.firstName || "");
+        const lastName = normalizeNamePart(data.lastName || "");
+        const fatherName = normalizeNamePart(data.fatherName || data.parentName || "");
+        const fullName =
+          firstName || lastName
+            ? buildFullName(lastName, firstName)
+            : normalizeNamePart(data.name || "");
+
         const sanitized = {
-          name: data.name,
+          name: fullName,
+          firstName,
+          lastName,
+          fatherName: fatherName || null,
           classId: data.classId,
           deviceStudentId:
             typeof data.deviceStudentId === "string" &&
             data.deviceStudentId.trim() === ""
               ? null
               : data.deviceStudentId,
-          parentName:
-            typeof data.parentName === "string" && data.parentName.trim() === ""
-              ? null
-              : data.parentName,
+          parentName: fatherName || null,
           parentPhone:
             typeof data.parentPhone === "string" && data.parentPhone.trim() === ""
               ? null
               : data.parentPhone,
         };
 
-        if (!sanitized.name) {
-          return reply.status(400).send({ error: "Ismni kiriting" });
+        if (!firstName || !lastName) {
+          return reply.status(400).send({ error: "Ism va familiya majburiy" });
         }
 
         if (!sanitized.classId) {
@@ -901,6 +1053,23 @@ export default async function (fastify: FastifyInstance) {
         });
         if (!classExists) {
           return reply.status(400).send({ error: "Bunday sinf topilmadi" });
+        }
+
+        const duplicate = await prisma.student.findFirst({
+          where: {
+            schoolId: studentScope.schoolId,
+            classId: sanitized.classId,
+            firstName,
+            lastName,
+            isActive: true,
+            NOT: { id },
+          },
+          select: { id: true },
+        });
+        if (duplicate) {
+          return reply
+            .status(409)
+            .send({ error: "Bu sinfda bunday o'quvchi mavjud" });
         }
 
         const student = await prisma.student.update({
@@ -959,8 +1128,22 @@ export default async function (fastify: FastifyInstance) {
           : [];
         const targetAllActive = body.targetAllActive !== false;
 
-        if (!studentPayload?.name) {
-          return reply.status(400).send({ error: "Name is required" });
+        const payloadFirstName = normalizeNamePart(studentPayload?.firstName || "");
+        const payloadLastName = normalizeNamePart(studentPayload?.lastName || "");
+        const payloadFatherName = normalizeNamePart(
+          studentPayload?.fatherName || studentPayload?.parentName || "",
+        );
+        const payloadName = normalizeNamePart(studentPayload?.name || "");
+        const nameParts =
+          payloadFirstName || payloadLastName
+            ? { firstName: payloadFirstName, lastName: payloadLastName }
+            : splitFullName(payloadName);
+        const firstName = normalizeNamePart(nameParts.firstName);
+        const lastName = normalizeNamePart(nameParts.lastName);
+        const fullName = buildFullName(lastName, firstName);
+
+        if (!firstName || !lastName) {
+          return reply.status(400).send({ error: "Ism va familiya majburiy" });
         }
 
         let classId: string | null = null;
@@ -1026,6 +1209,24 @@ export default async function (fastify: FastifyInstance) {
           let deviceStudentId =
             providedDeviceStudentId !== "" ? providedDeviceStudentId : null;
 
+          if (classId) {
+            const existingByName = await tx.student.findFirst({
+              where: {
+                schoolId,
+                classId,
+                firstName,
+                lastName,
+                isActive: true,
+              },
+              select: { id: true },
+            });
+            if (existingByName && existingByName.id !== studentId) {
+              throw Object.assign(new Error("Duplicate student in class"), {
+                statusCode: 409,
+              });
+            }
+          }
+
           if (studentId) {
             const existingStudent = await tx.student.findUnique({
               where: { id: studentId },
@@ -1058,9 +1259,12 @@ export default async function (fastify: FastifyInstance) {
             studentRecord = await tx.student.update({
               where: { id: existingStudent.id },
               data: {
-                name: studentPayload.name,
+                name: fullName,
+                firstName,
+                lastName,
+                fatherName: payloadFatherName || null,
                 classId,
-                parentName: studentPayload.parentName || null,
+                parentName: payloadFatherName || null,
                 parentPhone: studentPayload.parentPhone || null,
                 deviceStudentId,
                 isActive: true,
@@ -1074,16 +1278,22 @@ export default async function (fastify: FastifyInstance) {
                 schoolId_deviceStudentId: { schoolId, deviceStudentId },
               },
               update: {
-                name: studentPayload.name,
+                name: fullName,
+                firstName,
+                lastName,
+                fatherName: payloadFatherName || null,
                 classId,
-                parentName: studentPayload.parentName || null,
+                parentName: payloadFatherName || null,
                 parentPhone: studentPayload.parentPhone || null,
                 isActive: true,
               },
               create: {
-                name: studentPayload.name,
+                name: fullName,
+                firstName,
+                lastName,
+                fatherName: payloadFatherName || null,
                 classId,
-                parentName: studentPayload.parentName || null,
+                parentName: payloadFatherName || null,
                 parentPhone: studentPayload.parentPhone || null,
                 deviceStudentId,
                 schoolId,

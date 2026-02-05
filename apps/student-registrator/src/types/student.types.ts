@@ -2,11 +2,12 @@
 
 export interface StudentRow {
   id: string; // Local unique ID
-  name: string;
+  firstName: string;
+  lastName: string;
+  fatherName?: string;
   gender: string;
   className?: string;
   classId?: string;
-  parentName?: string;
   parentPhone?: string;
   imageBase64?: string;
   status: "pending" | "success" | "error";

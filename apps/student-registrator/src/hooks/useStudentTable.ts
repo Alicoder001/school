@@ -17,6 +17,11 @@ interface UseStudentTableReturn {
   lastProvisioningId: string | null;
 }
 
+function formatStudentName(student: StudentRow): string {
+  const parts = [student.lastName?.trim(), student.firstName?.trim()].filter(Boolean);
+  return parts.join(' ').trim();
+}
+
 export function useStudentTable(): UseStudentTableReturn {
   const [students, setStudents] = useState<StudentRow[]>([]);
   const [isSaving, setIsSaving] = useState(false);
@@ -83,15 +88,15 @@ export function useStudentTable(): UseStudentTableReturn {
     if (!student) return;
 
     // Validation
-    if (!student.name || !student.name.trim()) {
+    if (!student.firstName || !student.firstName.trim() || !student.lastName || !student.lastName.trim()) {
       setStudents(prev => prev.map(s => 
         s.id === id ? { 
           ...s, 
           status: 'error' as const, 
-          error: 'Ism majburiy' 
+          error: 'Ism va familiya majburiy' 
         } : s
       ));
-      throw new Error('Ism majburiy');
+      throw new Error('Ism va familiya majburiy');
     }
 
     if (!student.classId) {
@@ -110,8 +115,11 @@ export function useStudentTable(): UseStudentTableReturn {
       s.id === id ? { ...s, status: 'pending' as const, error: undefined } : s
     ));
 
-    console.log(`[Save Student] Saving "${student.name}":`, {
-      name: student.name,
+    const fullName = formatStudentName(student);
+    console.log(`[Save Student] Saving "${fullName}":`, {
+      name: fullName,
+      firstName: student.firstName,
+      lastName: student.lastName,
       gender: student.gender,
       className: student.className,
       classId: student.classId,
@@ -120,11 +128,13 @@ export function useStudentTable(): UseStudentTableReturn {
 
     try {
       const result = await registerStudent(
-        student.name.trim(),
+        fullName,
         student.gender,
         student.imageBase64 || '',
         {
-          parentName: student.parentName,
+          firstName: student.firstName,
+          lastName: student.lastName,
+          fatherName: student.fatherName,
           parentPhone: student.parentPhone,
           classId: student.classId,
           targetDeviceIds: targetDeviceIds && targetDeviceIds.length > 0 ? targetDeviceIds : undefined,
@@ -209,7 +219,7 @@ export function useStudentTable(): UseStudentTableReturn {
       } catch (err) {
         errorCount++;
         // Error already handled in saveStudent
-        console.error(`Failed to save student ${student.name}:`, err);
+        console.error(`Failed to save student ${formatStudentName(student)}:`, err);
       }
     }
     

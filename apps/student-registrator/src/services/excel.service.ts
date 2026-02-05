@@ -3,6 +3,22 @@ import boySampleImg from "../assets/boy_sample.png";
 import girlSampleImg from "../assets/girl_sample.png";
 import type { StudentRow } from '../types';
 
+function normalizeHeader(value: string): string {
+  return value
+    .trim()
+    .replace(/^\*/, "")
+    .trim()
+    .toLowerCase();
+}
+
+function splitFullName(fullName: string): { firstName: string; lastName: string } {
+  const cleaned = String(fullName || "").trim();
+  if (!cleaned) return { firstName: "", lastName: "" };
+  const parts = cleaned.split(/\s+/);
+  if (parts.length === 1) return { firstName: parts[0], lastName: "" };
+  return { lastName: parts[0], firstName: parts.slice(1).join(" ") };
+}
+
 // Excel parse qilish (App.tsx dan ko'chirilgan)
 export async function parseExcelFile(file: File): Promise<Omit<StudentRow, 'id' | 'source' | 'status'>[]> {
   const buffer = await file.arrayBuffer();
@@ -48,41 +64,88 @@ export async function parseExcelFile(file: File): Promise<Omit<StudentRow, 'id' 
     
     // Find data start row
     let dataStartRow = 2;
+    let headerRowNumber = 1;
     
     worksheet.eachRow((row, rowNumber) => {
       const firstCell = String(row.getCell(1).value || "").trim();
-      if (firstCell === "#" || firstCell.toLowerCase() === "name" || firstCell.toLowerCase() === "full name") {
+      const normalized = normalizeHeader(firstCell);
+      if (
+        firstCell === "#" ||
+        normalized === "name" ||
+        normalized === "full name" ||
+        normalized === "familiya" ||
+        normalized === "last name"
+      ) {
         dataStartRow = rowNumber + 1;
+        headerRowNumber = rowNumber;
       }
     });
-    
+
+    const headerRow = worksheet.getRow(headerRowNumber);
+    const headerMap = new Map<string, number>();
+    headerRow.eachCell((cell, colNumber) => {
+      const key = normalizeHeader(String(cell.value || ""));
+      if (!key) return;
+      if (!headerMap.has(key)) headerMap.set(key, colNumber);
+    });
+
+    const colLastName = headerMap.get("familiya") ?? headerMap.get("last name");
+    const colFirstName = headerMap.get("ism") ?? headerMap.get("first name");
+    const colFatherName =
+      headerMap.get("otasining ismi") ??
+      headerMap.get("father name") ??
+      headerMap.get("parent name");
+    const colGender = headerMap.get("jinsi") ?? headerMap.get("gender");
+    const colPhone = headerMap.get("telefon") ?? headerMap.get("parent phone");
+    const colFullName = headerMap.get("full name") ?? headerMap.get("name");
+
     // Parse data rows
     worksheet.eachRow((row, rowNumber) => {
       if (rowNumber < dataStartRow) return;
       
       const hasNumberColumn = String(row.getCell(1).value || "").trim().match(/^\d+$/);
       
-      let name: string, gender: string, parentName: string, parentPhone: string;
-      
-      if (hasNumberColumn) {
-        name = String(row.getCell(2).value || "").trim();
+      let firstName = "";
+      let lastName = "";
+      let fatherName = "";
+      let gender = "unknown";
+      let parentPhone = "";
+
+      if (colLastName || colFirstName || colFullName) {
+        const fullName = colFullName ? String(row.getCell(colFullName).value || "").trim() : "";
+        const parts = splitFullName(fullName);
+        lastName = String(colLastName ? row.getCell(colLastName).value || "" : parts.lastName).trim();
+        firstName = String(colFirstName ? row.getCell(colFirstName).value || "" : parts.firstName).trim();
+        fatherName = String(colFatherName ? row.getCell(colFatherName).value || "" : "").trim();
+        gender = String(colGender ? row.getCell(colGender).value || "unknown" : "unknown").toLowerCase();
+        parentPhone = String(colPhone ? row.getCell(colPhone).value || "" : "").trim();
+      } else if (hasNumberColumn) {
+        const fullName = String(row.getCell(2).value || "").trim();
+        const parts = splitFullName(fullName);
+        lastName = parts.lastName;
+        firstName = parts.firstName;
+        fatherName = String(row.getCell(4).value || "").trim();
         gender = String(row.getCell(3).value || "unknown").toLowerCase();
-        parentName = String(row.getCell(4).value || "").trim();
         parentPhone = String(row.getCell(5).value || "").trim();
       } else {
-        name = String(row.getCell(1).value || "").trim();
+        const fullName = String(row.getCell(1).value || "").trim();
+        const parts = splitFullName(fullName);
+        lastName = parts.lastName;
+        firstName = parts.firstName;
+        fatherName = String(row.getCell(4).value || "").trim();
         gender = String(row.getCell(2).value || "unknown").toLowerCase();
-        parentName = String(row.getCell(4).value || "").trim();
         parentPhone = String(row.getCell(5).value || "").trim();
       }
       
-      if (name && !name.startsWith("📚") && !name.startsWith("📖") && !name.startsWith("💡")) {
-        console.log(`[Parse] Row ${rowNumber}: name="${name}", gender="${gender}", class="${sheetName}"`);
+      const fullName = `${lastName} ${firstName}`.trim();
+      if (fullName && !fullName.startsWith("📚") && !fullName.startsWith("📖") && !fullName.startsWith("💡")) {
+        console.log(`[Parse] Row ${rowNumber}: name="${fullName}", gender="${gender}", class="${sheetName}"`);
         allRows.push({
-          name,
+          firstName,
+          lastName,
+          fatherName: fatherName || undefined,
           gender,
           className: sheetName,
-          parentName: parentName || undefined,
           parentPhone: parentPhone || undefined,
           imageBase64: imageByRow[rowNumber],
         });
@@ -129,13 +192,14 @@ export async function downloadStudentsTemplate(classNames: string[]): Promise<vo
     const worksheet = workbook.addWorksheet(className);
 
     worksheet.getColumn(1).width = 5;
-    worksheet.getColumn(2).width = 28;
-    worksheet.getColumn(3).width = 10;
-    worksheet.getColumn(4).width = 24;
-    worksheet.getColumn(5).width = 18;
-    worksheet.getColumn(6).width = 14;
+    worksheet.getColumn(2).width = 20;
+    worksheet.getColumn(3).width = 20;
+    worksheet.getColumn(4).width = 20;
+    worksheet.getColumn(5).width = 10;
+    worksheet.getColumn(6).width = 18;
+    worksheet.getColumn(7).width = 14;
 
-    const headers = ["#", "Full Name", "Gender", "Parent Name", "Parent Phone", "Photo"];
+    const headers = ["#", "Familiya", "Ism", "Otasining ismi", "Jinsi", "Telefon", "Photo"];
     const headerRow = worksheet.addRow(headers);
     headerRow.eachCell((cell) => {
       cell.font = { bold: true, size: 10, color: { argb: colors.headerText } };
@@ -148,16 +212,17 @@ export async function downloadStudentsTemplate(classNames: string[]): Promise<vo
     headerRow.height = 24;
 
     const sampleData = [
-      { name: "Aliyev Vali", gender: "male", parent: "Aliyev Sobir", phone: "+998901234567" },
-      { name: "Karimova Nodira", gender: "female", parent: "Karimova Malika", phone: "+998907654321" },
+      { lastName: "Aliyev", firstName: "Vali", fatherName: "Aliyev Sobir", gender: "male", phone: "+998901234567" },
+      { lastName: "Karimova", firstName: "Nodira", fatherName: "Karimova Malika", gender: "female", phone: "+998907654321" },
     ];
 
     sampleData.forEach((student, index) => {
       const row = worksheet.addRow([
         index + 1,
-        student.name,
+        student.lastName,
+        student.firstName,
+        student.fatherName,
         student.gender,
-        student.parent,
         student.phone,
         "",
       ]);
@@ -174,14 +239,14 @@ export async function downloadStudentsTemplate(classNames: string[]): Promise<vo
         const imageId = student.gender === "male" ? boyImageId : girlImageId;
         const rowIndex = row.number - 1;
         worksheet.addImage(imageId, {
-          tl: { col: 5, row: rowIndex },
+          tl: { col: 6, row: rowIndex },
           ext: { width: 60, height: 60 },
         });
       }
     });
 
     for (let i = 0; i < 10; i++) {
-      const row = worksheet.addRow([sampleData.length + i + 1, "", "", "", "", ""]);
+      const row = worksheet.addRow([sampleData.length + i + 1, "", "", "", "", "", ""]);
       row.height = 65;
       row.eachCell((cell, colNumber) => {
         cell.alignment = { horizontal: colNumber === 1 ? "center" : "left", vertical: "middle" };
@@ -203,3 +268,4 @@ export async function downloadStudentsTemplate(classNames: string[]): Promise<vo
   a.click();
   URL.revokeObjectURL(url);
 }
+

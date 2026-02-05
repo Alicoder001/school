@@ -96,6 +96,9 @@ model Student {
   id                 String   @id @default(uuid())
   deviceStudentId    String?  // the ID registered in Hikvision device
   name               String
+  firstName          String   @default("")
+  lastName           String   @default("")
+  fatherName         String?
   schoolId           String
   school             School   @relation(fields: [schoolId], references: [id])
   classId            String?
@@ -118,6 +121,7 @@ model Student {
   @@index([classId])
   @@index([deviceStudentId])  // Webhook lookup uchun KRITIK
   @@index([schoolId, classId, isActive])
+  @@index([schoolId, classId, lastName, firstName])
   @@unique([schoolId, deviceStudentId])
 }
 

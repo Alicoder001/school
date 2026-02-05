@@ -17,10 +17,11 @@ export function StudentTable({ students, availableClasses, onEdit, onDelete, onS
         <thead>
           <tr>
             <th style={{width: '50px'}}>#</th>
-            <th style={{width: '200px'}}>Ism</th>
+            <th style={{width: '180px'}}>Familiya</th>
+            <th style={{width: '160px'}}>Ism</th>
             <th style={{width: '120px'}}>Jinsi</th>
             <th style={{width: '150px'}}>Sinf</th>
-            <th style={{width: '180px'}}>Ota-ona</th>
+            <th style={{width: '180px'}}>Otasining ismi</th>
             <th style={{width: '150px'}}>Telefon</th>
             <th style={{width: '100px'}}>Rasm</th>
             <th style={{width: '100px'}}>Holat</th>
@@ -41,7 +42,7 @@ export function StudentTable({ students, availableClasses, onEdit, onDelete, onS
           ))}
           {/* Empty row with Add button */}
           <tr className="add-row">
-            <td colSpan={9}>
+            <td colSpan={10}>
               <button className="btn-add-row" onClick={onAddRow}>
                 + Yangi qator qo'shish
               </button>

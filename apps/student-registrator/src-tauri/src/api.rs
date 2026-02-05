@@ -86,7 +86,9 @@ impl ApiClient {
         name: &str,
         device_student_id: Option<&str>,
         class_id: Option<&str>,
-        parent_name: Option<&str>,
+        first_name: Option<&str>,
+        last_name: Option<&str>,
+        father_name: Option<&str>,
         parent_phone: Option<&str>,
         target_device_ids: Option<&[String]>,
         request_id: &str,
@@ -96,9 +98,11 @@ impl ApiClient {
         let payload = json!({
             "student": {
                 "name": name,
+                "firstName": first_name,
+                "lastName": last_name,
+                "fatherName": father_name,
                 "deviceStudentId": device_student_id,
                 "classId": class_id,
-                "parentName": parent_name,
                 "parentPhone": parent_phone
             },
             "requestId": request_id,

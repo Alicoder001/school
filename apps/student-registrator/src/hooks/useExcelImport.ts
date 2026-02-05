@@ -75,7 +75,8 @@ export function useExcelImport(): UseExcelImportReturn {
 
     const result = rows.map((row) => {
       const classId = row.className ? classIdBySheet.get(row.className.toLowerCase()) : undefined;
-      console.log(`[Excel Import] Row "${row.name}" className="${row.className}" -> classId="${classId}"`);
+      const displayName = `${row.lastName || ""} ${row.firstName || ""}`.trim();
+      console.log(`[Excel Import] Row "${displayName}" className="${row.className}" -> classId="${classId}"`);
       return {
         ...row,
         classId,
@@ -97,7 +98,8 @@ export function useExcelImport(): UseExcelImportReturn {
           const resized = await base64ToResizedBase64(row.imageBase64);
           return { ...row, imageBase64: resized };
         } catch (err) {
-          console.warn(`Could not resize image for ${row.name}:`, err);
+          const displayName = `${row.lastName || ""} ${row.firstName || ""}`.trim();
+          console.warn(`Could not resize image for ${displayName}:`, err);
           return { ...row, imageBase64: '' };
         }
       })

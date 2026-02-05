@@ -485,7 +485,7 @@ function App() {
         registerGender,
         faceImageBase64,
         {
-          parentName: registerParentName.trim() || undefined,
+          fatherName: registerParentName.trim() || undefined,
           parentPhone: registerParentPhone.trim() || undefined,
           classId: registerClass || undefined,
         },
@@ -795,7 +795,7 @@ function App() {
         }
 
         await registerStudent(row.name, row.gender, imageBase64, {
-          parentName: row.parentName,
+          fatherName: row.parentName,
           parentPhone: row.parentPhone,
           classId,
         });

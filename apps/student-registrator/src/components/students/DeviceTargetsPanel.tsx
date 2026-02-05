@@ -92,7 +92,7 @@ export function DeviceTargetsPanel({
                     {device.location && <span className="badge">{device.location}</span>}
                     {device.deviceId && <span className="badge">ID: {device.deviceId}</span>}
                     {device.isActive === false && (
-                      <span className="badge badge-warning">Nofaol</span>
+                      <span className="badge badge-warning">Backend: nofaol</span>
                     )}
                   </div>
                 </div>
