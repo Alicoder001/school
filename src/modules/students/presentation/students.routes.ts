@@ -979,10 +979,26 @@ export default async function (fastify: FastifyInstance) {
             .send({ error: "deviceStudentId must be numeric" });
         }
         if (studentPayload.classId) {
+          console.log('[Provision] Checking class:', {
+            classId: studentPayload.classId,
+            classIdType: typeof studentPayload.classId,
+            schoolId,
+            schoolIdType: typeof schoolId,
+          });
+          
           const classExists = await prisma.class.findFirst({
             where: { id: String(studentPayload.classId), schoolId },
           });
+          
+          console.log('[Provision] Class lookup result:', {
+            found: !!classExists,
+            classExists: classExists ? { id: classExists.id, name: classExists.name } : null,
+          });
+          
           if (!classExists) {
+            console.error('[Provision] Class not found in DB!', {
+              searchedFor: { classId: String(studentPayload.classId), schoolId },
+            });
             return reply.status(400).send({ error: "Class not found" });
           }
           classId = String(studentPayload.classId);
