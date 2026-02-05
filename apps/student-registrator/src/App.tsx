@@ -10,7 +10,7 @@ import {
   fetchUsers,
   registerStudent,
   updateDevice,
-  fileToBase64,
+  fileToFaceBase64,
   recreateUser,
   type DeviceConfig,
   type RegisterResult,
@@ -339,11 +339,15 @@ function App() {
 
     setRegisterLoading(true);
     try {
-      const faceImageBase64 = await fileToBase64(registerFile);
+      const faceImageBase64 = await fileToFaceBase64(registerFile);
       const result = await registerStudent(
         registerName.trim(),
         registerGender,
         faceImageBase64,
+        {
+          parentName: registerParentName.trim() || undefined,
+          parentPhone: registerParentPhone.trim() || undefined,
+        },
       );
       setRegisterResult(result);
       setRegisterName("");
@@ -413,7 +417,7 @@ function App() {
     try {
       let faceImageBase64: string | undefined;
       if (editFile) {
-        faceImageBase64 = await fileToBase64(editFile);
+        faceImageBase64 = await fileToFaceBase64(editFile);
       }
       
       await recreateUser(
@@ -507,16 +511,16 @@ function App() {
     return rows;
   };
 
-  const handleImportFileSelect = async (file: File) => {
-    setImportFile(file);
-    try {
-      const rows = await parseExcelFile(file);
-      setImportData(rows);
-    } catch (err) {
-      addToast("Failed to parse Excel file", "error");
-      setImportFile(null);
-    }
-  };
+	  const handleImportFileSelect = async (file: File) => {
+	    setImportFile(file);
+	    try {
+	      const rows = await parseExcelFile(file);
+	      setImportData(rows);
+	    } catch {
+	      addToast("Failed to parse Excel file", "error");
+	      setImportFile(null);
+	    }
+	  };
 
   const handleImportDrop = (e: React.DragEvent) => {
     e.preventDefault();
@@ -542,7 +546,10 @@ function App() {
       const row = updatedData[i];
       try {
         // Register with face image if available
-        await registerStudent(row.name, row.gender, row.imageBase64 || "");
+        await registerStudent(row.name, row.gender, row.imageBase64 || "", {
+          parentName: row.parentName,
+          parentPhone: row.parentPhone,
+        });
         updatedData[i] = { ...row, status: "success" };
         successCount++;
       } catch (err) {

@@ -21,6 +21,13 @@ import {
   getNowMinutesInZone,
   EffectiveStatus,
 } from "../../../utils/attendanceStatus";
+import {
+  DEVICE_AUTO_REGISTER_ENABLED,
+  PROVISIONING_TOKEN,
+  DEVICE_STUDENT_ID_STRATEGY,
+  DEVICE_STUDENT_ID_LENGTH,
+} from "../../../config";
+import crypto from "crypto";
 
 function normalizeHeader(value: string): string {
   return value
@@ -28,6 +35,74 @@ function normalizeHeader(value: string): string {
     .replace(/^\*/, "")
     .trim()
     .toLowerCase();
+}
+
+type ProvisioningAuth = { user: any | null; tokenAuth: boolean };
+
+async function ensureProvisioningAuth(
+  request: any,
+  reply: any,
+  schoolId: string,
+): Promise<ProvisioningAuth | null> {
+  try {
+    await request.jwtVerify();
+    const user = request.user;
+    requireRoles(user, ["SCHOOL_ADMIN"]);
+    requireSchoolScope(user, schoolId);
+    return { user, tokenAuth: false };
+  } catch {
+    const token =
+      (request.headers["x-provisioning-token"] as string | undefined) ||
+      (request.headers["authorization"] as string | undefined)?.replace(
+        /^Bearer\s+/i,
+        "",
+      );
+    if (PROVISIONING_TOKEN && token === PROVISIONING_TOKEN) {
+      return { user: null, tokenAuth: true };
+    }
+    reply.status(401).send({ error: "Unauthorized" });
+    return null;
+  }
+}
+
+function computeProvisioningStatus(
+  links: Array<{ status: "PENDING" | "SUCCESS" | "FAILED" }>,
+): "PROCESSING" | "PARTIAL" | "CONFIRMED" | "FAILED" {
+  if (links.length === 0) return "PROCESSING";
+  const success = links.filter((l) => l.status === "SUCCESS").length;
+  const failed = links.filter((l) => l.status === "FAILED").length;
+  if (success === links.length) return "CONFIRMED";
+  if (failed === links.length) return "FAILED";
+  if (failed > 0) return "PARTIAL";
+  return "PROCESSING";
+}
+
+async function generateDeviceStudentId(
+  tx: typeof prisma,
+  schoolId: string,
+): Promise<string> {
+  const strategy = DEVICE_STUDENT_ID_STRATEGY;
+  if (strategy === "numeric") {
+    const length = Math.max(6, Math.min(20, DEVICE_STUDENT_ID_LENGTH || 10));
+    for (let i = 0; i < 10; i++) {
+      let value = "";
+      while (value.length < length) {
+        value += Math.floor(Math.random() * 10).toString();
+      }
+      value = value.substring(0, length);
+      const existing = await tx.student.findUnique({
+        where: {
+          schoolId_deviceStudentId: { schoolId, deviceStudentId: value },
+        },
+        select: { id: true },
+      });
+      if (!existing) return value;
+    }
+    throw Object.assign(new Error("Failed to generate numeric device ID"), {
+      statusCode: 500,
+    });
+  }
+  return crypto.randomUUID();
 }
 
 export default async function (fastify: FastifyInstance) {
@@ -873,4 +948,368 @@ export default async function (fastify: FastifyInstance) {
       }
     },
   );
+
+  // Start provisioning: create/update student, then return provisioningId + deviceStudentId
+  fastify.post(
+    "/schools/:schoolId/students/provision",
+    async (request: any, reply) => {
+      try {
+        const { schoolId } = request.params as { schoolId: string };
+        const auth = await ensureProvisioningAuth(request, reply, schoolId);
+        if (!auth) return;
+
+        const body = request.body || {};
+        const studentPayload = body.student || body;
+        const studentId = body.studentId as string | undefined;
+        const requestId = body.requestId ? String(body.requestId) : undefined;
+        const targetDeviceIds = Array.isArray(body.targetDeviceIds)
+          ? (body.targetDeviceIds as string[])
+          : [];
+        const targetAllActive = body.targetAllActive !== false;
+
+        if (!studentPayload?.name) {
+          return reply.status(400).send({ error: "Name is required" });
+        }
+
+        let classId: string | null = null;
+        const providedDeviceStudentId =
+          typeof studentPayload.deviceStudentId === "string"
+            ? studentPayload.deviceStudentId.trim()
+            : "";
+
+        if (
+          providedDeviceStudentId &&
+          DEVICE_STUDENT_ID_STRATEGY === "numeric" &&
+          !/^\d+$/.test(providedDeviceStudentId)
+        ) {
+          return reply
+            .status(400)
+            .send({ error: "deviceStudentId must be numeric" });
+        }
+        if (studentPayload.classId) {
+          const classExists = await prisma.class.findFirst({
+            where: { id: String(studentPayload.classId), schoolId },
+          });
+          if (!classExists) {
+            return reply.status(400).send({ error: "Class not found" });
+          }
+          classId = String(studentPayload.classId);
+        }
+
+        const result = await prisma.$transaction(async (tx) => {
+          if (requestId) {
+            const existing = await tx.studentProvisioning.findFirst({
+              where: { requestId, schoolId },
+              include: {
+                student: true,
+                devices: { include: { device: true } },
+              },
+            });
+            if (existing) {
+              return {
+                student: existing.student,
+                provisioning: existing,
+                targetDevices: existing.devices.map((link: any) => link.device),
+              };
+            }
+          }
+
+          let studentRecord;
+          let deviceStudentId =
+            providedDeviceStudentId !== "" ? providedDeviceStudentId : null;
+
+          if (studentId) {
+            const existingStudent = await tx.student.findUnique({
+              where: { id: studentId },
+            });
+            if (!existingStudent) {
+              throw Object.assign(new Error("Student not found"), {
+                statusCode: 404,
+              });
+            }
+            if (existingStudent.schoolId !== schoolId) {
+              throw Object.assign(new Error("forbidden"), { statusCode: 403 });
+            }
+
+            if (
+              deviceStudentId &&
+              existingStudent.deviceStudentId &&
+              deviceStudentId !== existingStudent.deviceStudentId
+            ) {
+              throw Object.assign(
+                new Error("DeviceStudentId mismatch"),
+                { statusCode: 400 },
+              );
+            }
+
+            deviceStudentId =
+              existingStudent.deviceStudentId ||
+              deviceStudentId ||
+              (await generateDeviceStudentId(tx, schoolId));
+
+            studentRecord = await tx.student.update({
+              where: { id: existingStudent.id },
+              data: {
+                name: studentPayload.name,
+                classId,
+                parentName: studentPayload.parentName || null,
+                parentPhone: studentPayload.parentPhone || null,
+                deviceStudentId,
+                isActive: true,
+              },
+            });
+          } else {
+            deviceStudentId =
+              deviceStudentId || (await generateDeviceStudentId(tx, schoolId));
+            studentRecord = await tx.student.upsert({
+              where: {
+                schoolId_deviceStudentId: { schoolId, deviceStudentId },
+              },
+              update: {
+                name: studentPayload.name,
+                classId,
+                parentName: studentPayload.parentName || null,
+                parentPhone: studentPayload.parentPhone || null,
+                isActive: true,
+              },
+              create: {
+                name: studentPayload.name,
+                classId,
+                parentName: studentPayload.parentName || null,
+                parentPhone: studentPayload.parentPhone || null,
+                deviceStudentId,
+                schoolId,
+              },
+            });
+          }
+
+          const provisioning = await tx.studentProvisioning.create({
+            data: {
+              studentId: studentRecord.id,
+              schoolId,
+              status: "PROCESSING",
+              requestId,
+            },
+          });
+
+          let targetDevices: Array<{ id: string; deviceId: string }> = [];
+          if (targetDeviceIds.length > 0) {
+            targetDevices = await tx.device.findMany({
+              where: { id: { in: targetDeviceIds }, schoolId },
+              select: { id: true, deviceId: true },
+            });
+          } else if (targetAllActive) {
+            targetDevices = await tx.device.findMany({
+              where: { schoolId, isActive: true },
+              select: { id: true, deviceId: true },
+            });
+          }
+
+          if (targetDevices.length > 0) {
+            await tx.studentDeviceLink.createMany({
+              data: targetDevices.map((d) => ({
+                studentId: studentRecord.id,
+                deviceId: d.id,
+                provisioningId: provisioning.id,
+              })),
+            });
+          }
+
+          let status = provisioning.status;
+          let lastError: string | null = null;
+          if ((targetDeviceIds.length > 0 || targetAllActive) && targetDevices.length === 0) {
+            status = "FAILED";
+            lastError = "No target devices found";
+          }
+
+          const updatedProvisioning = await tx.studentProvisioning.update({
+            where: { id: provisioning.id },
+            data: { status, lastError },
+          });
+
+          await tx.student.update({
+            where: { id: studentRecord.id },
+            data: {
+              deviceSyncStatus: status,
+              deviceSyncUpdatedAt: new Date(),
+            },
+          });
+
+          return {
+            student: studentRecord,
+            provisioning: updatedProvisioning,
+            targetDevices,
+          };
+        });
+
+        return {
+          student: result.student,
+          studentId: result.student.id,
+          provisioningId: result.provisioning.id,
+          deviceStudentId: result.student.deviceStudentId,
+          provisioningStatus: result.provisioning.status,
+          targetDevices: result.targetDevices,
+        };
+      } catch (err) {
+        return sendHttpError(reply, err);
+      }
+    },
+  );
+
+  // Provisioning status
+  fastify.get("/provisioning/:id", async (request: any, reply) => {
+    try {
+      const { id } = request.params as { id: string };
+      const provisioning = await prisma.studentProvisioning.findUnique({
+        where: { id },
+        include: {
+          student: true,
+          devices: { include: { device: true } },
+        },
+      });
+      if (!provisioning) {
+        return reply.status(404).send({ error: "Provisioning not found" });
+      }
+
+      const auth = await ensureProvisioningAuth(
+        request,
+        reply,
+        provisioning.schoolId,
+      );
+      if (!auth) return;
+
+      return provisioning;
+    } catch (err) {
+      return sendHttpError(reply, err);
+    }
+  });
+
+  // Report per-device result
+  fastify.post("/provisioning/:id/device-result", async (request: any, reply) => {
+    try {
+      const { id } = request.params as { id: string };
+      const body = request.body || {};
+
+      const status = String(body.status || "").toUpperCase() as
+        | "SUCCESS"
+        | "FAILED";
+      if (!["SUCCESS", "FAILED"].includes(status)) {
+        return reply.status(400).send({ error: "Invalid status" });
+      }
+
+      const provisioning = await prisma.studentProvisioning.findUnique({
+        where: { id },
+      });
+      if (!provisioning) {
+        return reply.status(404).send({ error: "Provisioning not found" });
+      }
+
+      const auth = await ensureProvisioningAuth(
+        request,
+        reply,
+        provisioning.schoolId,
+      );
+      if (!auth) return;
+
+      const deviceId = body.deviceId ? String(body.deviceId) : null;
+      const deviceExternalId = body.deviceExternalId
+        ? String(body.deviceExternalId)
+        : null;
+
+      if (!deviceId && !deviceExternalId) {
+        return reply.status(400).send({ error: "deviceId or deviceExternalId is required" });
+      }
+
+      let device = null;
+      if (deviceId) {
+        device = await prisma.device.findFirst({
+          where: { id: deviceId, schoolId: provisioning.schoolId },
+        });
+      } else if (deviceExternalId) {
+        device = await prisma.device.findFirst({
+          where: { deviceId: deviceExternalId, schoolId: provisioning.schoolId },
+        });
+      }
+
+      if (!device && deviceExternalId && DEVICE_AUTO_REGISTER_ENABLED) {
+        device = await prisma.device.create({
+          data: {
+            schoolId: provisioning.schoolId,
+            deviceId: deviceExternalId,
+            name: body.deviceName || `Auto ${deviceExternalId}`,
+            type: body.deviceType || "ENTRANCE",
+            location: body.deviceLocation || "Desktop provisioning",
+            isActive: true,
+          } as any,
+        });
+      }
+
+      if (!device) {
+        return reply.status(404).send({ error: "Device not found" });
+      }
+
+      const now = new Date();
+      const result = await prisma.$transaction(async (tx) => {
+        const link = await tx.studentDeviceLink.upsert({
+          where: {
+            provisioningId_deviceId: {
+              provisioningId: id,
+              deviceId: device.id,
+            },
+          } as any,
+          update: {
+            status,
+            lastError: body.error || null,
+            employeeNoOnDevice: body.employeeNoOnDevice || null,
+            attemptCount: { increment: 1 },
+            lastAttemptAt: now,
+          },
+          create: {
+            studentId: provisioning.studentId,
+            deviceId: device.id,
+            provisioningId: id,
+            status,
+            lastError: body.error || null,
+            employeeNoOnDevice: body.employeeNoOnDevice || null,
+            attemptCount: 1,
+            lastAttemptAt: now,
+          },
+        });
+
+        const links = await tx.studentDeviceLink.findMany({
+          where: { provisioningId: id },
+          select: { status: true },
+        });
+        const overallStatus = computeProvisioningStatus(
+          links as Array<{ status: "PENDING" | "SUCCESS" | "FAILED" }>,
+        );
+
+        const updatedProvisioning = await tx.studentProvisioning.update({
+          where: { id },
+          data: {
+            status: overallStatus,
+            lastError: status === "FAILED" ? body.error || null : null,
+          },
+        });
+
+        await tx.student.update({
+          where: { id: provisioning.studentId },
+          data: {
+            deviceSyncStatus: overallStatus,
+            deviceSyncUpdatedAt: now,
+          },
+        });
+
+        return { link, provisioning: updatedProvisioning };
+      });
+
+      return {
+        ok: true,
+        provisioningStatus: result.provisioning.status,
+        deviceStatus: result.link.status,
+      };
+    } catch (err) {
+      return sendHttpError(reply, err);
+    }
+  });
 }

@@ -45,7 +45,7 @@ Bu **Tauri** desktop ilovasi bo'lib, **Hikvision** yuz tanish qurilmalariga o'qu
 |-------|------------|
 | Frontend | React 19, Vite 7, TypeScript |
 | Desktop | Tauri 1.5 (Rust) |
-| Device Communication | Hikvision ISAPI, Digest Auth |
+| Device Communication | Hikvision ISAPI |
 | Local Storage | JSON file (`devices.json`) |
 | Backend Sync | HTTP POST to main server |
 
@@ -117,7 +117,7 @@ PUT  /ISAPI/AccessControl/UserInfo/Delete          # Delete user
 POST /ISAPI/Intelligent/FDLib/FaceDataRecord       # Upload face (multipart)
 ```
 
-**Authentication**: HTTP Digest Auth (handled by `digest_auth` crate)
+**Authentication**: Qurilmaga qarab Basic/Digest bo'lishi mumkin (bu repo’dagi joriy Rust implementatsiya Basic Auth’dan foydalanadi).
 
 ---
 
@@ -192,4 +192,6 @@ VITE_BACKEND_URL=http://localhost:3000  # Main backend URL for sync
 2. **Hikvision devices must be on LAN** - No internet access needed for devices
 3. **Face image limit** - Max 200KB per image
 4. **Max 6 devices** - Hardcoded limit in the app
-5. **Digest Auth** - Required for Hikvision ISAPI
+5. **Auth (Basic/Digest)** - Hikvision qurilmasiga qarab Basic yoki Digest talab qilishi mumkin; client Basic → Digest fallback qiladi
+6. **Optional backend-first provisioning** - If `VITE_BACKEND_URL` + `VITE_SCHOOL_ID` are set, the app creates the student on the Fastify backend first and reports per-device results back (supports rollback logic via status).
+7. **Provisioning token** - Set `VITE_BACKEND_TOKEN` in desktop and `PROVISIONING_TOKEN` in backend to allow service-to-service calls without JWT.

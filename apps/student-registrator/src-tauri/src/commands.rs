@@ -6,6 +6,9 @@ use crate::types::{DeviceConfig, RegisterDeviceResult, RegisterResult, UserInfoS
 use crate::api::ApiClient;
 use chrono::{Datelike, Local, Timelike};
 use uuid::Uuid;
+use std::collections::HashMap;
+
+const MAX_FACE_IMAGE_BYTES: usize = 200 * 1024;
 
 fn generate_employee_no() -> String {
     let mut result = String::new();
@@ -112,15 +115,64 @@ pub async fn register_student(
     name: String,
     gender: String,
     face_image_base64: String,
-    backend_url: Option<String>,
+    parentName: Option<String>,
+    parentPhone: Option<String>,
+    backendUrl: Option<String>,
+    backendToken: Option<String>,
+    schoolId: Option<String>,
 ) -> Result<RegisterResult, String> {
+    // Quick size guard: base64 expands data by ~33%, so this is conservative.
+    if face_image_base64.len() > (MAX_FACE_IMAGE_BYTES * 4 / 3) + 256 {
+        return Err(format!(
+            "Face image is too large. Max {} KB.",
+            MAX_FACE_IMAGE_BYTES / 1024
+        ));
+    }
+
     let devices = load_devices();
     
     if devices.is_empty() {
         return Err("No devices configured".to_string());
     }
 
-    let employee_no = generate_employee_no();
+    let backend_url = backendUrl.filter(|v| !v.trim().is_empty());
+    let backend_token = backendToken.filter(|v| !v.trim().is_empty());
+    let school_id = schoolId.filter(|v| !v.trim().is_empty());
+
+    let mut employee_no = generate_employee_no();
+    let mut provisioning_id: Option<String> = None;
+    let mut api_client: Option<ApiClient> = None;
+    let mut backend_device_map: HashMap<String, String> = HashMap::new();
+
+    if backend_url.is_some() && school_id.is_none() {
+        return Err("schoolId is required when backendUrl is set".to_string());
+    }
+
+    if let (Some(url), Some(school_id)) = (backend_url.clone(), school_id.clone()) {
+        let client = ApiClient::new(url, backend_token.clone());
+        let request_id = Uuid::new_v4().to_string();
+        let provisioning = client
+            .start_provisioning(
+                &school_id,
+                &name,
+                None,
+                parentName.as_deref(),
+                parentPhone.as_deref(),
+                &request_id,
+            )
+            .await
+            .map_err(|e| format!("Backend provisioning failed: {}", e))?;
+
+        employee_no = provisioning.device_student_id;
+        provisioning_id = Some(provisioning.provisioning_id);
+        if let Some(targets) = provisioning.target_devices.as_ref() {
+            for device in targets {
+                backend_device_map.insert(device.device_id.clone(), device.id.clone());
+            }
+        }
+        api_client = Some(client);
+    }
+
     let now = Local::now();
     let begin_time = to_device_time(now);
     let end_time = to_device_time(
@@ -134,7 +186,30 @@ pub async fn register_student(
         
         // Test connection
         let connection = client.test_connection().await;
+        let backend_device_id = connection
+            .device_id
+            .as_ref()
+            .and_then(|id| backend_device_map.get(id))
+            .map(|s| s.as_str());
+        let external_device_id = connection.device_id.as_deref();
+        let device_name = Some(device.name.as_str());
+        let device_location = Some(device.host.as_str());
         if !connection.ok {
+            if let (Some(api), Some(pid)) = (api_client.as_ref(), provisioning_id.as_ref()) {
+                let _ = api
+                    .report_device_result(
+                        pid,
+                        backend_device_id,
+                        external_device_id,
+                        device_name,
+                        None,
+                        device_location,
+                        "FAILED",
+                        &employee_no,
+                        connection.message.as_deref(),
+                    )
+                    .await;
+            }
             results.push(RegisterDeviceResult {
                 device_id: device.id,
                 device_name: device.name,
@@ -155,6 +230,21 @@ pub async fn register_student(
         ).await;
 
         if !user_create.ok {
+            if let (Some(api), Some(pid)) = (api_client.as_ref(), provisioning_id.as_ref()) {
+                let _ = api
+                    .report_device_result(
+                        pid,
+                        backend_device_id,
+                        external_device_id,
+                        device_name,
+                        None,
+                        device_location,
+                        "FAILED",
+                        &employee_no,
+                        user_create.error_msg.as_deref(),
+                    )
+                    .await;
+            }
             results.push(RegisterDeviceResult {
                 device_id: device.id,
                 device_name: device.name,
@@ -173,6 +263,23 @@ pub async fn register_student(
             &face_image_base64,
         ).await;
 
+        if let (Some(api), Some(pid)) = (api_client.as_ref(), provisioning_id.as_ref()) {
+            let status = if face_upload.ok { "SUCCESS" } else { "FAILED" };
+            let _ = api
+                .report_device_result(
+                    pid,
+                    backend_device_id,
+                    external_device_id,
+                    device_name,
+                    None,
+                    device_location,
+                    status,
+                    &employee_no,
+                    face_upload.error_msg.as_deref(),
+                )
+                .await;
+        }
+
         results.push(RegisterDeviceResult {
             device_id: device.id,
             device_name: device.name,
@@ -184,8 +291,8 @@ pub async fn register_student(
 
     // Sync to main backend if URL provided
     if let Some(url) = backend_url {
-        let api_client = ApiClient::new(url);
-        let _ = api_client.sync_student(&employee_no, &name, &gender).await;
+        let client = api_client.unwrap_or_else(|| ApiClient::new(url, backend_token));
+        let _ = client.sync_student(&employee_no, &name, &gender).await;
     }
 
     Ok(RegisterResult {

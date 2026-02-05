@@ -30,6 +30,7 @@ model School {
   attendanceEvents    AttendanceEvent[]
   dailyAttendances    DailyAttendance[]
   holidays            Holiday[]
+  provisionings       StudentProvisioning[]
 }
 
 model User {
@@ -102,10 +103,14 @@ model Student {
   parentName         String?
   photoUrl           String?
   isActive           Boolean  @default(true)
+  deviceSyncStatus   ProvisioningStatus?
+  deviceSyncUpdatedAt DateTime?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
   attendanceEvents   AttendanceEvent[]
   dailyAttendances   DailyAttendance[]
+  provisionings      StudentProvisioning[]
+  deviceLinks        StudentDeviceLink[]
 
   @@index([schoolId])
   @@index([schoolId, isActive])
@@ -128,6 +133,7 @@ model Device {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
   attendanceEvents AttendanceEvent[]
+  studentLinks StudentDeviceLink[]
 
   @@index([schoolId])
   @@index([schoolId, isActive])
@@ -137,6 +143,62 @@ model Device {
 enum DeviceType {
   ENTRANCE
   EXIT
+}
+
+enum ProvisioningStatus {
+  PENDING
+  PROCESSING
+  PARTIAL
+  CONFIRMED
+  FAILED
+}
+
+enum DeviceProvisioningStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+model StudentProvisioning {
+  id            String   @id @default(uuid())
+  studentId     String
+  schoolId      String
+  status        ProvisioningStatus @default(PENDING)
+  requestId     String?  @unique
+  lastError     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  student       Student  @relation(fields: [studentId], references: [id])
+  school        School   @relation(fields: [schoolId], references: [id])
+  devices       StudentDeviceLink[]
+
+  @@index([studentId])
+  @@index([schoolId])
+  @@index([status])
+}
+
+model StudentDeviceLink {
+  id             String   @id @default(uuid())
+  studentId      String
+  deviceId       String
+  provisioningId String
+  status         DeviceProvisioningStatus @default(PENDING)
+  employeeNoOnDevice String?
+  attemptCount   Int      @default(0)
+  lastError      String?
+  lastAttemptAt  DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  student        Student  @relation(fields: [studentId], references: [id])
+  device         Device   @relation(fields: [deviceId], references: [id])
+  provisioning   StudentProvisioning @relation(fields: [provisioningId], references: [id])
+
+  @@unique([provisioningId, deviceId])
+  @@index([studentId])
+  @@index([deviceId])
+  @@index([status])
 }
 
 enum NvrProtocol {

@@ -63,3 +63,11 @@ export const MEDIAMTX_DEPLOY_ENABLED =
 export const MEDIAMTX_DEPLOY_ALLOW_RESTART_COMMANDS =
   process.env.MEDIAMTX_DEPLOY_ALLOW_RESTART_COMMANDS === "true" ||
   process.env.MEDIAMTX_DEPLOY_ALLOW_RESTART_COMMANDS === "1";
+
+export const PROVISIONING_TOKEN = process.env.PROVISIONING_TOKEN || "";
+
+export const DEVICE_STUDENT_ID_STRATEGY =
+  (process.env.DEVICE_STUDENT_ID_STRATEGY || "uuid").toLowerCase();
+export const DEVICE_STUDENT_ID_LENGTH = Number(
+  process.env.DEVICE_STUDENT_ID_LENGTH || "10",
+);

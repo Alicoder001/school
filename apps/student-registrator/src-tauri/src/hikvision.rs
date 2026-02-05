@@ -1,10 +1,24 @@
 // Hikvision ISAPI client - simplified with basic auth fallback
-// Note: Most Hikvision devices accept basic auth if digest fails
+// Note: Hikvision devices may require Digest auth; this client tries Basic first,
+// then falls back to Digest when it receives a 401 challenge.
 
 use crate::types::{DeviceActionResult, DeviceConfig, DeviceConnectionResult, UserInfoEntry, UserInfoSearchResponse};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use reqwest::Client;
+use reqwest::{Client, Response};
 use serde_json::{json, Value};
+use std::time::Duration;
+
+const DEFAULT_TIMEOUT_SECS: u64 = 8;
+const MAX_FACE_IMAGE_BYTES: usize = 200 * 1024;
+
+#[derive(Debug, Clone)]
+struct DigestChallenge {
+    realm: String,
+    nonce: String,
+    qop: Option<String>,
+    opaque: Option<String>,
+    algorithm: Option<String>,
+}
 
 pub struct HikvisionClient {
     device: DeviceConfig,
@@ -15,7 +29,10 @@ impl HikvisionClient {
     pub fn new(device: DeviceConfig) -> Self {
         Self {
             device,
-            client: Client::new(),
+            client: Client::builder()
+                .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECS))
+                .build()
+                .expect("reqwest client build"),
         }
     }
 
@@ -23,41 +40,241 @@ impl HikvisionClient {
         format!("http://{}:{}", self.device.host, self.device.port)
     }
 
-    /// Make authenticated request (basic auth)
-    async fn auth_request(&self, method: &str, url: &str, body: Option<Value>) -> Result<String, String> {
-        let req_method = match method {
-            "GET" => reqwest::Method::GET,
-            "POST" => reqwest::Method::POST,
-            "PUT" => reqwest::Method::PUT,
-            "DELETE" => reqwest::Method::DELETE,
-            _ => reqwest::Method::GET,
+    fn parse_digest_challenge(header_value: &str) -> Option<DigestChallenge> {
+        let trimmed = header_value.trim();
+        let rest = trimmed.strip_prefix("Digest")?.trim();
+
+        // Split by comma, but keep quoted values intact.
+        let mut parts: Vec<&str> = Vec::new();
+        let mut current = String::new();
+        let mut in_quotes = false;
+        for ch in rest.chars() {
+            match ch {
+                '"' => {
+                    in_quotes = !in_quotes;
+                    current.push(ch);
+                }
+                ',' if !in_quotes => {
+                    parts.push(current.trim());
+                    current.clear();
+                }
+                _ => current.push(ch),
+            }
+        }
+        if !current.trim().is_empty() {
+            parts.push(current.trim());
+        }
+
+        let mut realm: Option<String> = None;
+        let mut nonce: Option<String> = None;
+        let mut qop: Option<String> = None;
+        let mut opaque: Option<String> = None;
+        let mut algorithm: Option<String> = None;
+
+        for item in parts {
+            let (k, v) = item.split_once('=')?;
+            let key = k.trim();
+            let mut value = v.trim().to_string();
+            if value.starts_with('"') && value.ends_with('"') && value.len() >= 2 {
+                value = value[1..value.len() - 1].to_string();
+            }
+            match key {
+                "realm" => realm = Some(value),
+                "nonce" => nonce = Some(value),
+                "qop" => qop = Some(value),
+                "opaque" => opaque = Some(value),
+                "algorithm" => algorithm = Some(value),
+                _ => {}
+            }
+        }
+
+        Some(DigestChallenge {
+            realm: realm?,
+            nonce: nonce?,
+            qop,
+            opaque,
+            algorithm,
+        })
+    }
+
+    fn md5_hex(input: &str) -> String {
+        format!("{:x}", md5::compute(input))
+    }
+
+    fn build_digest_authorization(
+        &self,
+        method: &str,
+        url: &str,
+        challenge: &DigestChallenge,
+    ) -> Result<String, String> {
+        let parsed = reqwest::Url::parse(url).map_err(|e| e.to_string())?;
+        let uri = match parsed.query() {
+            Some(q) => format!("{}?{}", parsed.path(), q),
+            None => parsed.path().to_string(),
         };
 
-        let mut builder = self.client
-            .request(req_method, url)
-            .basic_auth(&self.device.username, Some(&self.device.password));
+        let username = &self.device.username;
+        let password = &self.device.password;
+        let realm = &challenge.realm;
+        let nonce = &challenge.nonce;
 
-        if let Some(json_body) = body {
-            builder = builder
-                .header("Content-Type", "application/json")
-                .body(json_body.to_string());
+        let algorithm = challenge
+            .algorithm
+            .as_deref()
+            .unwrap_or("MD5")
+            .to_string();
+        if algorithm.to_uppercase() != "MD5" {
+            return Err(format!("Unsupported digest algorithm: {}", algorithm));
         }
 
-        let response = builder.send().await.map_err(|e| e.to_string())?;
-        
-        if !response.status().is_success() {
-            return Err(format!("HTTP {}: {}", response.status(), response.status().canonical_reason().unwrap_or("")));
+        let ha1 = Self::md5_hex(&format!("{}:{}:{}", username, realm, password));
+        let ha2 = Self::md5_hex(&format!("{}:{}", method, uri));
+
+        // Prefer qop=auth when available.
+        let qop_value = challenge
+            .qop
+            .as_deref()
+            .and_then(|q| {
+                q.split(',')
+                    .map(|s| s.trim())
+                    .find(|s| *s == "auth")
+                    .map(|s| s.to_string())
+            });
+
+        let (response, nc, cnonce, qop) = if let Some(qop) = qop_value {
+            let nc = "00000001".to_string();
+            let cnonce = format!("{:x}", rand::random::<u64>());
+            let resp = Self::md5_hex(&format!("{}:{}:{}:{}:{}:{}", ha1, nonce, nc, cnonce, qop, ha2));
+            (resp, Some(nc), Some(cnonce), Some(qop))
+        } else {
+            let resp = Self::md5_hex(&format!("{}:{}:{}", ha1, nonce, ha2));
+            (resp, None, None, None)
+        };
+
+        let mut header = format!(
+            "Digest username=\"{}\", realm=\"{}\", nonce=\"{}\", uri=\"{}\", response=\"{}\"",
+            username, realm, nonce, uri, response
+        );
+        if let Some(opaque) = &challenge.opaque {
+            header.push_str(&format!(", opaque=\"{}\"", opaque));
         }
-        
+        header.push_str(", algorithm=MD5");
+        if let (Some(qop), Some(nc), Some(cnonce)) = (qop, nc, cnonce) {
+            header.push_str(&format!(", qop={}, nc={}, cnonce=\"{}\"", qop, nc, cnonce));
+        }
+        Ok(header)
+    }
+
+    async fn send_with_auth(
+        &self,
+        method: reqwest::Method,
+        url: &str,
+        body: Option<reqwest::Body>,
+        content_type: Option<&str>,
+        multipart: Option<reqwest::multipart::Form>,
+    ) -> Result<Response, String> {
+        let mut req = self.client.request(method.clone(), url);
+        req = req.basic_auth(&self.device.username, Some(&self.device.password));
+        if let Some(ct) = content_type {
+            req = req.header("Content-Type", ct);
+        }
+        if let Some(b) = body {
+            req = req.body(b);
+        }
+        if let Some(form) = multipart.clone() {
+            req = req.multipart(form);
+        }
+
+        let first = req.send().await.map_err(|e| e.to_string())?;
+        if first.status().is_success() {
+            return Ok(first);
+        }
+
+        // Only attempt Digest on 401.
+        if first.status() != reqwest::StatusCode::UNAUTHORIZED {
+            return Err(format!(
+                "HTTP {}: {}",
+                first.status(),
+                first.status().canonical_reason().unwrap_or("")
+            ));
+        }
+
+        let www = first
+            .headers()
+            .get(reqwest::header::WWW_AUTHENTICATE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+
+        let challenge = match Self::parse_digest_challenge(www) {
+            Some(c) => c,
+            None => {
+                return Err(format!(
+                    "Unauthorized (no digest challenge). WWW-Authenticate: {}",
+                    www
+                ))
+            }
+        };
+
+        let digest_header = self.build_digest_authorization(method.as_str(), url, &challenge)?;
+        let mut req2 = self.client.request(method, url);
+        req2 = req2.header(reqwest::header::AUTHORIZATION, digest_header);
+        if let Some(ct) = content_type {
+            req2 = req2.header("Content-Type", ct);
+        }
+        if let Some(form) = multipart {
+            req2 = req2.multipart(form);
+        } else if let Some(b) = body {
+            req2 = req2.body(b);
+        }
+
+        let second = req2.send().await.map_err(|e| e.to_string())?;
+        if !second.status().is_success() {
+            return Err(format!(
+                "HTTP {}: {}",
+                second.status(),
+                second.status().canonical_reason().unwrap_or("")
+            ));
+        }
+        Ok(second)
+    }
+
+    /// Make authenticated JSON request (Basic → Digest fallback).
+    async fn auth_request_json(
+        &self,
+        method: reqwest::Method,
+        url: &str,
+        body: Option<Value>,
+    ) -> Result<String, String> {
+        let body_string = body.map(|b| b.to_string());
+        let response = self
+            .send_with_auth(
+                method,
+                url,
+                body_string.clone().map(reqwest::Body::from),
+                body_string.as_ref().map(|_| "application/json"),
+                None,
+            )
+            .await?;
         response.text().await.map_err(|e| e.to_string())
     }
 
     pub async fn test_connection(&self) -> DeviceConnectionResult {
         let url = format!("{}/ISAPI/System/deviceInfo?format=json", self.base_url());
         
-        match self.auth_request("GET", &url, None).await {
-            Ok(_) => DeviceConnectionResult { ok: true, message: None },
-            Err(e) => DeviceConnectionResult { ok: false, message: Some(e) },
+        match self
+            .auth_request_json(reqwest::Method::GET, &url, None)
+            .await
+        {
+            Ok(text) => DeviceConnectionResult {
+                ok: true,
+                message: None,
+                device_id: extract_device_id(&text),
+            },
+            Err(e) => DeviceConnectionResult {
+                ok: false,
+                message: Some(e),
+                device_id: None,
+            },
         }
     }
 
@@ -91,7 +308,10 @@ impl HikvisionClient {
             }
         });
 
-        match self.auth_request("POST", &url, Some(payload)).await {
+        match self
+            .auth_request_json(reqwest::Method::POST, &url, Some(payload))
+            .await
+        {
             Ok(text) => parse_action_result(&text),
             Err(e) => DeviceActionResult {
                 ok: false,
@@ -132,6 +352,19 @@ impl HikvisionClient {
             }
         };
 
+        if image_bytes.len() > MAX_FACE_IMAGE_BYTES {
+            return DeviceActionResult {
+                ok: false,
+                status_code: None,
+                status_string: Some("ImageTooLarge".to_string()),
+                error_msg: Some(format!(
+                    "Face image too large: {} bytes (max {} bytes)",
+                    image_bytes.len(),
+                    MAX_FACE_IMAGE_BYTES
+                )),
+            };
+        }
+
         // Build multipart form
         let form = reqwest::multipart::Form::new()
             .text("FaceDataRecord", face_record.to_string())
@@ -140,22 +373,22 @@ impl HikvisionClient {
                 .mime_str("image/jpeg")
                 .unwrap());
 
-        match self.client
-            .post(&url)
-            .basic_auth(&self.device.username, Some(&self.device.password))
-            .multipart(form)
-            .send()
+        match self
+            .send_with_auth(
+                reqwest::Method::POST,
+                &url,
+                None,
+                None,
+                Some(form),
+            )
             .await
         {
-            Ok(res) => {
-                let text = res.text().await.unwrap_or_default();
-                parse_action_result(&text)
-            }
+            Ok(res) => parse_action_result(&res.text().await.unwrap_or_default()),
             Err(e) => DeviceActionResult {
                 ok: false,
                 status_code: None,
                 status_string: Some("UploadFailed".to_string()),
-                error_msg: Some(e.to_string()),
+                error_msg: Some(e),
             },
         }
     }
@@ -171,7 +404,10 @@ impl HikvisionClient {
             }
         });
 
-        match self.auth_request("POST", &url, Some(payload)).await {
+        match self
+            .auth_request_json(reqwest::Method::POST, &url, Some(payload))
+            .await
+        {
             Ok(text) => serde_json::from_str(&text).unwrap_or(UserInfoSearchResponse { user_info_search: None }),
             Err(_) => UserInfoSearchResponse { user_info_search: None },
         }
@@ -189,7 +425,10 @@ impl HikvisionClient {
             }
         });
 
-        match self.auth_request("POST", &url, Some(payload)).await {
+        match self
+            .auth_request_json(reqwest::Method::POST, &url, Some(payload))
+            .await
+        {
             Ok(text) => {
                 let result: UserInfoSearchResponse = serde_json::from_str(&text).ok()?;
                 result.user_info_search?.user_info?.into_iter().next()
@@ -207,7 +446,10 @@ impl HikvisionClient {
             }
         });
 
-        match self.auth_request("PUT", &url, Some(payload)).await {
+        match self
+            .auth_request_json(reqwest::Method::PUT, &url, Some(payload))
+            .await
+        {
             Ok(text) => parse_action_result(&text),
             Err(e) => DeviceActionResult {
                 ok: false,
@@ -226,16 +468,9 @@ impl HikvisionClient {
             format!("{}/{}", self.base_url(), face_url.trim_start_matches('/'))
         };
 
-        let response = self.client
-            .get(&full_url)
-            .basic_auth(&self.device.username, Some(&self.device.password))
-            .send()
-            .await
-            .map_err(|e| e.to_string())?;
-
-        if !response.status().is_success() {
-            return Err(format!("Failed to fetch face image: HTTP {}", response.status()));
-        }
+        let response = self
+            .send_with_auth(reqwest::Method::GET, &full_url, None, None, None)
+            .await?;
 
         let bytes = response.bytes().await.map_err(|e| e.to_string())?;
         Ok(bytes.to_vec())
@@ -259,4 +494,22 @@ fn parse_action_result(text: &str) -> DeviceActionResult {
             error_msg: Some(text.to_string()),
         },
     }
+}
+
+fn extract_device_id(text: &str) -> Option<String> {
+    let data: Value = serde_json::from_str(text).ok()?;
+    if let Some(info) = data.get("DeviceInfo") {
+        if let Some(id) = info.get("deviceID").and_then(|v| v.as_str()) {
+            return Some(id.to_string());
+        }
+        if let Some(id) = info.get("DeviceID").and_then(|v| v.as_str()) {
+            return Some(id.to_string());
+        }
+        if let Some(id) = info.get("deviceId").and_then(|v| v.as_str()) {
+            return Some(id.to_string());
+        }
+    }
+    data.get("deviceID")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
 }
