@@ -12,10 +12,13 @@ import {
   updateDevice,
   fileToFaceBase64,
   recreateUser,
+  getProvisioning,
+  retryProvisioning,
   type DeviceConfig,
   type RegisterResult,
   type UserInfoEntry,
   type UserInfoSearchResponse,
+  type ProvisioningDetails,
 } from "./api";
 
 // Icons as inline SVGs
@@ -196,6 +199,10 @@ function App() {
   const [registerResult, setRegisterResult] = useState<RegisterResult | null>(null);
   const [registerError, setRegisterError] = useState<string | null>(null);
   const [registerLoading, setRegisterLoading] = useState(false);
+  const [provisioningId, setProvisioningId] = useState<string | null>(null);
+  const [provisioning, setProvisioning] = useState<ProvisioningDetails | null>(null);
+  const [provLoading, setProvLoading] = useState(false);
+  const [provError, setProvError] = useState<string | null>(null);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>("");
   const [userList, setUserList] = useState<UserInfoSearchResponse | null>(null);
   const [userError, setUserError] = useState<string | null>(null);
@@ -332,6 +339,7 @@ function App() {
     event.preventDefault();
     setRegisterError(null);
     setRegisterResult(null);
+    setProvError(null);
     if (!registerFile) {
       setRegisterError("Face image is required.");
       return;
@@ -350,6 +358,9 @@ function App() {
         },
       );
       setRegisterResult(result);
+      if (result.provisioningId) {
+        setProvisioningId(result.provisioningId);
+      }
       setRegisterName("");
       setRegisterClass("");
       setRegisterParentName("");
@@ -647,6 +658,53 @@ function App() {
     URL.revokeObjectURL(url);
   };
 
+  const fetchProvisioning = useCallback(async () => {
+    if (!provisioningId) return;
+    setProvLoading(true);
+    setProvError(null);
+    try {
+      const data = await getProvisioning(provisioningId);
+      setProvisioning(data);
+    } catch (err) {
+      setProvError(String(err));
+    } finally {
+      setProvLoading(false);
+    }
+  }, [provisioningId]);
+
+  const retryFailed = async () => {
+    if (!provisioningId || !provisioning?.devices) return;
+    const failed = provisioning.devices
+      .filter((d) => d.status === "FAILED")
+      .map((d) => d.deviceId);
+    if (failed.length === 0) {
+      addToast("No failed devices to retry", "error");
+      return;
+    }
+    try {
+      await retryProvisioning(provisioningId, failed);
+      addToast("Retry requested", "success");
+      fetchProvisioning();
+    } catch (err) {
+      addToast(`Retry failed: ${String(err)}`, "error");
+    }
+  };
+
+  useEffect(() => {
+    if (provisioningId) fetchProvisioning();
+  }, [provisioningId, fetchProvisioning]);
+
+  const provisioningSummary = useMemo(() => {
+    if (!provisioning?.devices) return null;
+    const total = provisioning.devices.length;
+    const success = provisioning.devices.filter((d) => d.status === "SUCCESS")
+      .length;
+    const failed = provisioning.devices.filter((d) => d.status === "FAILED")
+      .length;
+    const pending = total - success - failed;
+    return { total, success, failed, pending };
+  }, [provisioning]);
+
   return (
     <div className="app">
       {/* Theme Toggle */}
@@ -842,6 +900,69 @@ function App() {
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+          {provisioningId && (
+            <div className="notice">
+              <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                <div>
+                  <strong>Provisioning:</strong> {provisioningId}
+                </div>
+                <div>
+                  <strong>Status:</strong>{" "}
+                  {provisioning?.status || (provLoading ? "Loading..." : "Unknown")}
+                </div>
+                <button
+                  type="button"
+                  className="button secondary"
+                  onClick={fetchProvisioning}
+                  disabled={provLoading}
+                >
+                  <Icons.Refresh />
+                  Refresh
+                </button>
+                <button
+                  type="button"
+                  className="button secondary"
+                  onClick={retryFailed}
+                  disabled={provLoading || !provisioningSummary?.failed}
+                >
+                  <Icons.Refresh />
+                  Retry Failed
+                </button>
+              </div>
+
+              {provError && <p className="notice error" style={{ marginTop: 8 }}>{provError}</p>}
+
+              {provisioningSummary && (
+                <div style={{ marginTop: 8, fontSize: 13, color: "var(--neutral-600)" }}>
+                  Total: {provisioningSummary.total} | Success: {provisioningSummary.success} | Failed:{" "}
+                  {provisioningSummary.failed} | Pending: {provisioningSummary.pending}
+                </div>
+              )}
+
+              {provisioning?.devices && provisioning.devices.length > 0 && (
+                <div style={{ marginTop: 12 }}>
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>Device</th>
+                        <th>Status</th>
+                        <th>Error</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {provisioning.devices.map((link) => (
+                        <tr key={link.id}>
+                          <td>{link.device?.name || link.deviceId}</td>
+                          <td>{link.status}</td>
+                          <td>{link.lastError || "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           )}
           <form onSubmit={handleRegisterSubmit} className="device-form">
