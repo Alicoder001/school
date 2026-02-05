@@ -164,6 +164,12 @@ enum DeviceProvisioningStatus {
   FAILED
 }
 
+enum ProvisioningLogLevel {
+  INFO
+  WARN
+  ERROR
+}
+
 model StudentProvisioning {
   id            String   @id @default(uuid())
   studentId     String
@@ -181,6 +187,32 @@ model StudentProvisioning {
   @@index([studentId])
   @@index([schoolId])
   @@index([status])
+}
+
+model ProvisioningLog {
+  id             String   @id @default(uuid())
+  schoolId       String
+  studentId      String?
+  provisioningId String?
+  deviceId       String?
+  level          ProvisioningLogLevel @default(INFO)
+  stage          String
+  status         String?
+  message        String?
+  payload        Json?
+  createdAt      DateTime @default(now())
+
+  school         School   @relation(fields: [schoolId], references: [id])
+  student        Student? @relation(fields: [studentId], references: [id])
+  provisioning   StudentProvisioning? @relation(fields: [provisioningId], references: [id])
+  device         Device?  @relation(fields: [deviceId], references: [id])
+
+  @@index([schoolId])
+  @@index([provisioningId])
+  @@index([studentId])
+  @@index([deviceId])
+  @@index([level])
+  @@index([createdAt])
 }
 
 model StudentDeviceLink {

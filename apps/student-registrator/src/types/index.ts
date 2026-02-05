@@ -9,6 +9,7 @@ export type {
   RegisterResult,
   ProvisioningDetails,
   ProvisioningDeviceLink,
+  ProvisioningLogEntry,
   UserInfoEntry,
   UserInfoSearchResponse,
   AuthUser,

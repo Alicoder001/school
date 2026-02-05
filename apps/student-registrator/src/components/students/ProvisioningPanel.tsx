@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { getProvisioning, retryProvisioning } from '../../api';
+import { getProvisioning, getProvisioningLogs, retryProvisioning } from '../../api';
 import { Icons } from '../ui/Icons';
-import type { ProvisioningDetails, RegisterResult } from '../../types';
+import type { ProvisioningDetails, ProvisioningLogEntry, RegisterResult } from '../../types';
 
 interface ProvisioningPanelProps {
   provisioningId?: string | null;
@@ -13,6 +13,7 @@ export function ProvisioningPanel({
   registerResult,
 }: ProvisioningPanelProps) {
   const [details, setDetails] = useState<ProvisioningDetails | null>(null);
+  const [logs, setLogs] = useState<ProvisioningLogEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -21,8 +22,12 @@ export function ProvisioningPanel({
     setLoading(true);
     setError(null);
     try {
-      const data = await getProvisioning(provisioningId);
+      const [data, logData] = await Promise.all([
+        getProvisioning(provisioningId),
+        getProvisioningLogs(provisioningId),
+      ]);
       setDetails(data);
+      setLogs(logData);
     } catch (err) {
       setError(String(err));
     } finally {
@@ -33,6 +38,7 @@ export function ProvisioningPanel({
   useEffect(() => {
     if (!provisioningId) {
       setDetails(null);
+      setLogs([]);
       setError(null);
       return;
     }
@@ -164,11 +170,43 @@ export function ProvisioningPanel({
                 <tr key={link.id}>
                   <td>{link.device?.name || link.deviceId}</td>
                   <td>{link.status}</td>
-                  <td>{link.lastError || '—'}</td>
+                  <td>{link.lastError || '-'}</td>
                 </tr>
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {logs.length > 0 && (
+        <div className="table-container">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Vaqt</th>
+                <th>Bosqich</th>
+                <th>Daraja</th>
+                <th>Status</th>
+                <th>Xabar</th>
+              </tr>
+            </thead>
+            <tbody>
+              {logs.slice(0, 50).map((log) => (
+                <tr key={log.id}>
+                  <td>{new Date(log.createdAt).toLocaleString()}</td>
+                  <td>{log.stage}</td>
+                  <td>{log.level}</td>
+                  <td>{log.status || '-'}</td>
+                  <td>{log.message || '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {logs.length > 50 && (
+            <div className="notice notice-warning">
+              Loglar ko'p: oxirgi 50 ta ko'rsatildi.
+            </div>
+          )}
         </div>
       )}
     </div>

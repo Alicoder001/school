@@ -60,6 +60,36 @@ function splitFullName(fullName: string): { firstName: string; lastName: string 
   };
 }
 
+async function logProvisioningEvent(params: {
+  schoolId: string;
+  studentId?: string | null;
+  provisioningId?: string | null;
+  deviceId?: string | null;
+  level?: "INFO" | "WARN" | "ERROR";
+  stage: string;
+  status?: string | null;
+  message?: string | null;
+  payload?: Record<string, any> | null;
+}) {
+  try {
+    await prisma.provisioningLog.create({
+      data: {
+        schoolId: params.schoolId,
+        studentId: params.studentId || null,
+        provisioningId: params.provisioningId || null,
+        deviceId: params.deviceId || null,
+        level: params.level || "INFO",
+        stage: params.stage,
+        status: params.status || null,
+        message: params.message || null,
+        payload: params.payload || undefined,
+      },
+    });
+  } catch (err) {
+    console.error("[ProvisioningLog] Failed to write log:", err);
+  }
+}
+
 type ProvisioningAuth = { user: any | null; tokenAuth: boolean };
 
 async function ensureProvisioningAuth(
@@ -1360,6 +1390,22 @@ export default async function (fastify: FastifyInstance) {
           };
         });
 
+        await logProvisioningEvent({
+          schoolId,
+          studentId: result.student.id,
+          provisioningId: result.provisioning.id,
+          level: result.provisioning.status === "FAILED" ? "ERROR" : "INFO",
+          stage: "PROVISIONING_START",
+          status: result.provisioning.status,
+          message: result.provisioning.lastError || null,
+          payload: {
+            requestId,
+            targetDeviceIds,
+            targetAllActive,
+            classId,
+          },
+        });
+
         return {
           student: result.student,
           studentId: result.student.id,
@@ -1532,11 +1578,58 @@ export default async function (fastify: FastifyInstance) {
         return { link, provisioning: updatedProvisioning };
       });
 
+      await logProvisioningEvent({
+        schoolId: provisioning.schoolId,
+        studentId: provisioning.studentId,
+        provisioningId: id,
+        deviceId: device.id,
+        level: status === "FAILED" ? "ERROR" : "INFO",
+        stage: "DEVICE_RESULT",
+        status,
+        message: body.error || null,
+        payload: {
+          deviceExternalId,
+          deviceName: body.deviceName,
+          deviceType: body.deviceType,
+          deviceLocation: body.deviceLocation,
+          employeeNoOnDevice: body.employeeNoOnDevice,
+        },
+      });
+
       return {
         ok: true,
         provisioningStatus: result.provisioning.status,
         deviceStatus: result.link.status,
       };
+    } catch (err) {
+      return sendHttpError(reply, err);
+    }
+  });
+
+  // Provisioning logs (archive)
+  fastify.get("/provisioning/:id/logs", async (request: any, reply) => {
+    try {
+      const { id } = request.params as { id: string };
+      const provisioning = await prisma.studentProvisioning.findUnique({
+        where: { id },
+      });
+      if (!provisioning) {
+        return reply.status(404).send({ error: "Provisioning not found" });
+      }
+
+      const auth = await ensureProvisioningAuth(
+        request,
+        reply,
+        provisioning.schoolId,
+      );
+      if (!auth) return;
+
+      const logs = await prisma.provisioningLog.findMany({
+        where: { provisioningId: id },
+        orderBy: { createdAt: "desc" },
+        take: 200,
+      });
+      return logs;
     } catch (err) {
       return sendHttpError(reply, err);
     }
@@ -1621,6 +1714,19 @@ export default async function (fastify: FastifyInstance) {
         });
 
         return { updated: updated.count, targetDeviceIds };
+      });
+
+      await logProvisioningEvent({
+        schoolId: provisioning.schoolId,
+        studentId: provisioning.studentId,
+        provisioningId: id,
+        level: "INFO",
+        stage: "RETRY",
+        status: "PROCESSING",
+        message: result.updated === 0 ? "No devices to retry" : null,
+        payload: {
+          targetDeviceIds: result.targetDeviceIds,
+        },
       });
 
       return { ok: true, ...result };

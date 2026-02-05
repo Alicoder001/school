@@ -54,6 +54,20 @@ export interface ProvisioningDetails {
   devices?: ProvisioningDeviceLink[];
 }
 
+export interface ProvisioningLogEntry {
+  id: string;
+  schoolId: string;
+  studentId?: string | null;
+  provisioningId?: string | null;
+  deviceId?: string | null;
+  level: "INFO" | "WARN" | "ERROR";
+  stage: string;
+  status?: string | null;
+  message?: string | null;
+  payload?: Record<string, any> | null;
+  createdAt: string;
+}
+
 export interface UserInfoEntry {
   employeeNo: string;
   name: string;
@@ -368,6 +382,14 @@ export async function getProvisioning(
     backendUrl: BACKEND_URL,
     backendToken: token || '',
   });
+}
+
+export async function getProvisioningLogs(
+  provisioningId: string,
+): Promise<ProvisioningLogEntry[]> {
+  const res = await fetchWithAuth(`${BACKEND_URL}/provisioning/${provisioningId}/logs`);
+  if (!res.ok) throw new Error('Failed to fetch provisioning logs');
+  return res.json();
 }
 
 export async function retryProvisioning(
