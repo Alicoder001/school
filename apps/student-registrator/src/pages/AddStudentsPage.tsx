@@ -5,15 +5,29 @@ import { useExcelImport } from '../hooks/useExcelImport';
 import { useGlobalToast } from '../hooks/useToast';
 import { StudentTable } from '../components/students/StudentTable';
 import { ExcelImportButton } from '../components/students/ExcelImportButton';
+import { ImportMappingPanel } from '../components/students/ImportMappingPanel';
+import { ProvisioningPanel } from '../components/students/ProvisioningPanel';
+import { downloadStudentsTemplate } from '../services/excel.service';
 import { Icons } from '../components/ui/Icons';
 import type { ClassInfo } from '../types';
 
 export function AddStudentsPage() {
   const [availableClasses, setAvailableClasses] = useState<ClassInfo[]>([]);
-  const [selectedSchool, setSelectedSchool] = useState<string>('');
   const [loading, setLoading] = useState(false);
 
-  const { students, addStudent, updateStudent, deleteStudent, importStudents, saveStudent, saveAllPending, isSaving } = useStudentTable();
+  const {
+    students,
+    addStudent,
+    updateStudent,
+    deleteStudent,
+    importStudents,
+    applyClassMapping,
+    saveStudent,
+    saveAllPending,
+    isSaving,
+    lastRegisterResult,
+    lastProvisioningId,
+  } = useStudentTable();
   const { parseExcel, resizeImages } = useExcelImport();
   const { addToast } = useGlobalToast();
 
@@ -28,7 +42,6 @@ export function AddStudentsPage() {
         const schoolId = user.schoolId || schools[0]?.id;
         
         if (schoolId) {
-          setSelectedSchool(schoolId);
           const classes = await fetchClasses(schoolId);
           console.log('[AddStudents] Loaded classes from backend:', classes);
           setAvailableClasses(classes);
@@ -73,6 +86,20 @@ export function AddStudentsPage() {
     }
   };
 
+  const handleDownloadTemplate = async () => {
+    if (availableClasses.length === 0) {
+      addToast('Sinflar yuklanmagan!', 'error');
+      return;
+    }
+    try {
+      await downloadStudentsTemplate(availableClasses.map((cls) => cls.name));
+      addToast('Shablon yuklandi', 'success');
+    } catch (err) {
+      console.error('Template download error:', err);
+      addToast('Shablon yuklashda xato', 'error');
+    }
+  };
+
   // Handle save student
   const handleSaveStudent = async (id: string) => {
     try {
@@ -94,17 +121,12 @@ export function AddStudentsPage() {
     }
 
     try {
-      await saveAllPending();
-      
-      // Check results after saving
-      const successCount = students.filter(s => s.status === 'success').length;
-      const errorCount = students.filter(s => s.status === 'error').length;
-      
+      const { successCount, errorCount } = await saveAllPending();
       if (errorCount > 0) {
         addToast(`${errorCount} ta xato, ${successCount} ta saqlandi`, 'error');
-      } else {
-        addToast(`${successCount} ta o'quvchi saqlandi`, 'success');
+        return;
       }
+      addToast(`${successCount} ta o'quvchi saqlandi`, 'success');
     } catch (err) {
       addToast('Ba\'zi o\'quvchilarni saqlashda xato', 'error');
     }
@@ -127,6 +149,12 @@ export function AddStudentsPage() {
     });
   };
 
+  const handleApplyMapping = (className: string, classId: string) => {
+    if (!classId) return;
+    const selectedClass = availableClasses.find((cls) => cls.id === classId);
+    applyClassMapping(className, classId, selectedClass?.name);
+  };
+
   return (
     <div className="page">
       {/* Page Header */}
@@ -143,6 +171,14 @@ export function AddStudentsPage() {
             onImport={handleExcelImport} 
             disabled={loading}
           />
+          <button
+            type="button"
+            className="button button-secondary"
+            onClick={handleDownloadTemplate}
+            disabled={loading}
+          >
+            <Icons.Download /> Shablon yuklash
+          </button>
 
           {pendingCount > 0 && (
             <button 
@@ -179,6 +215,17 @@ export function AddStudentsPage() {
           )}
         </div>
       )}
+
+      <ImportMappingPanel
+        students={students}
+        availableClasses={availableClasses}
+        onApplyMapping={handleApplyMapping}
+      />
+
+      <ProvisioningPanel
+        provisioningId={lastProvisioningId}
+        registerResult={lastRegisterResult}
+      />
 
       {/* Table */}
       <div className="page-content">

@@ -165,68 +165,100 @@ impl HikvisionClient {
         Ok(header)
     }
 
+    async fn response_error(res: Response) -> String {
+        let status = res.status();
+        let reason = status.canonical_reason().unwrap_or("");
+        let text = res.text().await.unwrap_or_default();
+        if text.trim().is_empty() {
+            format!("HTTP {}: {}", status, reason)
+        } else {
+            format!("HTTP {}: {}: {}", status, reason, text)
+        }
+    }
+
     async fn send_with_auth(
         &self,
         method: reqwest::Method,
         url: &str,
-        body: Option<reqwest::Body>,
+        body: Option<Vec<u8>>,
         content_type: Option<&str>,
         multipart: Option<reqwest::multipart::Form>,
     ) -> Result<Response, String> {
         // For multipart requests, we need to get digest challenge first with a simple request
         // because Form cannot be cloned and will be consumed.
         if multipart.is_some() {
-            // First, try to get digest challenge with a simple GET to the same endpoint
-            let probe = self.client.request(reqwest::Method::GET, url)
-                .basic_auth(&self.device.username, Some(&self.device.password))
+            // First, try to get digest challenge with a simple GET to the same endpoint (no auth)
+            let probe = self
+                .client
+                .request(reqwest::Method::GET, url)
                 .send()
                 .await
                 .map_err(|e| e.to_string())?;
-            
+
             if probe.status() == reqwest::StatusCode::UNAUTHORIZED {
-                // Get digest challenge
                 let www = probe
                     .headers()
                     .get(reqwest::header::WWW_AUTHENTICATE)
                     .and_then(|v| v.to_str().ok())
                     .unwrap_or("");
-                
+
                 if let Some(challenge) = Self::parse_digest_challenge(www) {
-                    let digest_header = self.build_digest_authorization(method.as_str(), url, &challenge)?;
-                    let mut req = self.client.request(method, url);
+                    let digest_header =
+                        self.build_digest_authorization(method.as_str(), url, &challenge)?;
+                    let mut req = self.client.request(method.clone(), url);
                     req = req.header(reqwest::header::AUTHORIZATION, digest_header);
                     if let Some(form) = multipart {
                         req = req.multipart(form);
                     }
                     let res = req.send().await.map_err(|e| e.to_string())?;
                     if !res.status().is_success() {
-                        return Err(format!("HTTP {}: {}", res.status(), res.status().canonical_reason().unwrap_or("")));
+                        return Err(format!(
+                            "HTTP {}: {}",
+                            res.status(),
+                            res.status().canonical_reason().unwrap_or("")
+                        ));
                     }
                     return Ok(res);
                 }
             }
-            
-            // If basic auth worked or no digest challenge, try with basic auth
+
+            // Fallback to basic auth for multipart
             let mut req = self.client.request(method, url);
             req = req.basic_auth(&self.device.username, Some(&self.device.password));
             if let Some(form) = multipart {
                 req = req.multipart(form);
             }
             let res = req.send().await.map_err(|e| e.to_string())?;
-            if !res.status().is_success() {
-                return Err(format!("HTTP {}: {}", res.status(), res.status().canonical_reason().unwrap_or("")));
+            if res.status().is_success() {
+                return Ok(res);
             }
-            return Ok(res);
+
+            if res.status() == reqwest::StatusCode::UNAUTHORIZED {
+                let www = res
+                    .headers()
+                    .get(reqwest::header::WWW_AUTHENTICATE)
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("");
+                return Err(format!(
+                    "Unauthorized (no digest challenge). WWW-Authenticate: {}",
+                    www
+                ));
+            }
+
+            return Err(format!(
+                "HTTP {}: {}",
+                res.status(),
+                res.status().canonical_reason().unwrap_or("")
+            ));
         }
 
-        // Non-multipart requests - original logic
+        // Non-multipart requests - try unauthenticated first to get digest challenge
         let mut req = self.client.request(method.clone(), url);
-        req = req.basic_auth(&self.device.username, Some(&self.device.password));
         if let Some(ct) = content_type {
             req = req.header("Content-Type", ct);
         }
-        if let Some(b) = body {
-            req = req.body(b);
+        if let Some(b) = body.as_ref() {
+            req = req.body(b.clone());
         }
 
         let first = req.send().await.map_err(|e| e.to_string())?;
@@ -234,47 +266,87 @@ impl HikvisionClient {
             return Ok(first);
         }
 
-        // Only attempt Digest on 401.
-        if first.status() != reqwest::StatusCode::UNAUTHORIZED {
-            return Err(format!(
-                "HTTP {}: {}",
-                first.status(),
-                first.status().canonical_reason().unwrap_or("")
-            ));
-        }
-
+        let status = first.status();
         let www = first
             .headers()
             .get(reqwest::header::WWW_AUTHENTICATE)
             .and_then(|v| v.to_str().ok())
             .unwrap_or("");
 
-        let challenge = match Self::parse_digest_challenge(www) {
-            Some(c) => c,
-            None => {
-                return Err(format!(
-                    "Unauthorized (no digest challenge). WWW-Authenticate: {}",
-                    www
-                ))
-            }
-        };
+        // Some devices return 400/403 for unauthenticated POSTs; try auth in those cases too.
+        if !matches!(
+            status,
+            reqwest::StatusCode::UNAUTHORIZED
+                | reqwest::StatusCode::BAD_REQUEST
+                | reqwest::StatusCode::FORBIDDEN
+        ) {
+            return Err(Self::response_error(first).await);
+        }
 
-        let digest_header = self.build_digest_authorization(method.as_str(), url, &challenge)?;
-        let mut req2 = self.client.request(method, url);
-        req2 = req2.header(reqwest::header::AUTHORIZATION, digest_header);
+        if let Some(challenge) = Self::parse_digest_challenge(www) {
+            let digest_header = self.build_digest_authorization(method.as_str(), url, &challenge)?;
+            let mut req2 = self.client.request(method.clone(), url);
+            req2 = req2.header(reqwest::header::AUTHORIZATION, digest_header);
+            if let Some(ct) = content_type {
+                req2 = req2.header("Content-Type", ct);
+            }
+            if let Some(b) = body.as_ref() {
+                req2 = req2.body(b.clone());
+            }
+
+            let second = req2.send().await.map_err(|e| e.to_string())?;
+            if !second.status().is_success() {
+                return Err(Self::response_error(second).await);
+            }
+            return Ok(second);
+        }
+
+        // If no digest challenge, try basic auth as fallback
+        let mut req2 = self.client.request(method.clone(), url);
+        req2 = req2.basic_auth(&self.device.username, Some(&self.device.password));
         if let Some(ct) = content_type {
             req2 = req2.header("Content-Type", ct);
         }
+        if let Some(b) = body.as_ref() {
+            req2 = req2.body(b.clone());
+        }
 
         let second = req2.send().await.map_err(|e| e.to_string())?;
-        if !second.status().is_success() {
+        if second.status().is_success() {
+            return Ok(second);
+        }
+
+        let www2 = second
+            .headers()
+            .get(reqwest::header::WWW_AUTHENTICATE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+
+        if let Some(challenge) = Self::parse_digest_challenge(www2) {
+            let digest_header = self.build_digest_authorization(method.as_str(), url, &challenge)?;
+            let mut req3 = self.client.request(method, url);
+            req3 = req3.header(reqwest::header::AUTHORIZATION, digest_header);
+            if let Some(ct) = content_type {
+                req3 = req3.header("Content-Type", ct);
+            }
+            if let Some(b) = body.as_ref() {
+                req3 = req3.body(b.clone());
+            }
+            let third = req3.send().await.map_err(|e| e.to_string())?;
+            if !third.status().is_success() {
+                return Err(Self::response_error(third).await);
+            }
+            return Ok(third);
+        }
+
+        if second.status() == reqwest::StatusCode::UNAUTHORIZED {
             return Err(format!(
-                "HTTP {}: {}",
-                second.status(),
-                second.status().canonical_reason().unwrap_or("")
+                "Unauthorized (no digest challenge). WWW-Authenticate: {}",
+                www2
             ));
         }
-        Ok(second)
+
+        Err(Self::response_error(second).await)
     }
 
     /// Make authenticated JSON request (Basic → Digest fallback).
@@ -289,7 +361,7 @@ impl HikvisionClient {
             .send_with_auth(
                 method,
                 url,
-                body_string.clone().map(reqwest::Body::from),
+                body_string.clone().map(|b| b.into_bytes()),
                 body_string.as_ref().map(|_| "application/json"),
                 None,
             )

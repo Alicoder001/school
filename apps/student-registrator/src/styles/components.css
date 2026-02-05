@@ -64,6 +64,12 @@
   height: 16px;
 }
 
+.button-compact {
+  height: 32px;
+  padding: 0.375rem 0.75rem;
+  font-size: 0.8125rem;
+}
+
 /* Icon Buttons */
 .btn-icon {
   width: 32px;
@@ -123,6 +129,19 @@
 .action-buttons {
   display: flex;
   gap: 0.5rem;
+}
+
+.checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--text-color);
+}
+
+.checkbox input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
 }
 
 /* Badges */

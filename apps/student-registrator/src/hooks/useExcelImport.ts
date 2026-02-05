@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useCallback } from 'react';
 import { parseExcelFile } from '../services/excel.service';
 import { base64ToResizedBase64 } from '../api';
 import type { StudentRow, ExcelImportMapping, ClassInfo } from '../types';

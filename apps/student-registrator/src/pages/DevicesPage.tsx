@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { fetchDevices, createDevice, updateDevice, deleteDevice } from '../api';
+import { fetchDevices, createDevice, updateDevice, deleteDevice, testDeviceConnection } from '../api';
 import { useGlobalToast } from '../hooks/useToast';
 import { Icons } from '../components/ui/Icons';
 import type { DeviceConfig } from '../types';
@@ -15,6 +15,8 @@ export function DevicesPage() {
     password: '',
   });
   const [loading, setLoading] = useState(false);
+  const [testingId, setTestingId] = useState<string | null>(null);
+  const [testStatus, setTestStatus] = useState<Record<string, 'ok' | 'fail'>>({});
   const { addToast } = useGlobalToast();
 
   useEffect(() => {
@@ -80,6 +82,20 @@ export function DevicesPage() {
       }
     } catch (err) {
       addToast('O\'chirishda xato', 'error');
+    }
+  };
+
+  const handleTestConnection = async (device: DeviceConfig) => {
+    setTestingId(device.id);
+    try {
+      const ok = await testDeviceConnection(device.id);
+      setTestStatus((prev) => ({ ...prev, [device.id]: ok ? 'ok' : 'fail' }));
+      addToast(ok ? 'Ulanish muvaffaqiyatli' : 'Ulanish muvaffaqiyatsiz', ok ? 'success' : 'error');
+    } catch (err) {
+      setTestStatus((prev) => ({ ...prev, [device.id]: 'fail' }));
+      addToast('Ulanishni tekshirishda xato', 'error');
+    } finally {
+      setTestingId(null);
     }
   };
 
@@ -198,9 +214,25 @@ export function DevicesPage() {
                   <div key={device.id} className="device-item">
                     <div className="device-item-header">
                       <strong>{device.name}</strong>
-                      <span className="badge">{device.host}:{device.port}</span>
+                      <div className="device-item-meta">
+                        <span className="badge">{device.host}:{device.port}</span>
+                        {testStatus[device.id] === 'ok' && (
+                          <span className="badge badge-success">Online</span>
+                        )}
+                        {testStatus[device.id] === 'fail' && (
+                          <span className="badge badge-danger">Xato</span>
+                        )}
+                      </div>
                     </div>
                     <div className="device-item-actions">
+                      <button
+                        className="btn-icon"
+                        onClick={() => handleTestConnection(device)}
+                        title="Ulanishni tekshirish"
+                        disabled={testingId === device.id}
+                      >
+                        {testingId === device.id ? <span className="spinner" /> : <Icons.Refresh />}
+                      </button>
                       <button
                         className="btn-icon btn-primary"
                         onClick={() => handleEdit(device)}

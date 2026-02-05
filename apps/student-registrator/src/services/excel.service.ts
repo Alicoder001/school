@@ -1,4 +1,6 @@
 import ExcelJS from "exceljs";
+import boySampleImg from "../assets/boy_sample.png";
+import girlSampleImg from "../assets/girl_sample.png";
 import type { StudentRow } from '../types';
 
 // Excel parse qilish (App.tsx dan ko'chirilgan)
@@ -90,4 +92,114 @@ export async function parseExcelFile(file: File): Promise<Omit<StudentRow, 'id' 
   
   console.log(`[Parse] Total rows parsed: ${allRows.length}`);
   return allRows;
+}
+
+export async function downloadStudentsTemplate(classNames: string[]): Promise<void> {
+  const cleanedNames = classNames.map((name) => name.trim()).filter(Boolean);
+  if (cleanedNames.length === 0) {
+    throw new Error("Kamida bitta sinf tanlang");
+  }
+
+  const colors = {
+    headerBg: "FFF1F5F9",
+    headerText: "FF334155",
+    border: "FFE2E8F0",
+  };
+
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "Student Registrator";
+  workbook.created = new Date();
+
+  let boyImageId: number | undefined;
+  let girlImageId: number | undefined;
+
+  try {
+    const boyResponse = await fetch(boySampleImg);
+    const boyArrayBuffer = await boyResponse.arrayBuffer();
+    boyImageId = workbook.addImage({ buffer: boyArrayBuffer, extension: "png" });
+
+    const girlResponse = await fetch(girlSampleImg);
+    const girlArrayBuffer = await girlResponse.arrayBuffer();
+    girlImageId = workbook.addImage({ buffer: girlArrayBuffer, extension: "png" });
+  } catch (err) {
+    console.error("Template images could not be loaded:", err);
+  }
+
+  for (const className of cleanedNames) {
+    const worksheet = workbook.addWorksheet(className);
+
+    worksheet.getColumn(1).width = 5;
+    worksheet.getColumn(2).width = 28;
+    worksheet.getColumn(3).width = 10;
+    worksheet.getColumn(4).width = 24;
+    worksheet.getColumn(5).width = 18;
+    worksheet.getColumn(6).width = 14;
+
+    const headers = ["#", "Full Name", "Gender", "Parent Name", "Parent Phone", "Photo"];
+    const headerRow = worksheet.addRow(headers);
+    headerRow.eachCell((cell) => {
+      cell.font = { bold: true, size: 10, color: { argb: colors.headerText } };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: colors.headerBg } };
+      cell.alignment = { horizontal: "center", vertical: "middle" };
+      cell.border = {
+        bottom: { style: "thin", color: { argb: colors.border } },
+      };
+    });
+    headerRow.height = 24;
+
+    const sampleData = [
+      { name: "Aliyev Vali", gender: "male", parent: "Aliyev Sobir", phone: "+998901234567" },
+      { name: "Karimova Nodira", gender: "female", parent: "Karimova Malika", phone: "+998907654321" },
+    ];
+
+    sampleData.forEach((student, index) => {
+      const row = worksheet.addRow([
+        index + 1,
+        student.name,
+        student.gender,
+        student.parent,
+        student.phone,
+        "",
+      ]);
+
+      row.height = 65;
+      row.eachCell((cell, colNumber) => {
+        cell.alignment = { horizontal: colNumber === 1 ? "center" : "left", vertical: "middle" };
+        cell.border = {
+          bottom: { style: "thin", color: { argb: colors.border } },
+        };
+      });
+
+      if (boyImageId !== undefined && girlImageId !== undefined) {
+        const imageId = student.gender === "male" ? boyImageId : girlImageId;
+        const rowIndex = row.number - 1;
+        worksheet.addImage(imageId, {
+          tl: { col: 5, row: rowIndex },
+          ext: { width: 60, height: 60 },
+        });
+      }
+    });
+
+    for (let i = 0; i < 10; i++) {
+      const row = worksheet.addRow([sampleData.length + i + 1, "", "", "", "", ""]);
+      row.height = 65;
+      row.eachCell((cell, colNumber) => {
+        cell.alignment = { horizontal: colNumber === 1 ? "center" : "left", vertical: "middle" };
+        cell.border = {
+          bottom: { style: "thin", color: { argb: colors.border } },
+        };
+      });
+    }
+  }
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "students_template.xlsx";
+  a.click();
+  URL.revokeObjectURL(url);
 }

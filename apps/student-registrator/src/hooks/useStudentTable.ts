@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { registerStudent } from '../api';
-import type { StudentRow } from '../types';
+import type { RegisterResult, StudentRow } from '../types';
 
 interface UseStudentTableReturn {
   students: StudentRow[];
@@ -8,15 +8,20 @@ interface UseStudentTableReturn {
   updateStudent: (id: string, updates: Partial<StudentRow>) => void;
   deleteStudent: (id: string) => void;
   importStudents: (rows: Omit<StudentRow, 'id' | 'source' | 'status'>[]) => void;
+  applyClassMapping: (className: string, classId: string, classDisplayName?: string) => void;
   saveStudent: (id: string) => Promise<void>;
-  saveAllPending: () => Promise<void>;
+  saveAllPending: () => Promise<{ successCount: number; errorCount: number }>;
   clearTable: () => void;
   isSaving: boolean;
+  lastRegisterResult: RegisterResult | null;
+  lastProvisioningId: string | null;
 }
 
 export function useStudentTable(): UseStudentTableReturn {
   const [students, setStudents] = useState<StudentRow[]>([]);
   const [isSaving, setIsSaving] = useState(false);
+  const [lastRegisterResult, setLastRegisterResult] = useState<RegisterResult | null>(null);
+  const [lastProvisioningId, setLastProvisioningId] = useState<string | null>(null);
 
   // Qo'lda bitta qo'shish
   const addStudent = useCallback((student: Omit<StudentRow, 'id' | 'source' | 'status'>) => {
@@ -51,6 +56,26 @@ export function useStudentTable(): UseStudentTableReturn {
   const deleteStudent = useCallback((id: string) => {
     setStudents(prev => prev.filter(s => s.id !== id));
   }, []);
+
+  const applyClassMapping = useCallback(
+    (className: string, classId: string, classDisplayName?: string) => {
+      const normalized = className.trim().toLowerCase();
+      if (!normalized) return;
+      setStudents((prev) =>
+        prev.map((student) => {
+          if (student.source !== 'import') return student;
+          const currentName = student.className?.trim().toLowerCase();
+          if (currentName !== normalized) return student;
+          return {
+            ...student,
+            classId,
+            className: classDisplayName || student.className,
+          };
+        }),
+      );
+    },
+    [],
+  );
 
   // Bitta studentni saqlash
   const saveStudent = useCallback(async (id: string) => {
@@ -94,7 +119,7 @@ export function useStudentTable(): UseStudentTableReturn {
     });
 
     try {
-      await registerStudent(
+      const result = await registerStudent(
         student.name.trim(),
         student.gender,
         student.imageBase64 || '',
@@ -104,7 +129,51 @@ export function useStudentTable(): UseStudentTableReturn {
           classId: student.classId,
         }
       );
-      
+
+      setLastRegisterResult(result);
+      if (result.provisioningId) {
+        setLastProvisioningId(result.provisioningId);
+      }
+
+      const failedDevices = result.results.filter((item) => {
+        if (!item.connection.ok) return true;
+        if (item.userCreate && !item.userCreate.ok) return true;
+        if (item.faceUpload && !item.faceUpload.ok) return true;
+        return false;
+      });
+
+      if (failedDevices.length > 0) {
+        const firstFailure = failedDevices[0];
+        const pickReason = (status?: string, error?: string) => {
+          if (error && (!status || ["RequestFailed", "UploadFailed", "ParseError"].includes(status))) {
+            return error;
+          }
+          return status || error || "Noma'lum xato";
+        };
+
+        let reason = "";
+        if (!firstFailure.connection.ok) {
+          reason = pickReason(undefined, firstFailure.connection.message);
+        } else if (firstFailure.userCreate && !firstFailure.userCreate.ok) {
+          reason = `User yaratish: ${pickReason(
+            firstFailure.userCreate.statusString,
+            firstFailure.userCreate.errorMsg,
+          )}`;
+        } else if (firstFailure.faceUpload && !firstFailure.faceUpload.ok) {
+          reason = `Face yuklash: ${pickReason(
+            firstFailure.faceUpload.statusString,
+            firstFailure.faceUpload.errorMsg,
+          )}`;
+        }
+
+        const errorMessage = `Hikvision yozilmadi (${failedDevices.length} ta qurilma). ${reason}`;
+
+        setStudents(prev => prev.map(s => 
+          s.id === id ? { ...s, status: 'error' as const, error: errorMessage } : s
+        ));
+        throw new Error(errorMessage);
+      }
+
       setStudents(prev => prev.map(s => 
         s.id === id ? { ...s, status: 'success' as const } : s
       ));
@@ -123,7 +192,9 @@ export function useStudentTable(): UseStudentTableReturn {
   // Barcha pending larni saqlash
   const saveAllPending = useCallback(async () => {
     const pending = students.filter(s => s.status === 'pending');
-    if (pending.length === 0) return;
+    if (pending.length === 0) {
+      return { successCount: 0, errorCount: 0 };
+    }
 
     setIsSaving(true);
     
@@ -144,11 +215,7 @@ export function useStudentTable(): UseStudentTableReturn {
     setIsSaving(false);
     
     console.log(`[Save All] Success: ${successCount}, Errors: ${errorCount}`);
-    
-    // Throw error if any failed
-    if (errorCount > 0) {
-      throw new Error(`${errorCount} ta o'quvchini saqlashda xato`);
-    }
+    return { successCount, errorCount };
   }, [students, saveStudent]);
 
   // Clear table
@@ -162,9 +229,12 @@ export function useStudentTable(): UseStudentTableReturn {
     updateStudent,
     deleteStudent,
     importStudents,
+    applyClassMapping,
     saveStudent,
     saveAllPending,
     clearTable,
     isSaving,
+    lastRegisterResult,
+    lastProvisioningId,
   };
 }
