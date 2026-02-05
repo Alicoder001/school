@@ -45,7 +45,7 @@ impl HikvisionClient {
         let rest = trimmed.strip_prefix("Digest")?.trim();
 
         // Split by comma, but keep quoted values intact.
-        let mut parts: Vec<&str> = Vec::new();
+        let mut parts: Vec<String> = Vec::new();
         let mut current = String::new();
         let mut in_quotes = false;
         for ch in rest.chars() {
@@ -55,14 +55,14 @@ impl HikvisionClient {
                     current.push(ch);
                 }
                 ',' if !in_quotes => {
-                    parts.push(current.trim());
+                    parts.push(current.trim().to_string());
                     current.clear();
                 }
                 _ => current.push(ch),
             }
         }
         if !current.trim().is_empty() {
-            parts.push(current.trim());
+            parts.push(current.trim().to_string());
         }
 
         let mut realm: Option<String> = None;
@@ -173,6 +173,53 @@ impl HikvisionClient {
         content_type: Option<&str>,
         multipart: Option<reqwest::multipart::Form>,
     ) -> Result<Response, String> {
+        // For multipart requests, we need to get digest challenge first with a simple request
+        // because Form cannot be cloned and will be consumed.
+        if multipart.is_some() {
+            // First, try to get digest challenge with a simple GET to the same endpoint
+            let probe = self.client.request(reqwest::Method::GET, url)
+                .basic_auth(&self.device.username, Some(&self.device.password))
+                .send()
+                .await
+                .map_err(|e| e.to_string())?;
+            
+            if probe.status() == reqwest::StatusCode::UNAUTHORIZED {
+                // Get digest challenge
+                let www = probe
+                    .headers()
+                    .get(reqwest::header::WWW_AUTHENTICATE)
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("");
+                
+                if let Some(challenge) = Self::parse_digest_challenge(www) {
+                    let digest_header = self.build_digest_authorization(method.as_str(), url, &challenge)?;
+                    let mut req = self.client.request(method, url);
+                    req = req.header(reqwest::header::AUTHORIZATION, digest_header);
+                    if let Some(form) = multipart {
+                        req = req.multipart(form);
+                    }
+                    let res = req.send().await.map_err(|e| e.to_string())?;
+                    if !res.status().is_success() {
+                        return Err(format!("HTTP {}: {}", res.status(), res.status().canonical_reason().unwrap_or("")));
+                    }
+                    return Ok(res);
+                }
+            }
+            
+            // If basic auth worked or no digest challenge, try with basic auth
+            let mut req = self.client.request(method, url);
+            req = req.basic_auth(&self.device.username, Some(&self.device.password));
+            if let Some(form) = multipart {
+                req = req.multipart(form);
+            }
+            let res = req.send().await.map_err(|e| e.to_string())?;
+            if !res.status().is_success() {
+                return Err(format!("HTTP {}: {}", res.status(), res.status().canonical_reason().unwrap_or("")));
+            }
+            return Ok(res);
+        }
+
+        // Non-multipart requests - original logic
         let mut req = self.client.request(method.clone(), url);
         req = req.basic_auth(&self.device.username, Some(&self.device.password));
         if let Some(ct) = content_type {
@@ -180,9 +227,6 @@ impl HikvisionClient {
         }
         if let Some(b) = body {
             req = req.body(b);
-        }
-        if let Some(form) = multipart.clone() {
-            req = req.multipart(form);
         }
 
         let first = req.send().await.map_err(|e| e.to_string())?;
@@ -220,11 +264,6 @@ impl HikvisionClient {
         req2 = req2.header(reqwest::header::AUTHORIZATION, digest_header);
         if let Some(ct) = content_type {
             req2 = req2.header("Content-Type", ct);
-        }
-        if let Some(form) = multipart {
-            req2 = req2.multipart(form);
-        } else if let Some(b) = body {
-            req2 = req2.body(b);
         }
 
         let second = req2.send().await.map_err(|e| e.to_string())?;

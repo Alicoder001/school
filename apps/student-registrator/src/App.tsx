@@ -12,10 +12,20 @@ import {
   updateDevice,
   fileToFaceBase64,
   recreateUser,
+  base64ToResizedBase64,
+  login,
+  logout,
+  getAuthUser,
+
+  fetchSchools,
+  fetchClasses,
   type DeviceConfig,
   type RegisterResult,
   type UserInfoEntry,
   type UserInfoSearchResponse,
+  type AuthUser,
+  type SchoolInfo,
+  type ClassInfo,
 } from "./api";
 
 // Icons as inline SVGs
@@ -155,7 +165,86 @@ const classes = [
   { value: "5-B", label: "5-B" },
 ];
 
+// ============ Login Screen Component ============
+interface LoginScreenProps {
+  onLogin: (user: AuthUser) => void;
+}
+
+function LoginScreen({ onLogin }: LoginScreenProps) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    
+    try {
+      const result = await login(email, password);
+      onLogin(result.user);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Login failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="login-container">
+      <div className="login-card">
+        <div className="login-header">
+          <h1>Student Registrator</h1>
+          <p>Tizimga kirish</p>
+        </div>
+        
+        <form onSubmit={handleSubmit} className="login-form">
+          {error && <div className="login-error">{error}</div>}
+          
+          <div className="form-group">
+            <label htmlFor="email">Email</label>
+            <input
+              id="email"
+              type="email"
+              className="input"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="admin@example.com"
+              required
+              autoFocus
+            />
+          </div>
+          
+          <div className="form-group">
+            <label htmlFor="password">Parol</label>
+            <input
+              id="password"
+              type="password"
+              className="input"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              required
+            />
+          </div>
+          
+          <button type="submit" className="button" disabled={loading}>
+            {loading ? "Kirish..." : "Kirish"}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function App() {
+  // Auth state
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => getAuthUser());
+  const [schools, setSchools] = useState<SchoolInfo[]>([]);
+  const [availableClasses, setAvailableClasses] = useState<ClassInfo[]>([]);
+  const [selectedSchool, setSelectedSchool] = useState<string>("");
+
   // Theme state
   const [theme, setTheme] = useState<"light" | "dark">(() => {
     const saved = localStorage.getItem("theme");
@@ -178,6 +267,44 @@ function App() {
     document.documentElement.setAttribute("data-theme", theme);
     localStorage.setItem("theme", theme);
   }, [theme]);
+
+  // Load schools and classes when logged in
+  useEffect(() => {
+    if (!currentUser) return;
+    
+    fetchSchools()
+      .then((data) => {
+        setSchools(data);
+        if (data.length === 1) {
+          setSelectedSchool(data[0].id);
+        }
+      })
+      .catch((err) => console.error("Failed to fetch schools:", err));
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (!selectedSchool) {
+      setAvailableClasses([]);
+      return;
+    }
+    
+    fetchClasses(selectedSchool)
+      .then(setAvailableClasses)
+      .catch((err) => console.error("Failed to fetch classes:", err));
+  }, [selectedSchool]);
+
+  const handleLogout = () => {
+    logout();
+    setCurrentUser(null);
+    setSchools([]);
+    setAvailableClasses([]);
+    setSelectedSchool("");
+  };
+
+  // Show login screen if not authenticated
+  if (!currentUser) {
+    return <LoginScreen onLogin={setCurrentUser} />;
+  }
 
   const [serverStatus, setServerStatus] = useState<"checking" | "online" | "offline">(
     "checking",
@@ -217,6 +344,17 @@ function App() {
   const [isImporting, setIsImporting] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
+
+  // Template modal state
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [templateSelectedSchool, setTemplateSelectedSchool] = useState<string>("");
+  const [templateClasses, setTemplateClasses] = useState<ClassInfo[]>([]);
+  const [templateSelectedClasses, setTemplateSelectedClasses] = useState<string[]>([]);
+  const [templateLoading, setTemplateLoading] = useState(false);
+
+  // Import mapping modal state
+  const [showImportMappingModal, setShowImportMappingModal] = useState(false);
+  const [importSheetMappings, setImportSheetMappings] = useState<{sheet: string; classId: string; className: string; rowCount: number}[]>([]);
 
   // Image preview URLs
   const registerPreviewUrl = useMemo(
@@ -458,65 +596,110 @@ function App() {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(buffer);
     
-    const worksheet = workbook.worksheets[0];
-    if (!worksheet) throw new Error("No worksheet found");
-    
     // Get images from workbook
     const media = (workbook.model as { media?: Array<{ type: string; name: string; buffer: ArrayBuffer }> }).media || [];
-    const worksheetImages = worksheet.getImages();
+    console.log(`[Parse] Workbook media count: ${media.length}`);
     
-    // Create image map by row
-    const imageByRow: Record<number, string> = {};
-    for (const img of worksheetImages) {
-      const rowNum = img.range.tl.nativeRow + 1; // 1-indexed
-      const mediaIndex = typeof img.imageId === 'number' ? img.imageId : parseInt(img.imageId, 10);
+    const allRows: ExcelRow[] = [];
+    
+    // Process each worksheet (each represents a class)
+    for (const worksheet of workbook.worksheets) {
+      const sheetName = worksheet.name; // This is the class name
+      console.log(`[Parse] Processing sheet: "${sheetName}"`);
       
-      // ExcelJS stores media with 0-based index
-      const mediaItem = media[mediaIndex];
-      if (mediaItem && mediaItem.buffer) {
-        const uint8Array = new Uint8Array(mediaItem.buffer);
-        let binary = '';
-        for (let i = 0; i < uint8Array.length; i++) {
-          binary += String.fromCharCode(uint8Array[i]);
+      // Create image map by row for this worksheet
+      const worksheetImages = worksheet.getImages();
+      console.log(`[Parse] Sheet "${sheetName}" has ${worksheetImages.length} images`);
+      const imageByRow: Record<number, string> = {};
+      
+      for (const img of worksheetImages) {
+        const rowNum = img.range.tl.nativeRow + 1; // 1-indexed
+        const mediaIndex = typeof img.imageId === 'number' ? img.imageId : parseInt(img.imageId, 10);
+        console.log(`[Parse] Image at row ${rowNum}, mediaIndex: ${mediaIndex}`);
+        
+        const mediaItem = media[mediaIndex];
+        if (mediaItem && mediaItem.buffer) {
+          const uint8Array = new Uint8Array(mediaItem.buffer);
+          console.log(`[Parse] Image buffer size: ${uint8Array.length} bytes`);
+          let binary = '';
+          for (let i = 0; i < uint8Array.length; i++) {
+            binary += String.fromCharCode(uint8Array[i]);
+          }
+          const base64 = btoa(binary);
+          imageByRow[rowNum] = base64;
+          console.log(`[Parse] Image added to row ${rowNum}, base64 length: ${base64.length}`);
+        } else {
+          console.log(`[Parse] No media found for index ${mediaIndex}`);
         }
-        const base64 = btoa(binary);
-        imageByRow[rowNum] = base64;
       }
+      
+      // Find data start row (skip header rows)
+      // New template has: Row 1 (title), Row 2 (info), Row 3 (spacer), Row 4 (headers), Row 5+ (data)
+      // Old template: Row 1 (headers), Row 2+ (data)
+      let dataStartRow = 2; // Default for old template
+      
+      worksheet.eachRow((row, rowNumber) => {
+        const firstCell = String(row.getCell(1).value || "").trim();
+        // Check if this is the header row by looking for "#" or "Name"
+        if (firstCell === "#" || firstCell.toLowerCase() === "name" || firstCell.toLowerCase() === "full name") {
+          dataStartRow = rowNumber + 1;
+        }
+      });
+      
+      // Parse data rows
+      worksheet.eachRow((row, rowNumber) => {
+        if (rowNumber < dataStartRow) return; // Skip header rows
+        
+        // Determine column layout based on template
+        // New: #, Full Name, Gender, Parent Name, Parent Phone, Photo
+        // Old: Name, Gender, Class, Parent Name, Parent Phone, Image
+        const hasNumberColumn = String(row.getCell(1).value || "").trim().match(/^\d+$/);
+        
+        let name: string, gender: string, parentName: string, parentPhone: string;
+        
+        if (hasNumberColumn) {
+          // New template layout
+          name = String(row.getCell(2).value || "").trim();
+          gender = String(row.getCell(3).value || "unknown").toLowerCase();
+          parentName = String(row.getCell(4).value || "").trim();
+          parentPhone = String(row.getCell(5).value || "").trim();
+        } else {
+          // Old template layout
+          name = String(row.getCell(1).value || "").trim();
+          gender = String(row.getCell(2).value || "unknown").toLowerCase();
+          // Skip old class column (3), use sheet name instead
+          parentName = String(row.getCell(4).value || "").trim();
+          parentPhone = String(row.getCell(5).value || "").trim();
+        }
+        
+        if (name && !name.startsWith("📚") && !name.startsWith("📖") && !name.startsWith("💡")) {
+          console.log(`[Parse] Row ${rowNumber}: name="${name}", gender="${gender}", class="${sheetName}", hasImage=${!!imageByRow[rowNumber]}`);
+          allRows.push({
+            name,
+            gender,
+            className: sheetName, // Use worksheet name as class
+            parentName: parentName || undefined,
+            parentPhone: parentPhone || undefined,
+            imageBase64: imageByRow[rowNumber],
+            status: "pending",
+          });
+        }
+      });
     }
     
-    // Skip header row and parse data
-    const rows: ExcelRow[] = [];
-    worksheet.eachRow((row, rowNumber) => {
-      if (rowNumber === 1) return; // Skip header
-      
-      const name = String(row.getCell(1).value || "").trim();
-      const gender = String(row.getCell(2).value || "unknown").toLowerCase();
-      const className = String(row.getCell(3).value || "").trim();
-      const parentName = String(row.getCell(4).value || "").trim();
-      const parentPhone = String(row.getCell(5).value || "").trim();
-      
-      if (name) {
-        rows.push({
-          name,
-          gender,
-          className: className || undefined,
-          parentName: parentName || undefined,
-          parentPhone: parentPhone || undefined,
-          imageBase64: imageByRow[rowNumber],
-          status: "pending",
-        });
-      }
-    });
-    
-    return rows;
+    console.log(`[Parse] Total rows parsed: ${allRows.length}`);
+    return allRows;
   };
 
 	  const handleImportFileSelect = async (file: File) => {
+	    console.log(`[Import] File selected: ${file.name}`);
 	    setImportFile(file);
 	    try {
 	      const rows = await parseExcelFile(file);
+	      console.log(`[Import] Parsed ${rows.length} rows`);
 	      setImportData(rows);
-	    } catch {
+	    } catch (err) {
+	      console.error(`[Import] Parse error:`, err);
 	      addToast("Failed to parse Excel file", "error");
 	      setImportFile(null);
 	    }
@@ -544,15 +727,31 @@ function App() {
     
     for (let i = 0; i < updatedData.length; i++) {
       const row = updatedData[i];
+      console.log(`[Import] Processing ${i+1}/${updatedData.length}: ${row.name}`);
       try {
+        // Resize image if too large (>200KB)
+        let imageBase64 = row.imageBase64 || "";
+        if (imageBase64) {
+          try {
+            imageBase64 = await base64ToResizedBase64(imageBase64);
+          } catch (resizeErr) {
+            console.warn(`[Import] Could not resize image for ${row.name}:`, resizeErr);
+            // Continue without image
+            imageBase64 = "";
+          }
+        }
+        
         // Register with face image if available
-        await registerStudent(row.name, row.gender, row.imageBase64 || "", {
+        console.log(`[Import] Calling registerStudent: name="${row.name}", gender="${row.gender}", hasImage=${!!imageBase64}`);
+        await registerStudent(row.name, row.gender, imageBase64, {
           parentName: row.parentName,
           parentPhone: row.parentPhone,
         });
+        console.log(`[Import] Success: ${row.name}`);
         updatedData[i] = { ...row, status: "success" };
         successCount++;
       } catch (err) {
+        console.error(`[Import] Error for ${row.name}:`, err);
         updatedData[i] = { ...row, status: "error", error: String(err) };
         errorCount++;
       }
@@ -577,65 +776,173 @@ function App() {
     setImportTotal(0);
   };
 
-  const downloadTemplate = async () => {
-    // Create template workbook with ExcelJS
-    const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet("Students");
+  // Open template modal and load classes for selected school
+  const openTemplateModal = async () => {
+    setShowTemplateModal(true);
+    setTemplateSelectedClasses([]);
     
-    // Set column widths
-    worksheet.getColumn(1).width = 25; // Name
-    worksheet.getColumn(2).width = 12; // Gender
-    worksheet.getColumn(3).width = 10; // Class
-    worksheet.getColumn(4).width = 25; // Parent Name
-    worksheet.getColumn(5).width = 18; // Parent Phone
-    worksheet.getColumn(6).width = 15; // Image
+    // If user has schoolId, pre-select it
+    const schoolId = currentUser?.schoolId || selectedSchool;
+    if (schoolId) {
+      setTemplateSelectedSchool(schoolId);
+      setTemplateLoading(true);
+      try {
+        const classes = await fetchClasses(schoolId);
+        setTemplateClasses(classes);
+      } catch (err) {
+        console.error("Failed to fetch classes:", err);
+        addToast("Sinflarni yuklashda xato", "error");
+      } finally {
+        setTemplateLoading(false);
+      }
+    }
+  };
+
+  const handleTemplateSchoolChange = async (schoolId: string) => {
+    setTemplateSelectedSchool(schoolId);
+    setTemplateSelectedClasses([]);
+    setTemplateClasses([]);
     
-    // Add header row
-    const headerRow = worksheet.addRow(["Name", "Gender", "Class", "Parent Name", "Parent Phone", "Image"]);
-    headerRow.font = { bold: true };
-    headerRow.fill = {
-      type: "pattern",
-      pattern: "solid",
-      fgColor: { argb: "FFE0E7FF" },
-    };
+    if (!schoolId) return;
     
-    // Add sample data rows using array format
-    worksheet.addRow(["Aliyev Vali", "male", "5-A", "Aliyev Sobir", "+998901234567", ""]);
-    worksheet.addRow(["Karimova Nodira", "female", "3-B", "Karimov Anvar", "+998907654321", ""]);
-    
-    // Set row heights for images
-    worksheet.getRow(2).height = 80;
-    worksheet.getRow(3).height = 80;
-    
-    // Fetch and add images
+    setTemplateLoading(true);
     try {
+      const classes = await fetchClasses(schoolId);
+      setTemplateClasses(classes);
+    } catch (err) {
+      console.error("Failed to fetch classes:", err);
+      addToast("Sinflarni yuklashda xato", "error");
+    } finally {
+      setTemplateLoading(false);
+    }
+  };
+
+  const toggleTemplateClass = (classId: string) => {
+    setTemplateSelectedClasses(prev => 
+      prev.includes(classId) 
+        ? prev.filter(id => id !== classId)
+        : [...prev, classId]
+    );
+  };
+
+  const selectAllTemplateClasses = () => {
+    setTemplateSelectedClasses(templateClasses.map(c => c.id));
+  };
+
+  const deselectAllTemplateClasses = () => {
+    setTemplateSelectedClasses([]);
+  };
+
+  const downloadTemplate = async (classNames: string[]) => {
+    // Minimalist soft colors
+    const colors = {
+      headerBg: "FFF1F5F9",     // Very light gray
+      headerText: "FF334155",   // Slate gray
+      border: "FFE2E8F0",       // Light border
+      white: "FFFFFFFF",
+    };
+
+    if (classNames.length === 0) {
+      addToast("Kamida bitta sinf tanlang", "error");
+      return;
+    }
+    
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = "Student Registrator";
+    workbook.created = new Date();
+
+    // Fetch sample images once
+    let boyImageId: number | undefined;
+    let girlImageId: number | undefined;
+    try {
+      console.log("[Template] Loading sample images...", { boySampleImg, girlSampleImg });
       const boyResponse = await fetch(boySampleImg);
       const boyArrayBuffer = await boyResponse.arrayBuffer();
-      
-      const boyImageId = workbook.addImage({
-        buffer: boyArrayBuffer,
-        extension: "png",
-      });
-      worksheet.addImage(boyImageId, {
-        tl: { col: 5, row: 1 },
-        ext: { width: 60, height: 75 },
-      });
+      console.log("[Template] Boy image loaded:", boyArrayBuffer.byteLength, "bytes");
+      boyImageId = workbook.addImage({ buffer: boyArrayBuffer, extension: "png" });
       
       const girlResponse = await fetch(girlSampleImg);
       const girlArrayBuffer = await girlResponse.arrayBuffer();
-      
-      const girlImageId = workbook.addImage({
-        buffer: girlArrayBuffer,
-        extension: "png",
-      });
-      worksheet.addImage(girlImageId, {
-        tl: { col: 5, row: 2 },
-        ext: { width: 60, height: 75 },
-      });
+      console.log("[Template] Girl image loaded:", girlArrayBuffer.byteLength, "bytes");
+      girlImageId = workbook.addImage({ buffer: girlArrayBuffer, extension: "png" });
+      console.log("[Template] Images added to workbook:", { boyImageId, girlImageId });
     } catch (err) {
-      console.error("Could not add sample images:", err);
+      console.error("Could not load sample images:", err);
     }
-    
+
+    // Create a sheet for each class
+    for (const className of classNames) {
+      const worksheet = workbook.addWorksheet(className);
+      
+      // Set column widths
+      worksheet.getColumn(1).width = 5;  // #
+      worksheet.getColumn(2).width = 28; // Name
+      worksheet.getColumn(3).width = 10; // Gender
+      worksheet.getColumn(4).width = 24; // Parent Name
+      worksheet.getColumn(5).width = 18; // Parent Phone
+      worksheet.getColumn(6).width = 14; // Photo
+
+      // Row 1: Column headers (simple, no merged cells)
+      const headers = ["#", "Full Name", "Gender", "Parent Name", "Parent Phone", "Photo"];
+      const headerRow = worksheet.addRow(headers);
+      headerRow.eachCell((cell) => {
+        cell.font = { bold: true, size: 10, color: { argb: colors.headerText } };
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: colors.headerBg } };
+        cell.alignment = { horizontal: "center", vertical: "middle" };
+        cell.border = {
+          bottom: { style: "thin", color: { argb: colors.border } },
+        };
+      });
+      headerRow.height = 24;
+
+      // Sample data rows
+      const sampleData = [
+        { name: "Aliyev Vali", gender: "male", parent: "Aliyev Sobir", phone: "+998901234567" },
+        { name: "Karimova Nodira", gender: "female", parent: "Karimova Malika", phone: "+998907654321" },
+      ];
+
+      sampleData.forEach((student, index) => {
+        const row = worksheet.addRow([
+          index + 1,
+          student.name,
+          student.gender,
+          student.parent,
+          student.phone,
+          "",
+        ]);
+        
+        row.height = 65;
+        row.eachCell((cell, colNumber) => {
+          cell.alignment = { horizontal: colNumber === 1 ? "center" : "left", vertical: "middle" };
+          cell.border = {
+            bottom: { style: "thin", color: { argb: colors.border } },
+          };
+        });
+
+        // Add sample image using ImagePosition format (tl + ext)
+        if (boyImageId !== undefined && girlImageId !== undefined) {
+          const imageId = student.gender === "male" ? boyImageId : girlImageId;
+          const rowIndex = row.number - 1; // 0-indexed
+          worksheet.addImage(imageId, {
+            tl: { col: 5, row: rowIndex },
+            ext: { width: 60, height: 60 },
+          });
+        }
+      });
+
+      // Add empty rows for user to fill
+      for (let i = 0; i < 10; i++) {
+        const row = worksheet.addRow([sampleData.length + i + 1, "", "", "", "", ""]);
+        row.height = 65;
+        row.eachCell((cell, colNumber) => {
+          cell.alignment = { horizontal: colNumber === 1 ? "center" : "left", vertical: "middle" };
+          cell.border = {
+            bottom: { style: "thin", color: { argb: colors.border } },
+          };
+        });
+      }
+    }
+
     // Generate and download
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
@@ -669,13 +976,24 @@ function App() {
       </div>
 
       <div className="header">
-        <h1>Student Register</h1>
-        <p>Register students to up to 6 Hikvision devices on the same LAN.</p>
-        <div className="status">
-          <span className={`status-dot ${serverStatus}`} />
-          {serverStatus === "checking" && "Checking local server..."}
-          {serverStatus === "online" && "Local server online"}
-          {serverStatus === "offline" && "Local server offline"}
+        <div>
+          <h1>Student Register</h1>
+          <p>Register students to up to 6 Hikvision devices on the same LAN.</p>
+          <div className="status">
+            <span className={`status-dot ${serverStatus}`} />
+            {serverStatus === "checking" && "Checking local server..."}
+            {serverStatus === "online" && "Local server online"}
+            {serverStatus === "offline" && "Local server offline"}
+          </div>
+        </div>
+        <div className="user-info">
+          <div>
+            <div className="user-info-name">{currentUser.name}</div>
+            <div className="user-info-role">{currentUser.role}</div>
+          </div>
+          <button className="btn-logout" onClick={handleLogout}>
+            Chiqish
+          </button>
         </div>
       </div>
 
@@ -1118,9 +1436,9 @@ function App() {
                     type="button"
                     className="button secondary"
                     style={{ width: "100%", marginTop: "12px" }}
-                    onClick={(e) => { e.stopPropagation(); downloadTemplate(); }}
+                    onClick={(e) => { e.stopPropagation(); openTemplateModal(); }}
                   >
-                    Download Template
+                    Shablon Yuklab Olish
                   </button>
                 </>
               ) : (
@@ -1217,6 +1535,103 @@ function App() {
               >
                 {isImporting && <span className="spinner" />}
                 {isImporting ? "Importing..." : "Start Import"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Template Modal */}
+      {showTemplateModal && (
+        <div className="modal-overlay" onClick={() => setShowTemplateModal(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Shablon Yaratish</h2>
+              <button className="modal-close" onClick={() => setShowTemplateModal(false)}>
+                <Icons.X />
+              </button>
+            </div>
+            <div className="modal-body">
+              {/* School selection */}
+              <div className="form-group">
+                <label className="label">Maktab</label>
+                <select
+                  className="select"
+                  value={templateSelectedSchool}
+                  onChange={(e) => handleTemplateSchoolChange(e.target.value)}
+                >
+                  <option value="">Tanlang...</option>
+                  {schools.map((school) => (
+                    <option key={school.id} value={school.id}>
+                      {school.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Class selection */}
+              {templateSelectedSchool && (
+                <div className="form-group" style={{ marginTop: "16px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                    <label className="label">Sinflar</label>
+                    <div style={{ display: "flex", gap: "8px" }}>
+                      <button type="button" className="button secondary" style={{ padding: "4px 8px", fontSize: "12px" }} onClick={selectAllTemplateClasses}>
+                        Barchasi
+                      </button>
+                      <button type="button" className="button secondary" style={{ padding: "4px 8px", fontSize: "12px" }} onClick={deselectAllTemplateClasses}>
+                        Hech biri
+                      </button>
+                    </div>
+                  </div>
+                  
+                  {templateLoading ? (
+                    <div style={{ padding: "20px", textAlign: "center" }}>
+                      <span className="spinner" /> Yuklanmoqda...
+                    </div>
+                  ) : templateClasses.length === 0 ? (
+                    <div style={{ padding: "20px", textAlign: "center", color: "var(--neutral-500)" }}>
+                      Sinflar topilmadi
+                    </div>
+                  ) : (
+                    <div style={{ maxHeight: "300px", overflowY: "auto", border: "1px solid var(--neutral-200)", borderRadius: "8px", padding: "8px" }}>
+                      {templateClasses.map((cls) => (
+                        <label
+                          key={cls.id}
+                          className="label"
+                          style={{ display: "flex", alignItems: "center", padding: "8px", cursor: "pointer", borderRadius: "4px" }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={templateSelectedClasses.includes(cls.id)}
+                            onChange={() => toggleTemplateClass(cls.id)}
+                          />
+                          <span style={{ marginLeft: "8px" }}>
+                            {cls.name} {cls.totalStudents ? `(${cls.totalStudents} o'quvchi)` : ""}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button className="button secondary" onClick={() => setShowTemplateModal(false)}>
+                Bekor qilish
+              </button>
+              <button
+                className="button"
+                onClick={() => {
+                  const selectedClassNames = templateClasses
+                    .filter((c) => templateSelectedClasses.includes(c.id))
+                    .map((c) => c.name);
+                  downloadTemplate(selectedClassNames);
+                  setShowTemplateModal(false);
+                }}
+                disabled={templateSelectedClasses.length === 0}
+              >
+                <Icons.FileSpreadsheet />
+                Yuklab olish ({templateSelectedClasses.length} sinf)
               </button>
             </div>
           </div>

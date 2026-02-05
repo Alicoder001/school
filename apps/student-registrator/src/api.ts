@@ -49,8 +49,112 @@ export interface UserInfoSearchResponse {
 
 // Backend URL - can be configured via environment
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
-const BACKEND_TOKEN = import.meta.env.VITE_BACKEND_TOKEN || '';
-const SCHOOL_ID = import.meta.env.VITE_SCHOOL_ID || '';
+
+// ============ Auth Management ============
+
+const AUTH_TOKEN_KEY = 'registrator_auth_token';
+const AUTH_USER_KEY = 'registrator_auth_user';
+
+export interface AuthUser {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  schoolId: string | null;
+}
+
+export function getAuthToken(): string | null {
+  return localStorage.getItem(AUTH_TOKEN_KEY);
+}
+
+export function getAuthUser(): AuthUser | null {
+  const data = localStorage.getItem(AUTH_USER_KEY);
+  if (!data) return null;
+  try {
+    return JSON.parse(data);
+  } catch {
+    return null;
+  }
+}
+
+function setAuth(token: string, user: AuthUser): void {
+  localStorage.setItem(AUTH_TOKEN_KEY, token);
+  localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
+}
+
+export function logout(): void {
+  localStorage.removeItem(AUTH_TOKEN_KEY);
+  localStorage.removeItem(AUTH_USER_KEY);
+}
+
+export async function login(email: string, password: string): Promise<{ token: string; user: AuthUser }> {
+  const res = await fetch(`${BACKEND_URL}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+  
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Login failed' }));
+    throw new Error(err.error || 'Login failed');
+  }
+  
+  const data = await res.json();
+  setAuth(data.token, data.user);
+  return data;
+}
+
+// ============ Backend API with Auth ============
+
+async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Response> {
+  const token = getAuthToken();
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(options.headers as Record<string, string> || {}),
+  };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return fetch(url, { ...options, headers });
+}
+
+export interface SchoolInfo {
+  id: string;
+  name: string;
+  address?: string;
+}
+
+export interface ClassInfo {
+  id: string;
+  name: string;
+  gradeLevel: number;
+  schoolId: string;
+  totalStudents?: number;
+}
+
+export async function fetchSchools(): Promise<SchoolInfo[]> {
+  const user = getAuthUser();
+  if (!user) throw new Error('Not authenticated');
+  
+  // If user has schoolId, return just their school
+  if (user.schoolId) {
+    const res = await fetchWithAuth(`${BACKEND_URL}/schools/${user.schoolId}`);
+    if (!res.ok) throw new Error('Failed to fetch school');
+    const school = await res.json();
+    return [school];
+  }
+  
+  // SUPER_ADMIN can see all schools
+  const res = await fetchWithAuth(`${BACKEND_URL}/schools`);
+  if (!res.ok) throw new Error('Failed to fetch schools');
+  return res.json();
+}
+
+export async function fetchClasses(schoolId: string): Promise<ClassInfo[]> {
+  const res = await fetchWithAuth(`${BACKEND_URL}/schools/${schoolId}/classes`);
+  if (!res.ok) throw new Error('Failed to fetch classes');
+  return res.json();
+}
 
 // ============ Device Management ============
 
@@ -100,6 +204,9 @@ export async function registerStudent(
   faceImageBase64: string,
   options?: { parentName?: string; parentPhone?: string },
 ): Promise<RegisterResult> {
+  const token = getAuthToken();
+  const user = getAuthUser();
+  
   return invoke<RegisterResult>('register_student', {
     name,
     gender,
@@ -107,8 +214,8 @@ export async function registerStudent(
     parentName: options?.parentName,
     parentPhone: options?.parentPhone,
     backendUrl: BACKEND_URL,
-    backendToken: BACKEND_TOKEN,
-    schoolId: SCHOOL_ID,
+    backendToken: token || '',
+    schoolId: user?.schoolId || '',
   });
 }
 
@@ -306,3 +413,87 @@ export async function fileToFaceBase64(
     )}KB).`,
   );
 }
+
+/**
+ * Resizes a base64 image to fit under maxBytes (default 200KB).
+ * Used for Excel import where images come as base64.
+ */
+export async function base64ToResizedBase64(
+  base64: string,
+  options: Partial<FaceEncodeOptions> = {},
+): Promise<string> {
+  const { maxBytes, maxDimension } = { ...DEFAULT_FACE_ENCODE, ...options };
+
+  // Decode base64 to check size
+  const binaryString = atob(base64);
+  const currentBytes = binaryString.length;
+  
+  // If already small enough, return as-is
+  if (currentBytes <= maxBytes) {
+    return base64;
+  }
+
+  console.log(`[Resize] Image too large: ${Math.round(currentBytes / 1024)}KB, resizing to max ${Math.round(maxBytes / 1024)}KB`);
+
+  // Create image from base64
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const el = new Image();
+    el.onload = () => resolve(el);
+    el.onerror = reject;
+    el.src = `data:image/jpeg;base64,${base64}`;
+  });
+
+  // Calculate scale
+  const scale = Math.min(
+    1,
+    maxDimension / Math.max(img.naturalWidth || 1, img.naturalHeight || 1),
+  );
+  let targetW = Math.max(1, Math.round(img.naturalWidth * scale));
+  let targetH = Math.max(1, Math.round(img.naturalHeight * scale));
+
+  const canvas = document.createElement("canvas");
+  canvas.width = targetW;
+  canvas.height = targetH;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Canvas not supported");
+  ctx.drawImage(img, 0, 0, targetW, targetH);
+
+  // Try decreasing quality first
+  let quality = 0.92;
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const blob = await canvasToJpegBlob(canvas, quality);
+    if (blob.size <= maxBytes) {
+      console.log(`[Resize] Success at quality ${quality.toFixed(2)}: ${Math.round(blob.size / 1024)}KB`);
+      return blobToBase64(blob);
+    }
+    quality -= 0.08;
+    if (quality < 0.4) break;
+  }
+
+  // Downscale loop
+  let downscale = 0.85;
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const w = Math.max(1, Math.round(canvas.width * downscale));
+    const h = Math.max(1, Math.round(canvas.height * downscale));
+    const next = document.createElement("canvas");
+    next.width = w;
+    next.height = h;
+    const nctx = next.getContext("2d");
+    if (!nctx) throw new Error("Canvas not supported");
+    nctx.drawImage(canvas, 0, 0, w, h);
+
+    const blob = await canvasToJpegBlob(next, 0.8);
+    if (blob.size <= maxBytes) {
+      console.log(`[Resize] Success after downscale: ${Math.round(blob.size / 1024)}KB`);
+      return blobToBase64(blob);
+    }
+    canvas.width = w;
+    canvas.height = h;
+    ctx.clearRect(0, 0, w, h);
+    ctx.drawImage(next, 0, 0);
+    downscale *= 0.9;
+  }
+
+  throw new Error(`Image could not be resized to under ${Math.round(maxBytes / 1024)}KB`);
+}
+

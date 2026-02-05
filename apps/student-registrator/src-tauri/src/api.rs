@@ -112,8 +112,9 @@ impl ApiClient {
             .await
             .map_err(|e| e.to_string())?;
 
+        let status = res.status();
         let text = res.text().await.unwrap_or_default();
-        if !res.status().is_success() {
+        if !status.is_success() {
             return Err(text);
         }
 
