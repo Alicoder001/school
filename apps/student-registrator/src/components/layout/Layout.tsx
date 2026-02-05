@@ -1,6 +1,5 @@
-import { ReactNode } from 'react';
+import { ReactNode, useState } from 'react';
 import { Sidebar } from './Sidebar';
-import { Header } from './Header';
 import type { AuthUser, ThemeMode } from '../../types';
 
 interface LayoutProps {
@@ -12,16 +11,19 @@ interface LayoutProps {
 }
 
 export function Layout({ user, theme, onToggleTheme, onLogout, children }: LayoutProps) {
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+
   return (
     <div className="app-layout">
-      <Sidebar />
+      <Sidebar
+        isCollapsed={isSidebarCollapsed}
+        onToggle={() => setIsSidebarCollapsed((prev) => !prev)}
+        user={user}
+        theme={theme}
+        onToggleTheme={onToggleTheme}
+        onLogout={onLogout}
+      />
       <div className="main-container">
-        <Header 
-          user={user} 
-          theme={theme} 
-          onToggleTheme={onToggleTheme} 
-          onLogout={onLogout} 
-        />
         <main className="main-content">
           {children}
         </main>

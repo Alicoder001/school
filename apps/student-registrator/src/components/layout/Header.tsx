@@ -6,13 +6,28 @@ interface HeaderProps {
   theme: ThemeMode;
   onToggleTheme: () => void;
   onLogout: () => void;
+  isSidebarCollapsed: boolean;
+  onToggleSidebar: () => void;
 }
 
-export function Header({ user, theme, onToggleTheme, onLogout }: HeaderProps) {
+export function Header({
+  user,
+  theme,
+  onToggleTheme,
+  onLogout,
+  isSidebarCollapsed,
+  onToggleSidebar,
+}: HeaderProps) {
   return (
     <header className="header">
       <div className="header-left">
-        {/* Empty or breadcrumbs can go here */}
+        <button
+          className="sidebar-toggle header-toggle"
+          onClick={onToggleSidebar}
+          title={isSidebarCollapsed ? "Ochish" : "Yopish"}
+        >
+          {isSidebarCollapsed ? <Icons.Menu /> : <Icons.PanelLeft />}
+        </button>
       </div>
 
       <div className="header-right">
@@ -26,15 +41,13 @@ export function Header({ user, theme, onToggleTheme, onLogout }: HeaderProps) {
         </button>
 
         {/* User Info */}
-        <div className="user-info">
-          <div className="user-info-text">
-            <div className="user-info-name">{user.name}</div>
-            <div className="user-info-role">{user.role}</div>
-          </div>
-          <button className="btn-logout" onClick={onLogout} title="Chiqish">
-            <Icons.LogOut />
-          </button>
+        <div className="user-info-text">
+          <div className="user-info-name">{user.name}</div>
+          <div className="user-info-role">{user.role}</div>
         </div>
+        <button className="btn-logout" onClick={onLogout} title="Chiqish">
+          <Icons.LogOut />
+        </button>
       </div>
     </header>
   );

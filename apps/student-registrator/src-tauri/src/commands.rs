@@ -4,7 +4,7 @@ use crate::hikvision::HikvisionClient;
 use crate::storage::{get_device_by_id, load_devices, save_devices};
 use crate::types::{DeviceConfig, DeviceConnectionResult, RegisterDeviceResult, RegisterResult, UserInfoSearchResponse};
 use crate::api::ApiClient;
-use chrono::{Datelike, Local, Timelike};
+use chrono::{Datelike, Local, Timelike, Utc, Duration};
 use uuid::Uuid;
 use std::collections::HashMap;
 use serde_json::Value;
@@ -27,6 +27,15 @@ fn to_device_time(dt: chrono::DateTime<Local>) -> String {
     )
 }
 
+fn is_credentials_expired(device: &DeviceConfig) -> bool {
+    if let Some(expires_at) = device.credentials_expires_at.as_ref() {
+        if let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(expires_at) {
+            return parsed.with_timezone(&Utc) < Utc::now();
+        }
+    }
+    false
+}
+
 // ============ Device Management Commands ============
 
 #[tauri::command]
@@ -38,9 +47,13 @@ pub async fn get_devices() -> Result<Vec<DeviceConfig>, String> {
 pub async fn create_device(
     name: String,
     host: String,
+    location: Option<String>,
     port: u16,
     username: String,
     password: String,
+    device_type: Option<String>,
+    device_id: Option<String>,
+    backend_id: Option<String>,
 ) -> Result<DeviceConfig, String> {
     let mut devices = load_devices();
     
@@ -48,14 +61,21 @@ pub async fn create_device(
         return Err("Maximum 6 devices allowed".to_string());
     }
 
+    let now = Utc::now();
+    let expires = now + Duration::days(30);
     let device = DeviceConfig {
         id: Uuid::new_v4().to_string(),
+        backend_id,
         name,
         host,
+        location,
         port,
         username,
         password,
-        device_id: None,
+        credentials_updated_at: Some(now.to_rfc3339()),
+        credentials_expires_at: Some(expires.to_rfc3339()),
+        device_type,
+        device_id,
     };
 
     devices.push(device.clone());
@@ -69,23 +89,34 @@ pub async fn update_device(
     id: String,
     name: String,
     host: String,
+    location: Option<String>,
     port: u16,
     username: String,
     password: String,
+    device_type: Option<String>,
+    device_id: Option<String>,
+    backend_id: Option<String>,
 ) -> Result<DeviceConfig, String> {
     let mut devices = load_devices();
     
     let index = devices.iter().position(|d| d.id == id)
         .ok_or("Device not found")?;
 
+    let now = Utc::now();
+    let expires = now + Duration::days(30);
     let device = DeviceConfig {
         id,
+        backend_id: backend_id.or_else(|| devices[index].backend_id.clone()),
         name,
         host,
+        location: location.or_else(|| devices[index].location.clone()),
         port,
         username,
         password,
-        device_id: devices[index].device_id.clone(),
+        credentials_updated_at: Some(now.to_rfc3339()),
+        credentials_expires_at: Some(expires.to_rfc3339()),
+        device_type: device_type.or_else(|| devices[index].device_type.clone()),
+        device_id: device_id.or_else(|| devices[index].device_id.clone()),
     };
     devices[index] = device.clone();
     save_devices(&devices)?;
@@ -116,6 +147,9 @@ pub async fn test_device_connection(device_id: String) -> Result<DeviceConnectio
         .ok_or("Device not found")?;
 
     let device = devices[index].clone();
+    if is_credentials_expired(&device) {
+        return Err("Ulanish sozlamalari muddati tugagan".to_string());
+    }
     let client = HikvisionClient::new(device);
     let result = client.test_connection().await;
 
@@ -224,6 +258,48 @@ pub async fn register_student(
     let mut devices_changed = false;
 
     for device in devices.iter_mut() {
+        if is_credentials_expired(device) {
+            let external_device_id = device.device_id.as_deref();
+            if !backend_device_map.is_empty() {
+                if external_device_id.is_none() || !backend_device_map.contains_key(external_device_id.unwrap()) {
+                    continue;
+                }
+            }
+            let connection = DeviceConnectionResult {
+                ok: false,
+                message: Some("Ulanish sozlamalari muddati tugagan".to_string()),
+                device_id: device.device_id.clone(),
+            };
+            if let (Some(api), Some(pid)) = (api_client.as_ref(), provisioning_id.as_ref()) {
+                let backend_device_id = external_device_id
+                    .and_then(|id| backend_device_map.get(id))
+                    .map(|s| s.as_str());
+                let device_name = Some(device.name.as_str());
+                let device_location = Some(device.host.as_str());
+                let _ = api
+                    .report_device_result(
+                        pid,
+                        backend_device_id,
+                        external_device_id,
+                        device_name,
+                        None,
+                        device_location,
+                        "FAILED",
+                        &employee_no,
+                        connection.message.as_deref(),
+                    )
+                    .await;
+            }
+            results.push(RegisterDeviceResult {
+                device_id: device.id.clone(),
+                device_name: device.name.clone(),
+                connection,
+                user_create: None,
+                face_upload: None,
+            });
+            continue;
+        }
+
         let client = HikvisionClient::new(device.clone());
         
         // Test connection

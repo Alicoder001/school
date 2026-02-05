@@ -94,19 +94,23 @@ export function ProvisioningPanel({
           <div className="panel-actions">
             <button
               type="button"
-              className="button button-secondary button-compact"
+              className="btn-icon"
               onClick={fetchDetails}
               disabled={loading}
+              title="Yangilash"
+              aria-label="Yangilash"
             >
-              <Icons.Refresh /> Yangilash
+              <Icons.Refresh />
             </button>
             <button
               type="button"
-              className="button button-secondary button-compact"
+              className="btn-icon"
               onClick={retryFailed}
               disabled={loading || !summary?.failed}
+              title="Failed qayta"
+              aria-label="Failed qayta"
             >
-              <Icons.Refresh /> Failed qayta
+              <Icons.Refresh />
             </button>
           </div>
         )}

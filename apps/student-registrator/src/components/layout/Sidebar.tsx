@@ -1,10 +1,24 @@
-import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { Icons } from '../ui/Icons';
+import type { AuthUser, ThemeMode } from '../../types';
 
-export function Sidebar() {
-  const [isCollapsed, setIsCollapsed] = useState(false);
+interface SidebarProps {
+  isCollapsed: boolean;
+  onToggle: () => void;
+  user: AuthUser;
+  theme: ThemeMode;
+  onToggleTheme: () => void;
+  onLogout: () => void;
+}
 
+export function Sidebar({
+  isCollapsed,
+  onToggle,
+  user,
+  theme,
+  onToggleTheme,
+  onLogout,
+}: SidebarProps) {
   const navItems = [
     { to: '/add-students', icon: <Icons.Plus />, label: "O'quvchi qo'shish" },
     { to: '/students', icon: <Icons.Users />, label: "O'quvchilar" },
@@ -19,13 +33,6 @@ export function Sidebar() {
           <Icons.School />
           {!isCollapsed && <span>Student Registrator</span>}
         </div>
-        <button 
-          className="sidebar-toggle"
-          onClick={() => setIsCollapsed(!isCollapsed)}
-          title={isCollapsed ? "Ochish" : "Yopish"}
-        >
-          {isCollapsed ? <Icons.Menu /> : <Icons.X />}
-        </button>
       </div>
 
       <nav className="sidebar-nav">
@@ -43,6 +50,36 @@ export function Sidebar() {
           </NavLink>
         ))}
       </nav>
+
+      <div className="sidebar-footer">
+        <div className="sidebar-footer-row">
+          <button
+            className="theme-toggle"
+            onClick={onToggleTheme}
+            title={theme === "light" ? "Dark mode" : "Light mode"}
+          >
+            {theme === "light" ? <Icons.Moon /> : <Icons.Sun />}
+          </button>
+          {!isCollapsed && (
+            <div className="user-info-text">
+              <div className="user-info-name">{user.name}</div>
+              <div className="user-info-role">{user.role}</div>
+            </div>
+          )}
+          <button
+            className="sidebar-toggle"
+            onClick={onToggle}
+            title={isCollapsed ? "Ochish" : "Yopish"}
+          >
+            {isCollapsed ? <Icons.Menu /> : <Icons.PanelLeft />}
+          </button>
+        </div>
+        <div className="sidebar-footer-row">
+          <button className={`btn-logout ${isCollapsed ? '' : 'btn-logout-full'}`} onClick={onLogout} title="Chiqish">
+            <Icons.LogOut /> {!isCollapsed && <span>Chiqish</span>}
+          </button>
+        </div>
+      </div>
     </aside>
   );
 }

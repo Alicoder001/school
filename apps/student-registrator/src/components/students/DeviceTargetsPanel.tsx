@@ -61,18 +61,20 @@ export function DeviceTargetsPanel({
           <span className="badge">{selectedCountLabel}</span>
           <button
             type="button"
-            className="button button-secondary button-compact"
+            className="btn-icon"
             onClick={onRefresh}
             disabled={refreshing || devices.length === 0}
+            title="Yangilash"
+            aria-label="Yangilash"
           >
-            <Icons.Refresh /> Yangilash
+            <Icons.Refresh />
           </button>
         </div>
       </div>
 
       {devices.length === 0 ? (
         <div className="notice notice-warning">
-          Qurilmalar topilmadi. Avval backendda qurilmalarni qo'shing.
+          Qurilmalar topilmadi. Avval tizimga qurilma qo'shing.
         </div>
       ) : (
         <div className="device-targets-list">
@@ -97,7 +99,7 @@ export function DeviceTargetsPanel({
                     </span>
                   )}
                   {device.isActive === false && (
-                    <span className="badge badge-warning">Backend: nofaol</span>
+                    <span className="badge badge-warning">Nofaol</span>
                   )}
                 </div>
                 </div>
@@ -110,7 +112,7 @@ export function DeviceTargetsPanel({
                       : ''
                   }`}
                 >
-                  {status === 'online' ? 'Online' : status === 'offline' ? 'Offline' : "Noma'lum"}
+                  {status === 'online' ? 'Online' : status === 'offline' ? 'Offline' : "Sozlanmagan"}
                 </span>
               </label>
             );

@@ -10,6 +10,16 @@ use std::time::Duration;
 
 const DEFAULT_TIMEOUT_SECS: u64 = 8;
 const MAX_FACE_IMAGE_BYTES: usize = 200 * 1024;
+const DEBUG_HIKVISION: bool = true;
+
+fn redact(value: &str) -> String {
+    let max = 300usize;
+    if value.len() > max {
+        format!("{}...(len={})", &value[..max], value.len())
+    } else {
+        value.to_string()
+    }
+}
 
 #[derive(Debug, Clone)]
 struct DigestChallenge {
@@ -184,6 +194,14 @@ impl HikvisionClient {
         content_type: Option<&str>,
         multipart: Option<reqwest::multipart::Form>,
     ) -> Result<Response, String> {
+        if DEBUG_HIKVISION {
+            println!(
+                "[HIKVISION][send_with_auth] method={} url={} multipart={}",
+                method.as_str(),
+                url,
+                multipart.is_some()
+            );
+        }
         // For multipart requests, we need to get digest challenge first with a simple request
         // because Form cannot be cloned and will be consumed.
         if multipart.is_some() {
@@ -194,6 +212,19 @@ impl HikvisionClient {
                 .send()
                 .await
                 .map_err(|e| e.to_string())?;
+
+            if DEBUG_HIKVISION {
+                let www = probe
+                    .headers()
+                    .get(reqwest::header::WWW_AUTHENTICATE)
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("");
+                println!(
+                    "[HIKVISION][send_with_auth] multipart probe status={} www_auth={}",
+                    probe.status(),
+                    redact(www)
+                );
+            }
 
             if probe.status() == reqwest::StatusCode::UNAUTHORIZED {
                 let www = probe
@@ -212,11 +243,15 @@ impl HikvisionClient {
                     }
                     let res = req.send().await.map_err(|e| e.to_string())?;
                     if !res.status().is_success() {
-                        return Err(format!(
+                        let err = format!(
                             "HTTP {}: {}",
                             res.status(),
                             res.status().canonical_reason().unwrap_or("")
-                        ));
+                        );
+                        if DEBUG_HIKVISION {
+                            println!("[HIKVISION][send_with_auth] multipart digest failed: {}", err);
+                        }
+                        return Err(err);
                     }
                     return Ok(res);
                 }
@@ -230,6 +265,9 @@ impl HikvisionClient {
             }
             let res = req.send().await.map_err(|e| e.to_string())?;
             if res.status().is_success() {
+                if DEBUG_HIKVISION {
+                    println!("[HIKVISION][send_with_auth] multipart basic ok");
+                }
                 return Ok(res);
             }
 
@@ -239,17 +277,25 @@ impl HikvisionClient {
                     .get(reqwest::header::WWW_AUTHENTICATE)
                     .and_then(|v| v.to_str().ok())
                     .unwrap_or("");
-                return Err(format!(
+                let err = format!(
                     "Unauthorized (no digest challenge). WWW-Authenticate: {}",
                     www
-                ));
+                );
+                if DEBUG_HIKVISION {
+                    println!("[HIKVISION][send_with_auth] multipart basic 401: {}", redact(&err));
+                }
+                return Err(err);
             }
 
-            return Err(format!(
+            let err = format!(
                 "HTTP {}: {}",
                 res.status(),
                 res.status().canonical_reason().unwrap_or("")
-            ));
+            );
+            if DEBUG_HIKVISION {
+                println!("[HIKVISION][send_with_auth] multipart basic failed: {}", err);
+            }
+            return Err(err);
         }
 
         // Non-multipart requests - try unauthenticated first to get digest challenge
@@ -263,6 +309,9 @@ impl HikvisionClient {
 
         let first = req.send().await.map_err(|e| e.to_string())?;
         if first.status().is_success() {
+            if DEBUG_HIKVISION {
+                println!("[HIKVISION][send_with_auth] unauth success status={}", first.status());
+            }
             return Ok(first);
         }
 
@@ -273,6 +322,14 @@ impl HikvisionClient {
             .and_then(|v| v.to_str().ok())
             .unwrap_or("");
 
+        if DEBUG_HIKVISION {
+            println!(
+                "[HIKVISION][send_with_auth] unauth status={} www_auth={}",
+                status,
+                redact(www)
+            );
+        }
+
         // Some devices return 400/403 for unauthenticated POSTs; try auth in those cases too.
         if !matches!(
             status,
@@ -280,7 +337,11 @@ impl HikvisionClient {
                 | reqwest::StatusCode::BAD_REQUEST
                 | reqwest::StatusCode::FORBIDDEN
         ) {
-            return Err(Self::response_error(first).await);
+            let err = Self::response_error(first).await;
+            if DEBUG_HIKVISION {
+                println!("[HIKVISION][send_with_auth] unauth error: {}", redact(&err));
+            }
+            return Err(err);
         }
 
         if let Some(challenge) = Self::parse_digest_challenge(www) {
@@ -296,7 +357,14 @@ impl HikvisionClient {
 
             let second = req2.send().await.map_err(|e| e.to_string())?;
             if !second.status().is_success() {
-                return Err(Self::response_error(second).await);
+                let err = Self::response_error(second).await;
+                if DEBUG_HIKVISION {
+                    println!("[HIKVISION][send_with_auth] digest error: {}", redact(&err));
+                }
+                return Err(err);
+            }
+            if DEBUG_HIKVISION {
+                println!("[HIKVISION][send_with_auth] digest ok");
             }
             return Ok(second);
         }
@@ -313,6 +381,9 @@ impl HikvisionClient {
 
         let second = req2.send().await.map_err(|e| e.to_string())?;
         if second.status().is_success() {
+            if DEBUG_HIKVISION {
+                println!("[HIKVISION][send_with_auth] basic ok");
+            }
             return Ok(second);
         }
 
@@ -321,6 +392,14 @@ impl HikvisionClient {
             .get(reqwest::header::WWW_AUTHENTICATE)
             .and_then(|v| v.to_str().ok())
             .unwrap_or("");
+
+        if DEBUG_HIKVISION {
+            println!(
+                "[HIKVISION][send_with_auth] basic status={} www_auth={}",
+                second.status(),
+                redact(www2)
+            );
+        }
 
         if let Some(challenge) = Self::parse_digest_challenge(www2) {
             let digest_header = self.build_digest_authorization(method.as_str(), url, &challenge)?;
@@ -334,19 +413,34 @@ impl HikvisionClient {
             }
             let third = req3.send().await.map_err(|e| e.to_string())?;
             if !third.status().is_success() {
-                return Err(Self::response_error(third).await);
+                let err = Self::response_error(third).await;
+                if DEBUG_HIKVISION {
+                    println!("[HIKVISION][send_with_auth] basic->digest error: {}", redact(&err));
+                }
+                return Err(err);
+            }
+            if DEBUG_HIKVISION {
+                println!("[HIKVISION][send_with_auth] basic->digest ok");
             }
             return Ok(third);
         }
 
         if second.status() == reqwest::StatusCode::UNAUTHORIZED {
-            return Err(format!(
+            let err = format!(
                 "Unauthorized (no digest challenge). WWW-Authenticate: {}",
                 www2
-            ));
+            );
+            if DEBUG_HIKVISION {
+                println!("[HIKVISION][send_with_auth] basic 401: {}", redact(&err));
+            }
+            return Err(err);
         }
 
-        Err(Self::response_error(second).await)
+        let err = Self::response_error(second).await;
+        if DEBUG_HIKVISION {
+            println!("[HIKVISION][send_with_auth] basic error: {}", redact(&err));
+        }
+        Err(err)
     }
 
     /// Make authenticated JSON request (Basic → Digest fallback).
@@ -376,16 +470,34 @@ impl HikvisionClient {
             .auth_request_json(reqwest::Method::GET, &url, None)
             .await
         {
-            Ok(text) => DeviceConnectionResult {
-                ok: true,
-                message: None,
-                device_id: extract_device_id(&text),
-            },
-            Err(e) => DeviceConnectionResult {
-                ok: false,
-                message: Some(e),
-                device_id: None,
-            },
+            Ok(text) => {
+                let device_id = extract_device_id(&text);
+                if DEBUG_HIKVISION {
+                    let preview: String = text.chars().take(400).collect();
+                    println!(
+                        "[HIKVISION][test_connection] url={} device_id={:?} response_preview={}",
+                        url, device_id, preview
+                    );
+                }
+                DeviceConnectionResult {
+                    ok: true,
+                    message: None,
+                    device_id,
+                }
+            }
+            Err(e) => {
+                if DEBUG_HIKVISION {
+                    println!(
+                        "[HIKVISION][test_connection] url={} error={}",
+                        url, e
+                    );
+                }
+                DeviceConnectionResult {
+                    ok: false,
+                    message: Some(e),
+                    device_id: None,
+                }
+            }
         }
     }
 

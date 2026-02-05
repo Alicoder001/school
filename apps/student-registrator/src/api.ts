@@ -4,12 +4,17 @@ import { invoke } from '@tauri-apps/api';
 
 export interface DeviceConfig {
   id: string;
+  backendId?: string | null;
   name: string;
   host: string;
+  location?: string | null;
   port: number;
   username: string;
   password: string;
   deviceId?: string;
+  deviceType?: string;
+  credentialsUpdatedAt?: string | null;
+  credentialsExpiresAt?: string | null;
 }
 
 export interface DeviceConnectionResult {
@@ -94,7 +99,7 @@ export interface UserInfoSearchResponse {
 }
 
 // Backend URL - can be configured via environment
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
+export const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
 
 // ============ Auth Management ============
 
@@ -188,6 +193,17 @@ export interface SchoolDeviceInfo {
   lastSeenAt?: string | null;
 }
 
+export interface WebhookInfo {
+  enforceSecret: boolean;
+  secretHeaderName: string;
+  inUrl: string;
+  outUrl: string;
+  inUrlWithSecret: string;
+  outUrlWithSecret: string;
+  inSecret: string;
+  outSecret: string;
+}
+
 export async function fetchSchools(): Promise<SchoolInfo[]> {
   const user = getAuthUser();
   if (!user) throw new Error('Not authenticated');
@@ -215,6 +231,12 @@ export async function fetchClasses(schoolId: string): Promise<ClassInfo[]> {
 export async function fetchSchoolDevices(schoolId: string): Promise<SchoolDeviceInfo[]> {
   const res = await fetchWithAuth(`${BACKEND_URL}/schools/${schoolId}/devices`);
   if (!res.ok) throw new Error('Failed to fetch devices');
+  return res.json();
+}
+
+export async function getWebhookInfo(schoolId: string): Promise<WebhookInfo> {
+  const res = await fetchWithAuth(`${BACKEND_URL}/schools/${schoolId}/webhook-info`);
+  if (!res.ok) throw new Error('Failed to fetch webhook info');
   return res.json();
 }
 
@@ -278,11 +300,15 @@ export async function createDevice(
   device: Omit<DeviceConfig, 'id'>,
 ): Promise<DeviceConfig> {
   return invoke<DeviceConfig>('create_device', {
+    backend_id: device.backendId ?? null,
     name: device.name,
     host: device.host,
+    location: device.location,
     port: device.port,
     username: device.username,
     password: device.password,
+    device_type: device.deviceType,
+    device_id: device.deviceId,
   });
 }
 
@@ -292,11 +318,15 @@ export async function updateDevice(
 ): Promise<DeviceConfig> {
   return invoke<DeviceConfig>('update_device', {
     id,
+    backend_id: device.backendId ?? null,
     name: device.name,
     host: device.host,
+    location: device.location,
     port: device.port,
     username: device.username,
     password: device.password,
+    device_type: device.deviceType,
+    device_id: device.deviceId,
   });
 }
 

@@ -29,11 +29,14 @@ export function ExcelImportButton({ onImport, disabled }: ExcelImportButtonProps
   return (
     <>
       <button 
-        className="button button-secondary" 
+        className="device-select-trigger"
         onClick={handleClick}
         disabled={disabled}
+        title="Excel import"
+        aria-label="Excel import"
       >
-        <Icons.Upload /> Excel Import
+        <Icons.Upload />
+        <span>Excel import</span>
       </button>
       <input
         ref={inputRef}

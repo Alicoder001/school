@@ -5,11 +5,25 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceConfig {
     pub id: String,
+    #[serde(default)]
+    #[serde(rename = "backendId")]
+    pub backend_id: Option<String>,
     pub name: String,
     pub host: String,
+    #[serde(default)]
+    pub location: Option<String>,
     pub port: u16,
     pub username: String,
     pub password: String,
+    #[serde(default)]
+    #[serde(rename = "credentialsUpdatedAt")]
+    pub credentials_updated_at: Option<String>,
+    #[serde(default)]
+    #[serde(rename = "credentialsExpiresAt")]
+    pub credentials_expires_at: Option<String>,
+    #[serde(default)]
+    #[serde(rename = "deviceType")]
+    pub device_type: Option<String>,
     #[serde(default)]
     #[serde(rename = "deviceId")]
     pub device_id: Option<String>,

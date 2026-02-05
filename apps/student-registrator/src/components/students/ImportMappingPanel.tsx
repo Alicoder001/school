@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Icons } from '../ui/Icons';
 import type { StudentRow, ClassInfo } from '../../types';
 
 interface MappingGroup {
@@ -73,10 +74,12 @@ export function ImportMappingPanel({
         {groups.length > unmapped.length && (
           <button
             type="button"
-            className="button button-secondary button-compact"
+            className="btn-icon"
             onClick={() => setShowAll((prev) => !prev)}
+            title={showAll ? "Faqat moslanmaganlar" : "Barchasini ko'rsatish"}
+            aria-label={showAll ? "Faqat moslanmaganlar" : "Barchasini ko'rsatish"}
           >
-            {showAll ? "Faqat moslanmaganlar" : "Barchasini ko'rsatish"}
+            {showAll ? <Icons.EyeOff /> : <Icons.Eye />}
           </button>
         )}
       </div>

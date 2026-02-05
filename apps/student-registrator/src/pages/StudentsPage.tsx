@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo } from 'react';
-import { fetchDevices, fetchUsers, deleteUser, recreateUser, fileToFaceBase64 } from '../api';
+import { fetchDevices, fetchSchoolDevices, fetchUsers, deleteUser, recreateUser, fileToFaceBase64, getAuthUser } from '../api';
 import { useGlobalToast } from '../hooks/useToast';
 import { Icons } from '../components/ui/Icons';
-import type { DeviceConfig, UserInfoEntry, UserInfoSearchResponse } from '../types';
+import type { DeviceConfig, SchoolDeviceInfo, UserInfoEntry, UserInfoSearchResponse } from '../types';
 export function StudentsPage() {
-  const [devices, setDevices] = useState<DeviceConfig[]>([]);
-  const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
+  const [backendDevices, setBackendDevices] = useState<SchoolDeviceInfo[]>([]);
+  const [credentials, setCredentials] = useState<DeviceConfig[]>([]);
+  const [selectedBackendId, setSelectedBackendId] = useState<string>('');
   const [userList, setUserList] = useState<UserInfoSearchResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -16,6 +17,49 @@ export function StudentsPage() {
   const [editNewId, setEditNewId] = useState(false);
   const [editReuseFace, setEditReuseFace] = useState(true);
   const { addToast } = useGlobalToast();
+
+  const normalize = (value?: string | null) => (value || '').trim().toLowerCase();
+  const credentialsByBackendId = useMemo(() => {
+    const map = new Map<string, DeviceConfig>();
+    credentials.forEach((device) => {
+      if (device.backendId) map.set(device.backendId, device);
+    });
+    return map;
+  }, [credentials]);
+  const credentialsByDeviceId = useMemo(() => {
+    const map = new Map<string, DeviceConfig>();
+    credentials.forEach((device) => {
+      if (device.deviceId) map.set(normalize(device.deviceId), device);
+    });
+    return map;
+  }, [credentials]);
+  const getCredentialsForBackend = (device: SchoolDeviceInfo) => {
+    const byBackend = credentialsByBackendId.get(device.id);
+    if (byBackend) return byBackend;
+    if (device.deviceId) {
+      return credentialsByDeviceId.get(normalize(device.deviceId));
+    }
+    return undefined;
+  };
+  const isCredentialsExpired = (device?: DeviceConfig | null) => {
+    if (!device?.credentialsExpiresAt) return false;
+    const expires = new Date(device.credentialsExpiresAt).getTime();
+    if (Number.isNaN(expires)) return false;
+    return Date.now() > expires;
+  };
+
+  const selectedBackend = useMemo(
+    () => backendDevices.find((device) => device.id === selectedBackendId),
+    [backendDevices, selectedBackendId],
+  );
+  const selectedLocal = useMemo(() => {
+    if (!selectedBackend) return undefined;
+    const local = getCredentialsForBackend(selectedBackend);
+    if (!local) return undefined;
+    if (isCredentialsExpired(local)) return undefined;
+    return local;
+  }, [selectedBackend, credentialsByBackendId, credentialsByDeviceId]);
+  const selectedDeviceId = selectedLocal?.id ?? '';
   const editPreviewUrl = useMemo(() => (editFile ? URL.createObjectURL(editFile) : null), [editFile]);
   useEffect(() => {
     return () => {
@@ -23,18 +67,35 @@ export function StudentsPage() {
     };
   }, [editPreviewUrl]);
   useEffect(() => {
-    fetchDevices()
-      .then(setDevices)
-      .catch((err) => {
+    const loadDevices = async () => {
+      const user = getAuthUser();
+      const schoolId = user?.schoolId;
+      if (!schoolId) {
+        addToast('Maktab topilmadi', 'error');
+        return;
+      }
+      try {
+        const [backend, local] = await Promise.all([
+          fetchSchoolDevices(schoolId),
+          fetchDevices(),
+        ]);
+        setBackendDevices(backend);
+        setCredentials(local);
+      } catch (err) {
         console.error('Failed to load devices:', err);
         addToast('Qurilmalarni yuklashda xato', 'error');
-      });
+      }
+    };
+    loadDevices();
   }, [addToast]);
   useEffect(() => {
-    if (!selectedDeviceId && devices.length > 0) {
-      setSelectedDeviceId(devices[0].id);
-    }
-  }, [devices, selectedDeviceId]);
+    if (selectedBackendId || backendDevices.length === 0) return;
+    const firstWithCredentials = backendDevices.find((device) => {
+      const local = getCredentialsForBackend(device);
+      return local && !isCredentialsExpired(local);
+    });
+    setSelectedBackendId(firstWithCredentials?.id || backendDevices[0].id);
+  }, [backendDevices, selectedBackendId, credentialsByBackendId, credentialsByDeviceId]);
   useEffect(() => {
     if (!selectedDeviceId) {
       setUserList(null);
@@ -131,15 +192,24 @@ export function StudentsPage() {
           <label>Qurilma:</label>
           <select 
             className="input"
-            value={selectedDeviceId}
-            onChange={(e) => setSelectedDeviceId(e.target.value)}
+            value={selectedBackendId}
+            onChange={(e) => setSelectedBackendId(e.target.value)}
           >
             <option value="">Tanlang</option>
-            {devices.map(device => (
-              <option key={device.id} value={device.id}>
-                {device.name} ({device.host})
-              </option>
-            ))}
+            {backendDevices.map(device => {
+              const local = getCredentialsForBackend(device);
+              const expired = isCredentialsExpired(local);
+              const statusLabel = !local
+                ? " - Sozlanmagan"
+                : expired
+                ? " - Muddati tugagan"
+                : "";
+              return (
+                <option key={device.id} value={device.id}>
+                  {device.name}{device.deviceId ? ` (${device.deviceId})` : ''}{statusLabel}
+                </option>
+              );
+            })}
           </select>
         </div>
 
@@ -247,10 +317,15 @@ export function StudentsPage() {
 
         {loading ? (
           <div className="loading-state">Yuklanmoqda...</div>
-        ) : !selectedDeviceId ? (
+        ) : !selectedBackendId ? (
           <div className="empty-state">
             <Icons.Monitor />
             <p>Qurilma tanlang</p>
+          </div>
+        ) : !selectedDeviceId ? (
+          <div className="empty-state">
+            <Icons.AlertCircle />
+            <p>Ulanish sozlamalari topilmadi</p>
           </div>
         ) : filteredUsers.length === 0 ? (
           <div className="empty-state">

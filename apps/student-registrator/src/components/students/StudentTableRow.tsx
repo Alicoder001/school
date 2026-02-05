@@ -14,6 +14,7 @@ interface StudentTableRowProps {
 
 export function StudentTableRow({ index, student, availableClasses, onEdit, onDelete, onSave }: StudentTableRowProps) {
   const [isSaving, setIsSaving] = useState(false);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const fullName = `${student.lastName || ''} ${student.firstName || ''}`.trim();
 
@@ -127,6 +128,7 @@ export function StudentTableRow({ index, student, availableClasses, onEdit, onDe
                 alt={fullName || 'Student'}
                 className="image-preview"
                 title="Rasm ko'rish"
+                onClick={() => setIsPreviewOpen(true)}
               />
               {student.status !== 'success' && (
                 <button
@@ -191,6 +193,25 @@ export function StudentTableRow({ index, student, availableClasses, onEdit, onDe
           </button>
         </div>
       </td>
+      {isPreviewOpen && student.imageBase64 && (
+        <div className="modal-overlay" onClick={() => setIsPreviewOpen(false)}>
+          <div className="modal image-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>{fullName || 'Rasm'}</h3>
+              <button className="modal-close" onClick={() => setIsPreviewOpen(false)}>
+                <Icons.X />
+              </button>
+            </div>
+            <div className="modal-body image-modal-body">
+              <img
+                src={`data:image/jpeg;base64,${student.imageBase64}`}
+                alt={fullName || 'Student'}
+                className="image-modal-preview"
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </tr>
   );
 }

@@ -4,6 +4,7 @@
   display: flex;
   height: 100vh;
   overflow: hidden;
+  position: relative;
 }
 
 /* Sidebar */
@@ -21,11 +22,13 @@
   width: 60px;
 }
 
+
 .sidebar-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 1rem;
+  padding: 0 1rem;
+  height: 56px;
   border-bottom: 1px solid var(--border-color);
   gap: 0.5rem;
 }
@@ -70,6 +73,10 @@
 .sidebar-toggle .icon {
   width: 16px;
   height: 16px;
+}
+
+.header-toggle {
+  border-radius: 6px;
 }
 
 .sidebar-nav {
@@ -149,27 +156,29 @@
 }
 
 /* Header */
-.header {
-  height: 56px;
-  background: var(--card-bg);
-  border-bottom: 1px solid var(--border-color);
+/* Sidebar footer */
+.sidebar-footer {
+  border-top: 1px solid var(--border-color);
+  padding: 0.75rem 1rem;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 1.5rem;
-  flex-shrink: 0;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
-.header-left {
-  display: flex;
+.sidebar.collapsed .sidebar-footer {
   align-items: center;
-  gap: 1rem;
+  padding: 0.75rem 0.5rem;
 }
 
-.header-right {
+.sidebar-footer-row {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.sidebar.collapsed .sidebar-footer-row {
+  justify-content: center;
 }
 
 .theme-toggle {
@@ -194,35 +203,32 @@
   height: 16px;
 }
 
-.user-info {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.375rem 0.75rem;
-  border-radius: 6px;
-  border: 1px solid var(--border-color);
-}
-
 .user-info-text {
-  text-align: right;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  line-height: 1.1;
 }
 
 .user-info-name {
   font-size: 0.8125rem;
   font-weight: 600;
   color: var(--text-color);
+  line-height: 1.1;
 }
 
 .user-info-role {
   font-size: 0.6875rem;
   color: var(--text-muted);
+  line-height: 1.1;
 }
 
 .btn-logout {
   width: 28px;
   height: 28px;
-  border-radius: 4px;
-  border: none;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
   background: transparent;
   display: flex;
   align-items: center;
@@ -240,4 +246,11 @@
 .btn-logout .icon {
   width: 16px;
   height: 16px;
+}
+
+.btn-logout.btn-logout-full {
+  width: 100%;
+  height: 32px;
+  justify-content: center;
+  gap: 0.5rem;
 }
