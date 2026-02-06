@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Icons } from '../ui/Icons';
 import { fileToFaceBase64 } from '../../api';
+import { useGlobalToast } from '../../hooks/useToast';
 import type { StudentRow, ClassInfo } from '../../types';
 
 interface AddStudentInlineProps {
@@ -10,6 +11,7 @@ interface AddStudentInlineProps {
 }
 
 export function AddStudentInline({ availableClasses, onAdd, onCancel }: AddStudentInlineProps) {
+  const { addToast } = useGlobalToast();
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [gender, setGender] = useState('male');
@@ -19,9 +21,25 @@ export function AddStudentInline({ availableClasses, onAdd, onCancel }: AddStude
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
 
+  const validateImageFile = (file: File) => {
+    const allowedTypes = new Set(['image/jpeg', 'image/png']);
+    if (!allowedTypes.has(file.type)) {
+      throw new Error('Faqat JPG yoki PNG formatidagi rasm qabul qilinadi.');
+    }
+    if (file.size < 10 * 1024) {
+      throw new Error('Rasm hajmi 10KB dan kichik bo‘lmasligi kerak.');
+    }
+  };
+
+  const getErrorMessage = (err: unknown) => {
+    if (err instanceof Error) return err.message;
+    if (typeof err === 'string') return err;
+    return "Noma'lum xato";
+  };
+
   const handleSubmit = async () => {
     if (!firstName.trim() || !lastName.trim()) {
-      alert("Ism va familiya majburiy!");
+      addToast("Ism va familiya majburiy!", 'error');
       return;
     }
 
@@ -55,7 +73,7 @@ export function AddStudentInline({ availableClasses, onAdd, onCancel }: AddStude
       setImageFile(null);
       onCancel();
     } catch (err) {
-      alert(`Xato: ${err}`);
+      addToast(`Xato: ${getErrorMessage(err)}`, 'error');
     } finally {
       setLoading(false);
     }
@@ -133,8 +151,22 @@ export function AddStudentInline({ availableClasses, onAdd, onCancel }: AddStude
           <input
             type="file"
             className="input"
-            accept="image/*"
-            onChange={(e) => setImageFile(e.target.files?.[0] || null)}
+            accept=".jpg,.jpeg,.png,image/jpeg,image/png"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (!file) {
+                setImageFile(null);
+                return;
+              }
+              try {
+                validateImageFile(file);
+                setImageFile(file);
+              } catch (err) {
+                addToast(`Rasm yuklashda xato: ${getErrorMessage(err)}`, 'error');
+                setImageFile(null);
+                e.currentTarget.value = '';
+              }
+            }}
           />
         </div>
       </div>

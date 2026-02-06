@@ -814,9 +814,16 @@ export async function fileToFaceBase64(
   options: Partial<FaceEncodeOptions> = {},
 ): Promise<string> {
   const { maxBytes, maxDimension } = { ...DEFAULT_FACE_ENCODE, ...options };
+  const allowedTypes = new Set(['image/jpeg', 'image/png']);
+  if (!allowedTypes.has(file.type)) {
+    throw new Error('Faqat JPG yoki PNG formatidagi rasm qabul qilinadi.');
+  }
+  if (file.size < 10 * 1024) {
+    throw new Error('Rasm hajmi 10KB dan kichik bo‘lmasligi kerak.');
+  }
 
   // Fast path: already small enough (roughly) → send original.
-  if (file.size > 0 && file.size <= maxBytes) {
+  if (file.size <= maxBytes) {
     return fileToBase64(file);
   }
 

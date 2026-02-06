@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { Icons } from '../ui/Icons';
 import { fileToFaceBase64 } from '../../api';
+import { useGlobalToast } from '../../hooks/useToast';
 import type { StudentRow, ClassInfo } from '../../types';
 
 interface StudentTableRowProps {
@@ -13,10 +14,25 @@ interface StudentTableRowProps {
 }
 
 export function StudentTableRow({ index, student, availableClasses, onEdit, onDelete, onSave }: StudentTableRowProps) {
+  const { addToast } = useGlobalToast();
   const [isSaving, setIsSaving] = useState(false);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const fullName = `${student.lastName || ''} ${student.firstName || ''}`.trim();
+  const validateImageFile = (file: File) => {
+    const allowedTypes = new Set(['image/jpeg', 'image/png']);
+    if (!allowedTypes.has(file.type)) {
+      throw new Error('Faqat JPG yoki PNG formatidagi rasm qabul qilinadi.');
+    }
+    if (file.size < 10 * 1024) {
+      throw new Error('Rasm hajmi 10KB dan kichik bo‘lmasligi kerak.');
+    }
+  };
+  const getErrorMessage = (err: unknown) => {
+    if (err instanceof Error) return err.message;
+    if (typeof err === 'string') return err;
+    return "Noma'lum xato";
+  };
 
   const handleChange = (field: keyof StudentRow, value: any) => {
     console.log(`[Table Row] Editing ${field}:`, value);
@@ -28,11 +44,13 @@ export function StudentTableRow({ index, student, availableClasses, onEdit, onDe
     if (!file) return;
 
     try {
+      validateImageFile(file);
       const imageBase64 = await fileToFaceBase64(file);
       onEdit(student.id, { imageBase64 });
     } catch (err) {
       console.error('Image upload error:', err);
-      alert('Rasm yuklashda xato');
+      addToast(`Rasm yuklashda xato: ${getErrorMessage(err)}`, 'error');
+      e.currentTarget.value = '';
     }
   };
 
@@ -152,7 +170,7 @@ export function StudentTableRow({ index, student, availableClasses, onEdit, onDe
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*"
+            accept=".jpg,.jpeg,.png,image/jpeg,image/png"
             style={{ display: 'none' }}
             onChange={handleImageUpload}
           />
