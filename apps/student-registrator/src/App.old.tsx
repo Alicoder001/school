@@ -134,7 +134,7 @@ interface ExcelRow {
   gender: string;
   className?: string;
   classId?: string;
-  parentName?: string;
+  fatherName?: string;
   parentPhone?: string;
   imageBase64?: string;
   status: "pending" | "success" | "error";
@@ -661,20 +661,20 @@ function App() {
         // Old: Name, Gender, Class, Parent Name, Parent Phone, Image
         const hasNumberColumn = String(row.getCell(1).value || "").trim().match(/^\d+$/);
         
-        let name: string, gender: string, parentName: string, parentPhone: string;
+        let name: string, gender: string, fatherName: string, parentPhone: string;
         
         if (hasNumberColumn) {
           // New template layout
           name = String(row.getCell(2).value || "").trim();
           gender = String(row.getCell(3).value || "unknown").toLowerCase();
-          parentName = String(row.getCell(4).value || "").trim();
+          fatherName = String(row.getCell(4).value || "").trim();
           parentPhone = String(row.getCell(5).value || "").trim();
         } else {
           // Old template layout
           name = String(row.getCell(1).value || "").trim();
           gender = String(row.getCell(2).value || "unknown").toLowerCase();
           // Skip old class column (3), use sheet name instead
-          parentName = String(row.getCell(4).value || "").trim();
+          fatherName = String(row.getCell(4).value || "").trim();
           parentPhone = String(row.getCell(5).value || "").trim();
         }
         
@@ -684,7 +684,7 @@ function App() {
             name,
             gender,
             className: sheetName, // Use worksheet name as class
-            parentName: parentName || undefined,
+            fatherName: fatherName || undefined,
             parentPhone: parentPhone || undefined,
             imageBase64: imageByRow[rowNumber],
             status: "pending",
@@ -795,7 +795,7 @@ function App() {
         }
 
         await registerStudent(row.name, row.gender, imageBase64, {
-          fatherName: row.parentName,
+          fatherName: row.fatherName,
           parentPhone: row.parentPhone,
           classId,
         });

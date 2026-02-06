@@ -45,6 +45,23 @@ fn device_label(device: &DeviceConfig) -> String {
     format!("{}:{}", device.host, device.port)
 }
 
+fn find_local_device_index(
+    devices: &[DeviceConfig],
+    backend_device_id: &str,
+    external_device_id: Option<&str>,
+) -> Option<usize> {
+    devices
+        .iter()
+        .position(|d| d.backend_id.as_deref() == Some(backend_device_id))
+        .or_else(|| {
+            external_device_id.and_then(|external| {
+                devices
+                    .iter()
+                    .position(|d| d.device_id.as_deref() == Some(external))
+            })
+        })
+}
+
 // ============ Device Management Commands ============
 
 #[tauri::command]
@@ -181,6 +198,58 @@ pub async fn test_device_connection(device_id: String) -> Result<DeviceConnectio
     Ok(result)
 }
 
+#[tauri::command]
+pub async fn check_student_on_device(device_id: String, employee_no: String) -> Result<Value, String> {
+    let mut devices = load_devices();
+    let index = devices
+        .iter()
+        .position(|d| d.id == device_id)
+        .ok_or("Device not found")?;
+
+    let device = devices[index].clone();
+    if is_credentials_expired(&device) {
+        return Ok(serde_json::json!({
+            "deviceId": device_id,
+            "deviceExternalId": device.device_id,
+            "status": "EXPIRED",
+            "present": false,
+            "message": "Ulanish sozlamalari muddati tugagan",
+            "checkedAt": Utc::now().to_rfc3339(),
+        }));
+    }
+
+    let client = HikvisionClient::new(device.clone());
+    let connection = client.test_connection().await;
+    if !connection.ok {
+        return Ok(serde_json::json!({
+            "deviceId": device_id,
+            "deviceExternalId": connection.device_id.or(device.device_id),
+            "status": "OFFLINE",
+            "present": false,
+            "message": connection.message,
+            "checkedAt": Utc::now().to_rfc3339(),
+        }));
+    }
+
+    if let Some(found_id) = connection.device_id.clone() {
+        if devices[index].device_id.as_deref() != Some(found_id.as_str()) {
+            devices[index].device_id = Some(found_id);
+            let _ = save_devices(&devices);
+        }
+    }
+
+    let user = client.get_user_by_employee_no(employee_no.as_str()).await;
+    let present = user.is_some();
+    Ok(serde_json::json!({
+        "deviceId": device_id,
+        "deviceExternalId": connection.device_id.or(device.device_id),
+        "status": if present { "PRESENT" } else { "ABSENT" },
+        "present": present,
+        "message": if present { Value::Null } else { Value::String("Student topilmadi".to_string()) },
+        "checkedAt": Utc::now().to_rfc3339(),
+    }))
+}
+
 // ============ Student Registration Commands ============
 
 #[tauri::command]
@@ -240,6 +309,7 @@ pub async fn register_student(
             .start_provisioning(
                 &school_id,
                 &full_name,
+                &gender,
                 Some(&employee_no), // keep numeric device_student_id for Hikvision
                 class_id.as_deref(), // classId - to'g'ri o'rinda!
                 first_name.as_deref(),
@@ -626,8 +696,165 @@ pub async fn retry_provisioning(
         .ok_or("backendUrl is required")?;
     let backend_token = backend_token.filter(|v| !v.trim().is_empty());
     let client = ApiClient::new(backend_url, backend_token);
-    client
-        .retry_provisioning(&provisioning_id, device_ids.unwrap_or_default())
-        .await
+    let requested_device_ids = device_ids.unwrap_or_default();
+
+    // 1) Reset failed links to PENDING/PROCESSING on backend.
+    let retry_result = client
+        .retry_provisioning(&provisioning_id, requested_device_ids.clone())
+        .await?;
+
+    // 2) Re-check connectivity for target devices right away.
+    let provisioning = client.get_provisioning(&provisioning_id).await?;
+    let employee_no = provisioning
+        .get("student")
+        .and_then(|s| s.get("deviceStudentId"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    let mut target_backend_ids: Vec<String> = if !requested_device_ids.is_empty() {
+        requested_device_ids
+    } else {
+        retry_result
+            .get("targetDeviceIds")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect::<Vec<String>>()
+            })
+            .unwrap_or_default()
+    };
+
+    if target_backend_ids.is_empty() {
+        target_backend_ids = provisioning
+            .get("devices")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|item| item.get("deviceId").and_then(|v| v.as_str()))
+                    .map(|s| s.to_string())
+                    .collect::<Vec<String>>()
+            })
+            .unwrap_or_default();
+    }
+
+    let mut local_devices = load_devices();
+    let mut local_changed = false;
+    let mut checked = 0usize;
+    let mut failed = 0usize;
+    let mut missing_credentials = 0usize;
+
+    for backend_device_id in target_backend_ids {
+        let link = provisioning
+            .get("devices")
+            .and_then(|v| v.as_array())
+            .and_then(|arr| {
+                arr.iter().find(|item| {
+                    item.get("deviceId")
+                        .and_then(|v| v.as_str())
+                        == Some(backend_device_id.as_str())
+                })
+            });
+
+        let external_device_id = link
+            .and_then(|item| item.get("device"))
+            .and_then(|device| device.get("deviceId"))
+            .and_then(|v| v.as_str());
+        let device_name = link
+            .and_then(|item| item.get("device"))
+            .and_then(|device| device.get("name"))
+            .and_then(|v| v.as_str());
+        let device_location = link
+            .and_then(|item| item.get("device"))
+            .and_then(|device| device.get("location"))
+            .and_then(|v| v.as_str());
+
+        let Some(index) = find_local_device_index(
+            &local_devices,
+            backend_device_id.as_str(),
+            external_device_id,
+        ) else {
+            missing_credentials += 1;
+            failed += 1;
+            let _ = client
+                .report_device_result(
+                    &provisioning_id,
+                    Some(backend_device_id.as_str()),
+                    external_device_id,
+                    device_name,
+                    None,
+                    device_location,
+                    "FAILED",
+                    employee_no,
+                    Some("Local ulanish sozlamasi topilmadi"),
+                )
+                .await;
+            continue;
+        };
+
+        if is_credentials_expired(&local_devices[index]) {
+            failed += 1;
+            let _ = client
+                .report_device_result(
+                    &provisioning_id,
+                    Some(backend_device_id.as_str()),
+                    external_device_id,
+                    device_name,
+                    None,
+                    device_location,
+                    "FAILED",
+                    employee_no,
+                    Some("Ulanish sozlamalari muddati tugagan"),
+                )
+                .await;
+            continue;
+        }
+
+        checked += 1;
+        let local_clone = local_devices[index].clone();
+        let test = HikvisionClient::new(local_clone).test_connection().await;
+        if test.ok {
+            if let Some(found_id) = test.device_id {
+                if local_devices[index].device_id.as_deref() != Some(found_id.as_str()) {
+                    local_devices[index].device_id = Some(found_id);
+                    local_changed = true;
+                }
+            }
+            continue;
+        }
+
+        failed += 1;
+        let error_message = test
+            .message
+            .unwrap_or_else(|| "Ulanishda xato".to_string());
+        let _ = client
+            .report_device_result(
+                &provisioning_id,
+                Some(backend_device_id.as_str()),
+                external_device_id,
+                device_name,
+                None,
+                device_location,
+                "FAILED",
+                employee_no,
+                Some(error_message.as_str()),
+            )
+            .await;
+    }
+
+    if local_changed {
+        let _ = save_devices(&local_devices);
+    }
+
+    Ok(serde_json::json!({
+        "ok": retry_result.get("ok").and_then(|v| v.as_bool()).unwrap_or(true),
+        "updated": retry_result.get("updated").and_then(|v| v.as_i64()).unwrap_or(0),
+        "targetDeviceIds": retry_result.get("targetDeviceIds").cloned().unwrap_or_else(|| serde_json::json!([])),
+        "connectionCheck": {
+            "checked": checked,
+            "failed": failed,
+            "missingCredentials": missing_credentials
+        }
+    }))
 }
 

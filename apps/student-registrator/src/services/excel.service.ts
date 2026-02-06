@@ -19,6 +19,14 @@ function splitFullName(fullName: string): { firstName: string; lastName: string 
   return { lastName: parts[0], firstName: parts.slice(1).join(" ") };
 }
 
+function normalizeGenderValue(value: string): "male" | "female" | "unknown" {
+  const v = String(value || "").trim().toLowerCase();
+  if (!v) return "unknown";
+  if (["male", "erkak", "m", "1"].includes(v)) return "male";
+  if (["female", "ayol", "f", "2"].includes(v)) return "female";
+  return "unknown";
+}
+
 // Excel parse qilish (App.tsx dan ko'chirilgan)
 export async function parseExcelFile(file: File): Promise<Omit<StudentRow, 'id' | 'source' | 'status'>[]> {
   const buffer = await file.arrayBuffer();
@@ -93,8 +101,7 @@ export async function parseExcelFile(file: File): Promise<Omit<StudentRow, 'id' 
     const colFirstName = headerMap.get("ism") ?? headerMap.get("first name");
     const colFatherName =
       headerMap.get("otasining ismi") ??
-      headerMap.get("father name") ??
-      headerMap.get("parent name");
+      headerMap.get("father name");
     const colGender = headerMap.get("jinsi") ?? headerMap.get("gender");
     const colPhone = headerMap.get("telefon") ?? headerMap.get("parent phone");
     const colFullName = headerMap.get("full name") ?? headerMap.get("name");
@@ -117,7 +124,9 @@ export async function parseExcelFile(file: File): Promise<Omit<StudentRow, 'id' 
         lastName = String(colLastName ? row.getCell(colLastName).value || "" : parts.lastName).trim();
         firstName = String(colFirstName ? row.getCell(colFirstName).value || "" : parts.firstName).trim();
         fatherName = String(colFatherName ? row.getCell(colFatherName).value || "" : "").trim();
-        gender = String(colGender ? row.getCell(colGender).value || "unknown" : "unknown").toLowerCase();
+        gender = normalizeGenderValue(
+          String(colGender ? row.getCell(colGender).value || "unknown" : "unknown"),
+        );
         parentPhone = String(colPhone ? row.getCell(colPhone).value || "" : "").trim();
       } else if (hasNumberColumn) {
         const fullName = String(row.getCell(2).value || "").trim();
@@ -125,7 +134,7 @@ export async function parseExcelFile(file: File): Promise<Omit<StudentRow, 'id' 
         lastName = parts.lastName;
         firstName = parts.firstName;
         fatherName = String(row.getCell(4).value || "").trim();
-        gender = String(row.getCell(3).value || "unknown").toLowerCase();
+        gender = normalizeGenderValue(String(row.getCell(3).value || "unknown"));
         parentPhone = String(row.getCell(5).value || "").trim();
       } else {
         const fullName = String(row.getCell(1).value || "").trim();
@@ -133,7 +142,7 @@ export async function parseExcelFile(file: File): Promise<Omit<StudentRow, 'id' 
         lastName = parts.lastName;
         firstName = parts.firstName;
         fatherName = String(row.getCell(4).value || "").trim();
-        gender = String(row.getCell(2).value || "unknown").toLowerCase();
+        gender = normalizeGenderValue(String(row.getCell(2).value || "unknown"));
         parentPhone = String(row.getCell(5).value || "").trim();
       }
       
@@ -158,7 +167,8 @@ export async function parseExcelFile(file: File): Promise<Omit<StudentRow, 'id' 
 }
 
 export async function downloadStudentsTemplate(classNames: string[]): Promise<void> {
-  const cleanedNames = classNames.map((name) => name.trim()).filter(Boolean);
+  // Remove duplicates and empty values
+  const cleanedNames = [...new Set(classNames.map((name) => name.trim()).filter(Boolean))];
   if (cleanedNames.length === 0) {
     throw new Error("Kamida bitta sinf tanlang");
   }
@@ -172,6 +182,11 @@ export async function downloadStudentsTemplate(classNames: string[]): Promise<vo
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "Student Registrator";
   workbook.created = new Date();
+  const validationSheet = workbook.addWorksheet("_validation");
+  validationSheet.state = "veryHidden";
+  validationSheet.getCell("A1").value = "Erkak";
+  validationSheet.getCell("A2").value = "Ayol";
+  const genderValidationFormula = "=_validation!$A$1:$A$2";
 
   let boyImageId: number | undefined;
   let girlImageId: number | undefined;
@@ -212,9 +227,21 @@ export async function downloadStudentsTemplate(classNames: string[]): Promise<vo
     headerRow.height = 24;
 
     const sampleData = [
-      { lastName: "Aliyev", firstName: "Vali", fatherName: "Aliyev Sobir", gender: "male", phone: "+998901234567" },
-      { lastName: "Karimova", firstName: "Nodira", fatherName: "Karimova Malika", gender: "female", phone: "+998907654321" },
+      { lastName: "Aliyev", firstName: "Vali", fatherName: "Aliyev Sobir", gender: "Erkak", phone: "+998901234567" },
+      { lastName: "Karimova", firstName: "Nodira", fatherName: "Karimova Malika", gender: "Ayol", phone: "+998907654321" },
     ];
+
+    const applyGenderValidation = (rowNumber: number, allowBlank: boolean) => {
+      worksheet.getCell(`E${rowNumber}`).dataValidation = {
+        type: "list",
+        allowBlank,
+        formulae: [genderValidationFormula],
+        showErrorMessage: true,
+        errorStyle: "stop",
+        errorTitle: "Noto'g'ri qiymat",
+        error: "Faqat Erkak yoki Ayol tanlang",
+      };
+    };
 
     sampleData.forEach((student, index) => {
       const row = worksheet.addRow([
@@ -236,13 +263,15 @@ export async function downloadStudentsTemplate(classNames: string[]): Promise<vo
       });
 
       if (boyImageId !== undefined && girlImageId !== undefined) {
-        const imageId = student.gender === "male" ? boyImageId : girlImageId;
+        const imageId = student.gender === "Erkak" ? boyImageId : girlImageId;
         const rowIndex = row.number - 1;
         worksheet.addImage(imageId, {
           tl: { col: 6, row: rowIndex },
           ext: { width: 60, height: 60 },
         });
       }
+
+      applyGenderValidation(row.number, false);
     });
 
     for (let i = 0; i < 10; i++) {
@@ -254,7 +283,34 @@ export async function downloadStudentsTemplate(classNames: string[]): Promise<vo
           bottom: { style: "thin", color: { argb: colors.border } },
         };
       });
+
+      applyGenderValidation(row.number, true);
     }
+
+    // Reserve additional rows with strict gender validation
+    for (let rowNumber = 2; rowNumber <= 500; rowNumber++) {
+      applyGenderValidation(rowNumber, true);
+      for (const col of ["A", "B", "C", "D", "E", "F", "G"]) {
+        worksheet.getCell(`${col}${rowNumber}`).protection = { locked: false };
+      }
+    }
+
+    // Keep data-entry range editable, but protect validation/rules from being modified.
+    await worksheet.protect("students-template-lock", {
+      selectLockedCells: true,
+      selectUnlockedCells: true,
+      formatCells: false,
+      formatColumns: false,
+      formatRows: false,
+      insertColumns: false,
+      insertRows: false,
+      insertHyperlinks: false,
+      deleteColumns: false,
+      deleteRows: false,
+      sort: false,
+      autoFilter: false,
+      pivotTables: false,
+    });
   }
 
   const buffer = await workbook.xlsx.writeBuffer();

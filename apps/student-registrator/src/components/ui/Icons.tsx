@@ -158,4 +158,24 @@ export const Icons = {
       <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
     </svg>
   ),
+  ChevronLeft: () => (
+    <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M15 18l-6-6 6-6" />
+    </svg>
+  ),
+  ChevronRight: () => (
+    <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M9 18l6-6-6-6" />
+    </svg>
+  ),
+  ChevronUp: () => (
+    <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M18 15l-6-6-6 6" />
+    </svg>
+  ),
+  ArrowUpDown: () => (
+    <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M7 15l5 5 5-5M7 9l5-5 5 5" />
+    </svg>
+  ),
 };

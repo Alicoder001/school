@@ -17,6 +17,7 @@ fn main() {
             update_device,
             delete_device,
             test_device_connection,
+            check_student_on_device,
             // Student registration
             register_student,
             // User management

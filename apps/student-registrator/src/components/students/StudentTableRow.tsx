@@ -78,9 +78,8 @@ export function StudentTableRow({ index, student, availableClasses, onEdit, onDe
           onChange={(e) => handleChange('gender', e.target.value)}
           disabled={student.status === 'success'}
         >
-          <option value="male">Male</option>
-          <option value="female">Female</option>
-          <option value="unknown">Unknown</option>
+          <option value="male">Erkak</option>
+          <option value="female">Ayol</option>
         </select>
       </td>
       <td>
@@ -161,15 +160,24 @@ export function StudentTableRow({ index, student, availableClasses, onEdit, onDe
       </td>
       <td>
         {student.status === 'pending' && (
-          <span className="badge badge-warning">Pending</span>
+          <span className="badge badge-warning">Kutilmoqda</span>
         )}
         {student.status === 'success' && (
-          <span className="badge badge-success">Saved</span>
+          <span className="badge badge-success">Saqlandi</span>
         )}
         {student.status === 'error' && (
           <span className="badge badge-danger" title={student.error}>
-            {student.error && student.error.length < 20 ? student.error : 'Error'}
+            Xato
           </span>
+        )}
+      </td>
+      <td className="error-reason-cell">
+        {student.status === 'error' ? (
+          <span className="error-reason-text" title={student.errorRaw || student.error}>
+            {student.error || "Noma'lum xato"}
+          </span>
+        ) : (
+          <span className="error-reason-muted">-</span>
         )}
       </td>
       <td>

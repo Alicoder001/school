@@ -60,11 +60,63 @@ function splitFullName(fullName: string): { firstName: string; lastName: string 
   };
 }
 
+function normalizeGender(value: unknown): "MALE" | "FEMALE" | null {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return null;
+  if (["male", "erkak", "m", "1"].includes(raw)) return "MALE";
+  if (["female", "ayol", "f", "2"].includes(raw)) return "FEMALE";
+  return null;
+}
+
 const STUDENT_HAS_SPLIT_NAME_FIELDS = (() => {
   const model = Prisma.dmmf.datamodel.models.find((m) => m.name === "Student");
   const fields = new Set((model?.fields || []).map((f) => f.name));
   return fields.has("firstName") && fields.has("lastName");
 })();
+
+function buildDuplicateStudentWhere(params: {
+  schoolId: string;
+  classId: string;
+  firstName: string;
+  lastName: string;
+  fullName: string;
+  excludeId?: string;
+}): Prisma.StudentWhereInput {
+  const candidates: Prisma.StudentWhereInput[] = [
+    {
+      name: {
+        equals: params.fullName,
+        mode: "insensitive",
+      },
+    },
+  ];
+
+  if (STUDENT_HAS_SPLIT_NAME_FIELDS) {
+    candidates.push({
+      firstName: {
+        equals: params.firstName,
+        mode: "insensitive",
+      },
+      lastName: {
+        equals: params.lastName,
+        mode: "insensitive",
+      },
+    });
+  }
+
+  const where: Prisma.StudentWhereInput = {
+    schoolId: params.schoolId,
+    classId: params.classId,
+    isActive: true,
+    OR: candidates,
+  };
+
+  if (params.excludeId) {
+    where.NOT = { id: params.excludeId };
+  }
+
+  return where;
+}
 
 async function logProvisioningEvent(params: {
   schoolId: string;
@@ -418,6 +470,138 @@ export default async function (fastify: FastifyInstance) {
     },
   );
 
+  // School students with cross-device diagnostics (latest known provisioning result per device)
+  fastify.get(
+    "/schools/:schoolId/students/device-diagnostics",
+    { preHandler: [(fastify as any).authenticate] } as any,
+    async (request: any, reply) => {
+      try {
+        const { schoolId } = request.params;
+        const { page = 1, search = "", classId } = request.query as any;
+        const take = 50;
+        const skip = (Number(page) - 1) * take;
+
+        const user = request.user;
+        requireRoles(user, ["SCHOOL_ADMIN", "TEACHER", "GUARD"]);
+        requireSchoolScope(user, schoolId);
+
+        const where: any = {
+          schoolId,
+          isActive: true,
+        };
+
+        if (search) {
+          where.name = { contains: search, mode: "insensitive" };
+        }
+
+        if (user.role === "TEACHER") {
+          const { classFilter } = await getTeacherClassFilter({
+            teacherId: user.sub,
+            requestedClassId: classId,
+          });
+          where.classId = classFilter;
+        } else if (classId) {
+          where.classId = classId;
+        }
+
+        const [students, total, devices] = await Promise.all([
+          prisma.student.findMany({
+            where,
+            skip,
+            take,
+            include: {
+              class: { select: { id: true, name: true } },
+            },
+            orderBy: { name: "asc" },
+          }),
+          prisma.student.count({ where }),
+          prisma.device.findMany({
+            where: { schoolId, isActive: true },
+            select: { id: true, name: true, deviceId: true, isActive: true },
+            orderBy: { name: "asc" },
+          }),
+        ]);
+
+        const studentIds = students.map((s) => s.id);
+        const deviceIds = devices.map((d) => d.id);
+
+        const links =
+          studentIds.length === 0 || deviceIds.length === 0
+            ? []
+            : await prisma.studentDeviceLink.findMany({
+                where: {
+                  studentId: { in: studentIds },
+                  deviceId: { in: deviceIds },
+                },
+                select: {
+                  studentId: true,
+                  deviceId: true,
+                  status: true,
+                  lastError: true,
+                  updatedAt: true,
+                },
+                orderBy: { updatedAt: "desc" },
+              });
+
+        // Keep latest link per student/device pair.
+        const latestByPair = new Map<string, (typeof links)[number]>();
+        for (const link of links) {
+          const key = `${link.studentId}:${link.deviceId}`;
+          if (!latestByPair.has(key)) {
+            latestByPair.set(key, link);
+          }
+        }
+
+        const data = students.map((student) => {
+          const perDevice = devices.map((device) => {
+            const key = `${student.id}:${device.id}`;
+            const link = latestByPair.get(key);
+            if (!link) {
+              return {
+                deviceId: device.id,
+                deviceName: device.name,
+                deviceExternalId: device.deviceId,
+                status: "MISSING",
+                lastError: null,
+                updatedAt: null,
+              };
+            }
+
+            return {
+              deviceId: device.id,
+              deviceName: device.name,
+              deviceExternalId: device.deviceId,
+              status: link.status,
+              lastError: link.lastError,
+              updatedAt: link.updatedAt?.toISOString() || null,
+            };
+          });
+
+          return {
+            studentId: student.id,
+            studentName: student.name,
+            firstName: student.firstName,
+            lastName: student.lastName,
+            fatherName: student.fatherName,
+            classId: student.classId,
+            className: student.class?.name || null,
+            deviceStudentId: student.deviceStudentId,
+            devices: perDevice,
+          };
+        });
+
+        return {
+          devices,
+          data,
+          total,
+          page: Number(page),
+        };
+      } catch (err) {
+        return sendHttpError(reply, err);
+      }
+    },
+  );
+
   fastify.post(
     "/schools/:schoolId/students",
     { preHandler: [(fastify as any).authenticate] } as any,
@@ -445,7 +629,8 @@ export default async function (fastify: FastifyInstance) {
 
         const firstName = normalizeNamePart(body.firstName || "");
         const lastName = normalizeNamePart(body.lastName || "");
-        const fatherName = normalizeNamePart(body.fatherName || body.parentName || "");
+        const fatherName = normalizeNamePart(body.fatherName || "");
+        const gender = normalizeGender(body.gender);
         const fullName =
           firstName || lastName
             ? buildFullName(lastName, firstName)
@@ -456,15 +641,18 @@ export default async function (fastify: FastifyInstance) {
             .status(400)
             .send({ error: "Ism va familiya majburiy" });
         }
+        if (!gender) {
+          return reply.status(400).send({ error: "Jinsi noto'g'ri yoki bo'sh" });
+        }
 
         const existing = await prisma.student.findFirst({
-          where: {
+          where: buildDuplicateStudentWhere({
             schoolId,
             classId: body.classId,
             firstName,
             lastName,
-            isActive: true,
-          },
+            fullName,
+          }),
           select: { id: true },
         });
         if (existing) {
@@ -481,7 +669,7 @@ export default async function (fastify: FastifyInstance) {
             firstName,
             lastName,
             fatherName: fatherName || null,
-            parentName: fatherName || null,
+            gender,
           },
         });
         return student;
@@ -514,6 +702,7 @@ export default async function (fastify: FastifyInstance) {
           { header: "Last Name", key: "lastName", width: 18 },
           { header: "First Name", key: "firstName", width: 18 },
           { header: "Father Name", key: "fatherName", width: 18 },
+          { header: "Gender", key: "gender", width: 12 },
           { header: "Device ID", key: "deviceStudentId", width: 15 },
           { header: "Class", key: "class", width: 15 },
           { header: "Parent Phone", key: "parentPhone", width: 20 },
@@ -523,7 +712,8 @@ export default async function (fastify: FastifyInstance) {
           ws.addRow({
             lastName: s.lastName || "",
             firstName: s.firstName || "",
-            fatherName: s.fatherName || s.parentName || "",
+            fatherName: s.fatherName || "",
+            gender: s.gender === "FEMALE" ? "Female" : "Male",
             deviceStudentId: s.deviceStudentId,
             class: s.class?.name || "",
             parentPhone: s.parentPhone || "",
@@ -595,6 +785,52 @@ export default async function (fastify: FastifyInstance) {
         ];
         headers.forEach((h, idx) => {
           ws.getRow(9).getCell(idx + 1).value = h;
+        });
+
+        ws.columns = [
+          { width: 16 },
+          { width: 20 },
+          { width: 24 },
+          { width: 12 },
+          { width: 18 },
+          { width: 22 },
+          { width: 20 },
+          { width: 20 },
+          { width: 16 },
+          { width: 14 },
+          { width: 12 },
+          { width: 12 },
+        ];
+
+        for (let row = 10; row <= 500; row++) {
+          ws.getCell(`D${row}`).dataValidation = {
+            type: "list",
+            allowBlank: true,
+            formulae: ['"Male,Female"'],
+            showErrorMessage: true,
+            errorStyle: "stop",
+            errorTitle: "Invalid value",
+            error: "Only Male or Female is allowed",
+          };
+          for (const col of ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"]) {
+            ws.getCell(`${col}${row}`).protection = { locked: false };
+          }
+        }
+
+        await ws.protect("students-template-lock", {
+          selectLockedCells: true,
+          selectUnlockedCells: true,
+          formatCells: false,
+          formatColumns: false,
+          formatRows: false,
+          insertColumns: false,
+          insertRows: false,
+          insertHyperlinks: false,
+          deleteColumns: false,
+          deleteRows: false,
+          sort: false,
+          autoFilter: false,
+          pivotTables: false,
         });
 
         reply.header(
@@ -705,8 +941,9 @@ export default async function (fastify: FastifyInstance) {
         const isLegacyInternal =
           headerMap.has("name") &&
           headerMap.has("device id") &&
+          headerMap.has("gender") &&
           headerMap.has("class") &&
-          headerMap.has("parent name") &&
+          headerMap.has("father name") &&
           headerMap.has("parent phone");
 
         const isNewInternal =
@@ -716,9 +953,8 @@ export default async function (fastify: FastifyInstance) {
             (headerMap.has("ism") && headerMap.has("familiya"))) &&
           headerMap.has("person id") &&
           (headerMap.has("class") || headerMap.has("sinf")) &&
-          (headerMap.has("parent name") ||
-            headerMap.has("ota-ona ismi") ||
-            headerMap.has("father name") ||
+          (headerMap.has("gender") || headerMap.has("jinsi")) &&
+          (headerMap.has("father name") ||
             headerMap.has("otasining ismi")) &&
           (headerMap.has("parent phone") || headerMap.has("ota-ona telefoni"));
 
@@ -742,10 +978,9 @@ export default async function (fastify: FastifyInstance) {
           headerMap.get("class") ??
           headerMap.get("sinf");
         const colParentName =
-          headerMap.get("parent name") ??
-          headerMap.get("ota-ona ismi") ??
           headerMap.get("father name") ??
           headerMap.get("otasining ismi");
+        const colGender = headerMap.get("gender") ?? headerMap.get("jinsi");
         const colParentPhone =
           headerMap.get("parent phone") ?? headerMap.get("ota-ona telefoni") ?? headerMap.get("contact");
 
@@ -770,6 +1005,7 @@ export default async function (fastify: FastifyInstance) {
           firstName: string;
           lastName: string;
           fatherName: string;
+          gender: "MALE" | "FEMALE";
           deviceStudentId: string;
           className: string;
           parentPhone: string;
@@ -796,6 +1032,9 @@ export default async function (fastify: FastifyInstance) {
           const fatherName = colParentName
             ? row.getCell(colParentName).text.trim()
             : "";
+          const gender = normalizeGender(
+            colGender ? row.getCell(colGender).text.trim() : "",
+          );
           const parentPhone = colParentPhone
             ? row.getCell(colParentPhone).text.trim()
             : "";
@@ -824,6 +1063,14 @@ export default async function (fastify: FastifyInstance) {
             continue;
           }
           seenNameKeys.add(nameKey);
+          if (!gender) {
+            skippedCount++;
+            errors.push({
+              row: i,
+              message: "Gender noto'g'ri. Faqat Male/Female (yoki 1/2)",
+            });
+            continue;
+          }
 
           if (className) {
             const key = className.toLowerCase();
@@ -846,6 +1093,7 @@ export default async function (fastify: FastifyInstance) {
             firstName,
             lastName,
             fatherName,
+            gender,
             deviceStudentId,
             className,
             parentPhone,
@@ -912,8 +1160,8 @@ export default async function (fastify: FastifyInstance) {
               firstName: r.firstName,
               lastName: r.lastName,
               fatherName: r.fatherName || null,
+              gender: r.gender,
               classId,
-              parentName: r.fatherName || null,
               parentPhone: r.parentPhone || null,
               isActive: true,
             },
@@ -922,9 +1170,9 @@ export default async function (fastify: FastifyInstance) {
               firstName: r.firstName,
               lastName: r.lastName,
               fatherName: r.fatherName || null,
+              gender: r.gender,
               deviceStudentId: r.deviceStudentId,
               classId,
-              parentName: r.fatherName || null,
               parentPhone: r.parentPhone || null,
               schoolId,
             },
@@ -1052,7 +1300,8 @@ export default async function (fastify: FastifyInstance) {
         // Allowlist fields and normalize empty strings to null
         const firstName = normalizeNamePart(data.firstName || "");
         const lastName = normalizeNamePart(data.lastName || "");
-        const fatherName = normalizeNamePart(data.fatherName || data.parentName || "");
+        const fatherName = normalizeNamePart(data.fatherName || "");
+        const gender = normalizeGender(data.gender);
         const fullName =
           firstName || lastName
             ? buildFullName(lastName, firstName)
@@ -1069,11 +1318,11 @@ export default async function (fastify: FastifyInstance) {
             data.deviceStudentId.trim() === ""
               ? null
               : data.deviceStudentId,
-          parentName: fatherName || null,
           parentPhone:
             typeof data.parentPhone === "string" && data.parentPhone.trim() === ""
               ? null
               : data.parentPhone,
+          gender: gender || undefined,
         };
 
         if (!firstName || !lastName) {
@@ -1092,14 +1341,14 @@ export default async function (fastify: FastifyInstance) {
         }
 
         const duplicate = await prisma.student.findFirst({
-          where: {
+          where: buildDuplicateStudentWhere({
             schoolId: studentScope.schoolId,
             classId: sanitized.classId,
             firstName,
             lastName,
-            isActive: true,
-            NOT: { id },
-          },
+            fullName,
+            excludeId: id,
+          }),
           select: { id: true },
         });
         if (duplicate) {
@@ -1150,8 +1399,16 @@ export default async function (fastify: FastifyInstance) {
   fastify.post(
     "/schools/:schoolId/students/provision",
     async (request: any, reply) => {
+      let auditSchoolId: string | null = null;
+      let auditRequestId: string | undefined;
+      let auditClassId: string | null = null;
+      let auditFirstName = "";
+      let auditLastName = "";
+      let auditTargetDeviceIds: string[] = [];
+      let auditTargetAllActive = true;
       try {
         const { schoolId } = request.params as { schoolId: string };
+        auditSchoolId = schoolId;
         const auth = await ensureProvisioningAuth(request, reply, schoolId);
         if (!auth) return;
 
@@ -1163,12 +1420,14 @@ export default async function (fastify: FastifyInstance) {
           ? (body.targetDeviceIds as string[])
           : [];
         const targetAllActive = body.targetAllActive !== false;
+        auditRequestId = requestId;
+        auditTargetDeviceIds = targetDeviceIds;
+        auditTargetAllActive = targetAllActive;
 
         const payloadFirstName = normalizeNamePart(studentPayload?.firstName || "");
         const payloadLastName = normalizeNamePart(studentPayload?.lastName || "");
-        const payloadFatherName = normalizeNamePart(
-          studentPayload?.fatherName || studentPayload?.parentName || "",
-        );
+        const payloadFatherName = normalizeNamePart(studentPayload?.fatherName || "");
+        const payloadGender = normalizeGender(studentPayload?.gender);
         const payloadName = normalizeNamePart(studentPayload?.name || "");
         const nameParts =
           payloadFirstName || payloadLastName
@@ -1176,10 +1435,41 @@ export default async function (fastify: FastifyInstance) {
             : splitFullName(payloadName);
         const firstName = normalizeNamePart(nameParts.firstName);
         const lastName = normalizeNamePart(nameParts.lastName);
+        auditFirstName = firstName;
+        auditLastName = lastName;
         const fullName = buildFullName(lastName, firstName);
 
         if (!firstName || !lastName) {
+          await logProvisioningEvent({
+            schoolId,
+            level: "ERROR",
+            stage: "PROVISIONING_START",
+            status: "FAILED",
+            message: "Ism va familiya majburiy",
+            payload: {
+              requestId,
+              targetDeviceIds,
+              targetAllActive,
+              classId: studentPayload.classId || null,
+            },
+          });
           return reply.status(400).send({ error: "Ism va familiya majburiy" });
+        }
+        if (!payloadGender) {
+          await logProvisioningEvent({
+            schoolId,
+            level: "ERROR",
+            stage: "PROVISIONING_START",
+            status: "FAILED",
+            message: "Gender noto'g'ri yoki bo'sh",
+            payload: {
+              requestId,
+              targetDeviceIds,
+              targetAllActive,
+              classId: studentPayload.classId || null,
+            },
+          });
+          return reply.status(400).send({ error: "Gender noto'g'ri yoki bo'sh" });
         }
 
         let classId: string | null = null;
@@ -1193,6 +1483,19 @@ export default async function (fastify: FastifyInstance) {
           DEVICE_STUDENT_ID_STRATEGY === "numeric" &&
           !/^\d+$/.test(providedDeviceStudentId)
         ) {
+          await logProvisioningEvent({
+            schoolId,
+            level: "ERROR",
+            stage: "PROVISIONING_START",
+            status: "FAILED",
+            message: "deviceStudentId must be numeric",
+            payload: {
+              requestId,
+              targetDeviceIds,
+              targetAllActive,
+              classId: studentPayload.classId || null,
+            },
+          });
           return reply
             .status(400)
             .send({ error: "deviceStudentId must be numeric" });
@@ -1218,9 +1521,39 @@ export default async function (fastify: FastifyInstance) {
             console.error('[Provision] Class not found in DB!', {
               searchedFor: { classId: String(studentPayload.classId), schoolId },
             });
+            await logProvisioningEvent({
+              schoolId,
+              level: "ERROR",
+              stage: "PROVISIONING_START",
+              status: "FAILED",
+              message: "Class not found",
+              payload: {
+                requestId,
+                targetDeviceIds,
+                targetAllActive,
+                classId: String(studentPayload.classId),
+              },
+            });
             return reply.status(400).send({ error: "Class not found" });
           }
           classId = String(studentPayload.classId);
+          auditClassId = classId;
+        }
+        if (!classId) {
+          await logProvisioningEvent({
+            schoolId,
+            level: "ERROR",
+            stage: "PROVISIONING_START",
+            status: "FAILED",
+            message: "Sinf tanlanishi shart",
+            payload: {
+              requestId,
+              targetDeviceIds,
+              targetAllActive,
+              classId: null,
+            },
+          });
+          return reply.status(400).send({ error: "Sinf tanlanishi shart" });
         }
 
         const result = await prisma.$transaction(async (tx) => {
@@ -1245,19 +1578,21 @@ export default async function (fastify: FastifyInstance) {
           let deviceStudentId =
             providedDeviceStudentId !== "" ? providedDeviceStudentId : null;
 
-          if (classId) {
-            const whereByName: Prisma.StudentWhereInput = STUDENT_HAS_SPLIT_NAME_FIELDS
-              ? { schoolId, classId, firstName, lastName, isActive: true }
-              : { schoolId, classId, name: fullName, isActive: true };
-            const existingByName = await tx.student.findFirst({
-              where: whereByName,
-              select: { id: true },
+          const existingByName = await tx.student.findFirst({
+            where: buildDuplicateStudentWhere({
+              schoolId,
+              classId,
+              firstName,
+              lastName,
+              fullName,
+              excludeId: studentId,
+            }),
+            select: { id: true },
+          });
+          if (existingByName && existingByName.id !== studentId) {
+            throw Object.assign(new Error("Duplicate student in class"), {
+              statusCode: 409,
             });
-            if (existingByName && existingByName.id !== studentId) {
-              throw Object.assign(new Error("Duplicate student in class"), {
-                statusCode: 409,
-              });
-            }
           }
 
           if (studentId) {
@@ -1292,10 +1627,10 @@ export default async function (fastify: FastifyInstance) {
             const updateData: Prisma.StudentUncheckedUpdateInput = {
               name: fullName,
               classId,
-              parentName: payloadFatherName || null,
               parentPhone: studentPayload.parentPhone || null,
               deviceStudentId,
               isActive: true,
+              gender: payloadGender,
             };
             if (STUDENT_HAS_SPLIT_NAME_FIELDS) {
               updateData.firstName = firstName;
@@ -1314,17 +1649,17 @@ export default async function (fastify: FastifyInstance) {
             const upsertUpdateData: Prisma.StudentUncheckedUpdateInput = {
               name: fullName,
               classId,
-              parentName: payloadFatherName || null,
               parentPhone: studentPayload.parentPhone || null,
               isActive: true,
+              gender: payloadGender,
             };
             const upsertCreateData: Prisma.StudentUncheckedCreateInput = {
               name: fullName,
               classId,
-              parentName: payloadFatherName || null,
               parentPhone: studentPayload.parentPhone || null,
               deviceStudentId,
               schoolId,
+              gender: payloadGender,
             };
             if (STUDENT_HAS_SPLIT_NAME_FIELDS) {
               upsertUpdateData.firstName = firstName;
@@ -1427,7 +1762,24 @@ export default async function (fastify: FastifyInstance) {
           provisioningStatus: result.provisioning.status,
           targetDevices: result.targetDevices,
         };
-      } catch (err) {
+      } catch (err: any) {
+        if (auditSchoolId) {
+          await logProvisioningEvent({
+            schoolId: auditSchoolId,
+            level: "ERROR",
+            stage: "PROVISIONING_START",
+            status: "FAILED",
+            message: err?.message || "Provisioning start failed",
+            payload: {
+              requestId: auditRequestId,
+              classId: auditClassId,
+              firstName: auditFirstName,
+              lastName: auditLastName,
+              targetDeviceIds: auditTargetDeviceIds,
+              targetAllActive: auditTargetAllActive,
+            },
+          });
+        }
         return sendHttpError(reply, err);
       }
     },
@@ -1494,6 +1846,20 @@ export default async function (fastify: FastifyInstance) {
         : null;
 
       if (!deviceId && !deviceExternalId) {
+        await logProvisioningEvent({
+          schoolId: provisioning.schoolId,
+          studentId: provisioning.studentId,
+          provisioningId: id,
+          level: "ERROR",
+          stage: "DEVICE_RESULT",
+          status: "FAILED",
+          message: "deviceId or deviceExternalId is required",
+          payload: {
+            deviceName: body.deviceName,
+            deviceType: body.deviceType,
+            deviceLocation: body.deviceLocation,
+          },
+        });
         return reply.status(400).send({ error: "deviceId or deviceExternalId is required" });
       }
 
@@ -1528,11 +1894,38 @@ export default async function (fastify: FastifyInstance) {
         if (matches.length === 1) {
           device = matches[0];
         } else if (matches.length > 1) {
+          await logProvisioningEvent({
+            schoolId: provisioning.schoolId,
+            studentId: provisioning.studentId,
+            provisioningId: id,
+            level: "ERROR",
+            stage: "DEVICE_RESULT",
+            status: "FAILED",
+            message: "Multiple devices with same name",
+            payload: {
+              deviceName: body.deviceName,
+              deviceExternalId,
+            },
+          });
           return reply.status(400).send({ error: "Multiple devices with same name" });
         }
       }
 
       if (!device) {
+        await logProvisioningEvent({
+          schoolId: provisioning.schoolId,
+          studentId: provisioning.studentId,
+          provisioningId: id,
+          level: "ERROR",
+          stage: "DEVICE_RESULT",
+          status: "FAILED",
+          message: "Device not found",
+          payload: {
+            deviceId,
+            deviceExternalId,
+            deviceName: body.deviceName,
+          },
+        });
         return reply.status(404).send({ error: "Device not found" });
       }
 
@@ -1620,6 +2013,120 @@ export default async function (fastify: FastifyInstance) {
   });
 
   // Provisioning logs (archive)
+  fastify.get(
+    "/schools/:schoolId/provisioning-logs",
+    { preHandler: [(fastify as any).authenticate] } as any,
+    async (request: any, reply) => {
+      try {
+        const { schoolId } = request.params as { schoolId: string };
+        const user = request.user;
+        requireRoles(user, ["SCHOOL_ADMIN"]);
+        requireSchoolScope(user, schoolId);
+
+        const query = request.query || {};
+        const page = Math.max(1, Number(query.page) || 1);
+        const limit = Math.min(200, Math.max(1, Number(query.limit) || 50));
+        const skip = (page - 1) * limit;
+
+        const where: Prisma.ProvisioningLogWhereInput = { schoolId };
+
+        if (query.level) {
+          const level = String(query.level).toUpperCase();
+          if (["INFO", "WARN", "ERROR"].includes(level)) {
+            where.level = level as any;
+          }
+        }
+        if (query.stage) {
+          where.stage = {
+            contains: String(query.stage),
+            mode: "insensitive",
+          };
+        }
+        if (query.status) {
+          where.status = {
+            contains: String(query.status),
+            mode: "insensitive",
+          };
+        }
+        if (query.provisioningId) {
+          where.provisioningId = String(query.provisioningId);
+        }
+        if (query.studentId) {
+          where.studentId = String(query.studentId);
+        }
+        if (query.deviceId) {
+          where.deviceId = String(query.deviceId);
+        }
+
+        const from = query.from ? new Date(String(query.from)) : null;
+        const to = query.to ? new Date(String(query.to)) : null;
+        if ((from && Number.isNaN(from.getTime())) || (to && Number.isNaN(to.getTime()))) {
+          return reply.status(400).send({ error: "Invalid from/to date" });
+        }
+        if (from || to) {
+          where.createdAt = {
+            ...(from ? { gte: from } : {}),
+            ...(to ? { lte: to } : {}),
+          };
+        }
+
+        if (query.q) {
+          const q = String(query.q).trim();
+          if (q) {
+            where.OR = [
+              { message: { contains: q, mode: "insensitive" } },
+              { stage: { contains: q, mode: "insensitive" } },
+              { status: { contains: q, mode: "insensitive" } },
+              { provisioningId: { contains: q, mode: "insensitive" } },
+              { studentId: { contains: q, mode: "insensitive" } },
+              { deviceId: { contains: q, mode: "insensitive" } },
+              { student: { is: { name: { contains: q, mode: "insensitive" } } } },
+              { device: { is: { name: { contains: q, mode: "insensitive" } } } },
+            ];
+          }
+        }
+
+        const [data, total] = await prisma.$transaction([
+          prisma.provisioningLog.findMany({
+            where,
+            orderBy: { createdAt: "desc" },
+            skip,
+            take: limit,
+            include: {
+              student: {
+                select: {
+                  id: true,
+                  name: true,
+                  firstName: true,
+                  lastName: true,
+                  deviceStudentId: true,
+                },
+              },
+              device: {
+                select: {
+                  id: true,
+                  name: true,
+                  deviceId: true,
+                  location: true,
+                },
+              },
+            },
+          }),
+          prisma.provisioningLog.count({ where }),
+        ]);
+
+        return {
+          data,
+          total,
+          page,
+          limit,
+        };
+      } catch (err) {
+        return sendHttpError(reply, err);
+      }
+    },
+  );
+
   fastify.get("/provisioning/:id/logs", async (request: any, reply) => {
     try {
       const { id } = request.params as { id: string };

@@ -2,6 +2,8 @@ import { useState, useCallback } from 'react';
 import { registerStudent } from '../api';
 import type { RegisterResult, StudentRow } from '../types';
 
+const LAST_PROVISIONING_ID_KEY = 'registrator_last_provisioning_id';
+
 interface UseStudentTableReturn {
   students: StudentRow[];
   addStudent: (student: Omit<StudentRow, 'id' | 'source' | 'status'>) => void;
@@ -10,7 +12,11 @@ interface UseStudentTableReturn {
   importStudents: (rows: Omit<StudentRow, 'id' | 'source' | 'status'>[]) => void;
   applyClassMapping: (className: string, classId: string, classDisplayName?: string) => void;
   saveStudent: (id: string, targetDeviceIds?: string[]) => Promise<void>;
-  saveAllPending: (targetDeviceIds?: string[]) => Promise<{ successCount: number; errorCount: number }>;
+  saveAllPending: (targetDeviceIds?: string[]) => Promise<{
+    successCount: number;
+    errorCount: number;
+    errorReasons: Record<string, number>;
+  }>;
   clearTable: () => void;
   isSaving: boolean;
   lastRegisterResult: RegisterResult | null;
@@ -22,7 +28,13 @@ function formatStudentName(student: StudentRow): string {
   return parts.join(' ').trim();
 }
 
-function normalizeSaveError(err: unknown): string {
+type NormalizedSaveError = {
+  code: string;
+  message: string;
+  raw: string;
+};
+
+function normalizeSaveError(err: unknown): NormalizedSaveError {
   const raw = (err instanceof Error ? err.message : String(err || 'Xato'))
     .replace(/^Error:\s*/i, '')
     .trim();
@@ -47,33 +59,96 @@ function normalizeSaveError(err: unknown): string {
   }
 
   const lower = message.toLowerCase();
-  if (lower.includes('unknown argument `firstname`') || lower.includes('unknown argument `lastname`')) {
-    return "Server sxemasi yangilanmagan (firstName/lastName). Backendni yangilash kerak.";
-  }
-  if (lower.includes('studentprovisioning') && lower.includes('does not exist')) {
-    return "Server migratsiyasi toliq emas (StudentProvisioning jadvali topilmadi).";
-  }
   if (lower.includes('duplicate student in class')) {
-    return "Bu sinfda shu ism-familiyali oquvchi allaqachon mavjud.";
+    return {
+      code: 'DUPLICATE_STUDENT',
+      message: "Bu sinfda shu ism-familiyali o'quvchi allaqachon mavjud.",
+      raw,
+    };
   }
   if (lower.includes('class not found')) {
-    return "Tanlangan sinf topilmadi.";
+    return { code: 'CLASS_NOT_FOUND', message: "Tanlangan sinf topilmadi.", raw };
+  }
+  if (lower.includes('sinf tanlanishi shart')) {
+    return { code: 'CLASS_REQUIRED', message: 'Sinf tanlanishi shart.', raw };
+  }
+  if (lower.includes('ism va familiya majburiy')) {
+    return { code: 'NAME_REQUIRED', message: 'Ism va familiya majburiy.', raw };
+  }
+  if (lower.includes('device id takrorlangan') || lower.includes('qurilma id takrorlangan')) {
+    return { code: 'DEVICE_ID_DUPLICATE', message: "Qurilma identifikatori takrorlangan.", raw };
+  }
+  if (lower.includes('unauthorized (no digest challenge)')) {
+    return {
+      code: 'HIKVISION_AUTH',
+      message: "Qurilma autentifikatsiyasida xato (login/parol noto'g'ri yoki digest o'chirilgan).",
+      raw,
+    };
+  }
+  if (lower.includes('employeeNo') && lower.includes('badjsoncontent')) {
+    return {
+      code: 'HIKVISION_EMPLOYEE_NO',
+      message: "Qurilma employeeNo formatini qabul qilmadi. Device ID strategiyasini tekshiring.",
+      raw,
+    };
+  }
+  if (lower.includes('user yaratish: http 400 bad request')) {
+    return {
+      code: 'HIKVISION_USER_CREATE_400',
+      message: 'Qurilmada foydalanuvchini yaratish rad etildi (HTTP 400).',
+      raw,
+    };
+  }
+  if (lower.includes('face yuklash')) {
+    return { code: 'HIKVISION_FACE_UPLOAD', message: 'Qurilmaga rasm yuklashda xato.', raw };
   }
   if (lower.includes('unauthorized')) {
-    return "Backendga kirish rad etildi (Unauthorized). Login yoki tokenni tekshiring.";
+    return {
+      code: 'BACKEND_UNAUTHORIZED',
+      message: "Backendga kirish rad etildi. Login yoki tokenni tekshiring.",
+      raw,
+    };
   }
-  if (lower.includes('invalid `tx.student.findfirst()` invocation')) {
-    return "Serverda student tekshiruv querysi ishlamadi. Backend loglarini tekshiring.";
+  if (lower.includes('unknown argument `firstname`') || lower.includes('unknown argument `lastname`')) {
+    return {
+      code: 'BACKEND_SCHEMA_OLD',
+      message: 'Server sxemasi eski (firstName/lastName maydonlari yoq). Backendni yangilang.',
+      raw,
+    };
+  }
+  if (lower.includes('studentprovisioning') && lower.includes('does not exist')) {
+    return {
+      code: 'MIGRATION_MISSING',
+      message: 'Server migratsiyasi toliq emas (StudentProvisioning jadvali topilmadi).',
+      raw,
+    };
+  }
+  if (lower.includes('requestfailed')) {
+    return {
+      code: 'REQUEST_FAILED',
+      message: "Qurilmaga so'rov muvaffaqiyatsiz tugadi. Ulanish va qurilma holatini tekshiring.",
+      raw,
+    };
   }
 
-  return message || 'Nomalum xato';
+  return {
+    code: 'UNKNOWN',
+    message: message || "Noma'lum xato",
+    raw,
+  };
 }
 
 export function useStudentTable(): UseStudentTableReturn {
   const [students, setStudents] = useState<StudentRow[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [lastRegisterResult, setLastRegisterResult] = useState<RegisterResult | null>(null);
-  const [lastProvisioningId, setLastProvisioningId] = useState<string | null>(null);
+  const [lastProvisioningId, setLastProvisioningId] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(LAST_PROVISIONING_ID_KEY);
+    } catch {
+      return null;
+    }
+  });
 
   // Qo'lda bitta qo'shish
   const addStudent = useCallback((student: Omit<StudentRow, 'id' | 'source' | 'status'>) => {
@@ -140,7 +215,8 @@ export function useStudentTable(): UseStudentTableReturn {
         s.id === id ? { 
           ...s, 
           status: 'error' as const, 
-          error: 'Ism va familiya majburiy' 
+          error: 'Ism va familiya majburiy',
+          errorCode: 'NAME_REQUIRED',
         } : s
       ));
       throw new Error('Ism va familiya majburiy');
@@ -151,7 +227,8 @@ export function useStudentTable(): UseStudentTableReturn {
         s.id === id ? { 
           ...s, 
           status: 'error' as const, 
-          error: 'Sinf tanlanmagan' 
+          error: 'Sinf tanlanmagan',
+          errorCode: 'CLASS_REQUIRED',
         } : s
       ));
       throw new Error('Sinf tanlanmagan');
@@ -191,6 +268,11 @@ export function useStudentTable(): UseStudentTableReturn {
       setLastRegisterResult(result);
       if (result.provisioningId) {
         setLastProvisioningId(result.provisioningId);
+        try {
+          localStorage.setItem(LAST_PROVISIONING_ID_KEY, result.provisioningId);
+        } catch {
+          // no-op in restricted environments
+        }
       }
 
       const failedDevices = result.results.filter((item) => {
@@ -227,7 +309,7 @@ export function useStudentTable(): UseStudentTableReturn {
         const errorMessage = `Hikvision yozilmadi (${failedDevices.length} ta qurilma). ${reason}`;
 
         setStudents(prev => prev.map(s => 
-          s.id === id ? { ...s, status: 'error' as const, error: errorMessage } : s
+          s.id === id ? { ...s, status: 'error' as const, error: errorMessage, errorCode: 'DEVICE_SYNC_FAILED' } : s
         ));
         throw new Error(errorMessage);
       }
@@ -236,15 +318,17 @@ export function useStudentTable(): UseStudentTableReturn {
         s.id === id ? { ...s, status: 'success' as const } : s
       ));
     } catch (err) {
-      const normalizedMessage = normalizeSaveError(err);
+      const normalized = normalizeSaveError(err);
       setStudents(prev => prev.map(s => 
         s.id === id ? { 
           ...s, 
           status: 'error' as const, 
-          error: normalizedMessage,
+          error: normalized.message,
+          errorCode: normalized.code,
+          errorRaw: normalized.raw,
         } : s
       ));
-      throw new Error(normalizedMessage);
+      throw new Error(normalized.message);
     }
   }, [students]);
 
@@ -252,13 +336,14 @@ export function useStudentTable(): UseStudentTableReturn {
   const saveAllPending = useCallback(async (targetDeviceIds?: string[]) => {
     const pending = students.filter(s => s.status === 'pending');
     if (pending.length === 0) {
-      return { successCount: 0, errorCount: 0 };
+      return { successCount: 0, errorCount: 0, errorReasons: {} };
     }
 
     setIsSaving(true);
     
     let successCount = 0;
     let errorCount = 0;
+    const errorReasons: Record<string, number> = {};
     
     for (const student of pending) {
       try {
@@ -266,6 +351,8 @@ export function useStudentTable(): UseStudentTableReturn {
         successCount++;
       } catch (err) {
         errorCount++;
+        const message = err instanceof Error ? err.message : String(err || "Noma'lum xato");
+        errorReasons[message] = (errorReasons[message] || 0) + 1;
         // Error already handled in saveStudent
         console.error(`Failed to save student ${formatStudentName(student)}:`, err);
       }
@@ -274,7 +361,7 @@ export function useStudentTable(): UseStudentTableReturn {
     setIsSaving(false);
     
     console.log(`[Save All] Success: ${successCount}, Errors: ${errorCount}`);
-    return { successCount, errorCount };
+    return { successCount, errorCount, errorReasons };
   }, [students, saveStudent]);
 
   // Clear table

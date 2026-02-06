@@ -91,9 +91,8 @@ export function AddStudentInline({ availableClasses, onAdd, onCancel }: AddStude
         <div className="form-group">
           <label>Jinsi</label>
           <select className="input" value={gender} onChange={(e) => setGender(e.target.value)}>
-            <option value="male">Male</option>
-            <option value="female">Female</option>
-            <option value="unknown">Unknown</option>
+            <option value="male">Erkak</option>
+            <option value="female">Ayol</option>
           </select>
         </div>
 

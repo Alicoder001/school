@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   fetchSchools,
   fetchClasses,
+  createClass,
   fetchSchoolDevices,
   fetchDevices,
   testDeviceConnection,
@@ -15,6 +16,7 @@ import { ExcelImportButton } from '../components/students/ExcelImportButton';
 import { ImportMappingPanel } from '../components/students/ImportMappingPanel';
 import { ProvisioningPanel } from '../components/students/ProvisioningPanel';
 import type { DeviceStatus } from '../components/students/DeviceTargetsPanel';
+import { TemplateDownloadModal } from '../components/students/TemplateDownloadModal';
 import { downloadStudentsTemplate } from '../services/excel.service';
 import { Icons } from '../components/ui/Icons';
 import type { ClassInfo, DeviceConfig, SchoolDeviceInfo } from '../types';
@@ -29,6 +31,11 @@ export function AddStudentsPage() {
   const [selectedDeviceIds, setSelectedDeviceIds] = useState<string[]>([]);
   const [deviceSelectionTouched, setDeviceSelectionTouched] = useState(false);
   const [isDeviceDropdownOpen, setIsDeviceDropdownOpen] = useState(false);
+  const [isClassModalOpen, setIsClassModalOpen] = useState(false);
+  const [newClassName, setNewClassName] = useState('');
+  const [newClassGrade, setNewClassGrade] = useState<number>(1);
+  const [isCreatingClass, setIsCreatingClass] = useState(false);
+  const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
 
   const {
     students,
@@ -137,8 +144,11 @@ export function AddStudentsPage() {
       if (!user) return;
 
       try {
-        const schools = await fetchSchools();
-        const schoolId = user.schoolId || schools[0]?.id;
+        let schoolId = user.schoolId;
+        if (!schoolId) {
+          const schools = await fetchSchools();
+          schoolId = schools[0]?.id;
+        }
         
         if (schoolId) {
           const [classes, devices, local] = await Promise.all([
@@ -154,7 +164,8 @@ export function AddStudentsPage() {
         }
       } catch (err) {
         console.error('Failed to load data:', err);
-        addToast('Ma\'lumotlarni yuklashda xato', 'error');
+        const message = err instanceof Error ? err.message : 'Ma\'lumotlarni yuklashda xato';
+        addToast(message, 'error');
       }
     };
 
@@ -199,13 +210,9 @@ export function AddStudentsPage() {
     }
   };
 
-  const handleDownloadTemplate = async () => {
-    if (availableClasses.length === 0) {
-      addToast('Sinflar yuklanmagan!', 'error');
-      return;
-    }
+  const handleTemplateDownload = async (classNames: string[]) => {
     try {
-      await downloadStudentsTemplate(availableClasses.map((cls) => cls.name));
+      await downloadStudentsTemplate(classNames);
       addToast('Shablon yuklandi', 'success');
     } catch (err) {
       console.error('Template download error:', err);
@@ -242,9 +249,15 @@ export function AddStudentsPage() {
     }
 
     try {
-      const { successCount, errorCount } = await saveAllPending(selectedDeviceIds);
+      const { successCount, errorCount, errorReasons } = await saveAllPending(selectedDeviceIds);
       if (errorCount > 0) {
-        addToast(`${errorCount} ta xato, ${successCount} ta saqlandi`, 'error');
+        const firstReason = Object.entries(errorReasons).sort((a, b) => b[1] - a[1])[0]?.[0];
+        addToast(
+          firstReason
+            ? `${errorCount} ta xato, ${successCount} ta saqlandi. Asosiy sabab: ${firstReason}`
+            : `${errorCount} ta xato, ${successCount} ta saqlandi`,
+          'error',
+        );
         return;
       }
       addToast(`${successCount} ta o'quvchi saqlandi`, 'success');
@@ -256,6 +269,13 @@ export function AddStudentsPage() {
   const pendingCount = students.filter(s => s.status === 'pending').length;
   const successCount = students.filter(s => s.status === 'success').length;
   const errorCount = students.filter(s => s.status === 'error').length;
+  const errorRows = useMemo(
+    () =>
+      students
+        .map((student, index) => ({ student, index: index + 1 }))
+        .filter((item) => item.student.status === 'error'),
+    [students],
+  );
 
   // Add empty row handler
   const handleAddRow = () => {
@@ -277,6 +297,63 @@ export function AddStudentsPage() {
     applyClassMapping(className, classId, selectedClass?.name);
   };
 
+  const createClassAndAppend = async (params: {
+    className: string;
+    gradeLevel: number;
+  }) => {
+    const user = getAuthUser();
+    const schoolId = user?.schoolId;
+    if (!schoolId) {
+      addToast('Maktab aniqlanmadi. Qayta login qiling.', 'error');
+      return null;
+    }
+
+    const className = params.className.trim().toUpperCase();
+    const gradeLevel = Number(params.gradeLevel);
+    if (!className) {
+      addToast('Sinf nomi majburiy', 'error');
+      return null;
+    }
+    if (!Number.isFinite(gradeLevel) || gradeLevel < 1 || gradeLevel > 11) {
+      addToast('Sinf darajasi 1 dan 11 gacha bo\'lishi kerak', 'error');
+      return null;
+    }
+
+    try {
+      const created = await createClass(schoolId, className, gradeLevel);
+      setAvailableClasses((prev) => {
+        const next = [...prev, created];
+        return next.sort((a, b) => {
+          if (a.gradeLevel !== b.gradeLevel) return a.gradeLevel - b.gradeLevel;
+          return a.name.localeCompare(b.name);
+        });
+      });
+      addToast(`Sinf yaratildi: ${created.name}`, 'success');
+      return created;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Sinf yaratishda xato';
+      addToast(message, 'error');
+      return null;
+    }
+  };
+
+  const handleCreateClass = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsCreatingClass(true);
+    try {
+      const created = await createClassAndAppend({
+        className: newClassName,
+        gradeLevel: newClassGrade,
+      });
+      if (!created) return;
+      setIsClassModalOpen(false);
+      setNewClassName('');
+      setNewClassGrade(1);
+    } finally {
+      setIsCreatingClass(false);
+    }
+  };
+
   return (
     <div className="page">
       {/* Page Header */}
@@ -289,6 +366,14 @@ export function AddStudentsPage() {
         </div>
 
         <div className="page-actions">
+          <button
+            type="button"
+            className="button button-secondary"
+            onClick={() => setIsClassModalOpen(true)}
+            title="Yangi sinf qo'shish"
+          >
+            <Icons.Plus /> Sinf qo'shish
+          </button>
           <div className="device-select">
             <button
               type="button"
@@ -362,7 +447,7 @@ export function AddStudentsPage() {
           <button
             type="button"
             className="device-select-trigger"
-            onClick={handleDownloadTemplate}
+            onClick={() => setIsTemplateModalOpen(true)}
             disabled={loading}
             title="Shablon yuklash"
             aria-label="Shablon yuklash"
@@ -407,6 +492,27 @@ export function AddStudentsPage() {
         </div>
       )}
 
+      {errorRows.length > 0 && (
+        <div className="notice notice-error">
+          <strong>Xatolar tafsiloti:</strong>
+          <div className="error-summary-list">
+            {errorRows.map(({ student, index }) => {
+              const name = `${student.lastName || ''} ${student.firstName || ''}`.trim() || `Qator ${index}`;
+              return (
+                <div key={student.id} className="error-summary-item">
+                  <span className="error-summary-name">
+                    #{index} {name}
+                  </span>
+                  <span className="error-summary-message">
+                    {student.error || "Noma'lum xato"}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <ImportMappingPanel
         students={students}
         availableClasses={availableClasses}
@@ -432,6 +538,70 @@ export function AddStudentsPage() {
           onAddRow={handleAddRow}
         />
       </div>
+
+      {isClassModalOpen && (
+        <div className="modal-overlay" onClick={() => setIsClassModalOpen(false)}>
+          <div className="modal" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Yangi sinf qo'shish</h3>
+              <button
+                className="modal-close"
+                onClick={() => setIsClassModalOpen(false)}
+                title="Yopish"
+              >
+                <Icons.X />
+              </button>
+            </div>
+            <div className="modal-body">
+              <form onSubmit={handleCreateClass}>
+                <div className="form-group">
+                  <label>Sinf nomi</label>
+                  <input
+                    className="input"
+                    value={newClassName}
+                    onChange={(e) => setNewClassName(e.target.value)}
+                    placeholder="Masalan: 9C"
+                    autoFocus
+                    required
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Sinf darajasi</label>
+                  <input
+                    className="input"
+                    type="number"
+                    min={1}
+                    max={11}
+                    value={newClassGrade}
+                    onChange={(e) => setNewClassGrade(Number(e.target.value))}
+                    required
+                  />
+                </div>
+                <div className="form-actions">
+                  <button className="button button-primary" type="submit" disabled={isCreatingClass}>
+                    <Icons.Check /> {isCreatingClass ? 'Yaratilmoqda...' : 'Yaratish'}
+                  </button>
+                  <button
+                    className="button button-secondary"
+                    type="button"
+                    onClick={() => setIsClassModalOpen(false)}
+                    disabled={isCreatingClass}
+                  >
+                    <Icons.X /> Bekor qilish
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <TemplateDownloadModal
+        isOpen={isTemplateModalOpen}
+        onClose={() => setIsTemplateModalOpen(false)}
+        availableClasses={availableClasses}
+        onDownload={handleTemplateDownload}
+      />
     </div>
   );
 }

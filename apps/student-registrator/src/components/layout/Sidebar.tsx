@@ -24,6 +24,7 @@ export function Sidebar({
     { to: '/students', icon: <Icons.Users />, label: "O'quvchilar" },
     { to: '/classes', icon: <Icons.School />, label: "Sinflar" },
     { to: '/devices', icon: <Icons.Monitor />, label: "Qurilmalar" },
+    { to: '/audit-logs', icon: <Icons.FileSpreadsheet />, label: "Audit loglar" },
   ];
 
   return (

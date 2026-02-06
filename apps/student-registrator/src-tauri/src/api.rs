@@ -84,6 +84,7 @@ impl ApiClient {
         &self,
         school_id: &str,
         name: &str,
+        gender: &str,
         device_student_id: Option<&str>,
         class_id: Option<&str>,
         first_name: Option<&str>,
@@ -98,6 +99,7 @@ impl ApiClient {
         let payload = json!({
             "student": {
                 "name": name,
+                "gender": gender,
                 "firstName": first_name,
                 "lastName": last_name,
                 "fatherName": father_name,

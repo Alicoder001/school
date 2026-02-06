@@ -6,6 +6,7 @@ export * from './ui.types';
 export type {
   DeviceConfig,
   DeviceConnectionResult,
+  StudentDeviceLiveCheckResult,
   RegisterResult,
   ProvisioningDetails,
   ProvisioningDeviceLink,
@@ -15,6 +16,11 @@ export type {
   AuthUser,
   SchoolInfo,
   ClassInfo,
+  SchoolStudent,
+  SchoolStudentsResponse,
+  StudentDeviceDiagnostic,
+  StudentDiagnosticsRow,
+  StudentDiagnosticsResponse,
   SchoolDeviceInfo,
   RecreateUserResult,
 } from '../api';

@@ -705,7 +705,7 @@ const Students: React.FC = () => {
               options={classes.map((c) => ({ label: c.name, value: c.id }))}
             />
           </Form.Item>
-          <Form.Item name="parentName" label="Ota-ona ismi">
+          <Form.Item name="fatherName" label="Otasining ismi">
             <Input placeholder="Masalan: Aliyev Vali" />
           </Form.Item>
           <Form.Item name="parentPhone" label="Telefon raqami">

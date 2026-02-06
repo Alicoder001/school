@@ -68,7 +68,8 @@ export function DevicesPage() {
       setWebhookInfo(info);
     } catch (err) {
       console.error('Failed to load webhook info:', err);
-      addToast('Webhook ma\'lumotlarini yuklashda xato', 'error');
+      const message = err instanceof Error ? err.message : 'Webhook ma\'lumotlarini yuklashda xato';
+      addToast(message, 'error');
     } finally {
       setWebhookLoading(false);
     }
@@ -120,7 +121,8 @@ export function DevicesPage() {
       }
     } catch (err) {
       console.error('Failed to load backend devices:', err);
-      addToast('Qurilmalarni yuklashda xato', 'error');
+      const message = err instanceof Error ? err.message : 'Qurilmalarni yuklashda xato';
+      addToast(message, 'error');
     } finally {
       setBackendLoading(false);
     }

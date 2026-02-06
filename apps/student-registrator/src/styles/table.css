@@ -2,6 +2,13 @@
 
 .table-container {
   overflow-x: auto;
+  overflow-y: visible;
+}
+
+/* Allow popovers to escape the table container when active */
+.table-container:has(.diagnostics-hover:hover),
+.table-container:has(.diagnostics-hover.is-open) {
+  overflow: visible !important;
 }
 
 .table {
@@ -24,6 +31,24 @@
   white-space: nowrap;
   text-transform: uppercase;
   letter-spacing: 0.025em;
+}
+
+.table-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+.table-sort:hover {
+  color: var(--text-color);
 }
 
 .table tbody tr {
@@ -57,6 +82,25 @@
   vertical-align: middle;
   max-height: 64px;
   overflow: hidden;
+}
+
+.table td.error-reason-cell {
+  max-width: 320px;
+}
+
+.error-reason-text {
+  display: inline-block;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--error-color);
+  font-size: 0.8125rem;
+}
+
+.error-reason-muted {
+  color: var(--text-muted);
+  font-size: 0.8125rem;
 }
 
 .table td.empty-cell {
@@ -354,3 +398,123 @@ select.input {
     font-size: 0.78rem;
   }
 }
+
+/* Pagination */
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--border-color);
+  background: var(--card-bg);
+}
+
+.pagination-info {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+.pagination-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pagination-page {
+  min-width: 64px;
+  text-align: center;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-color);
+}
+
+/* Table Selection */
+.table-checkbox {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: var(--primary-color);
+}
+
+.table tbody tr.selected {
+  background: var(--primary-bg);
+}
+
+.table tbody tr.selected:hover {
+  background: var(--primary-bg);
+}
+
+/* Sortable Headers */
+.table-header-sortable {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  cursor: pointer;
+  user-select: none;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  padding: 0;
+}
+
+.table-header-sortable:hover {
+  color: var(--text-color);
+}
+
+.table-header-sortable .sort-icon {
+  width: 14px;
+  height: 14px;
+  opacity: 0.5;
+  transition: opacity 0.15s ease;
+}
+
+.table-header-sortable:hover .sort-icon,
+.table-header-sortable.active .sort-icon {
+  opacity: 1;
+}
+
+.table-header-sortable.active {
+  color: var(--primary-color);
+}
+
+/* Selection toolbar */
+.selection-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 1rem;
+  background: var(--primary-bg);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.selection-count {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--primary-color);
+}
+
+/* Student avatar */
+.student-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--hover-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.student-avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+

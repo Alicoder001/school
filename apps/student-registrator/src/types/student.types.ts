@@ -12,6 +12,8 @@ export interface StudentRow {
   imageBase64?: string;
   status: "pending" | "success" | "error";
   error?: string;
+  errorCode?: string;
+  errorRaw?: string;
   source: "manual" | "import"; // Qayerdan kelgani
   isEditing?: boolean; // Inline edit uchun
 }

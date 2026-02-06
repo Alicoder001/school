@@ -100,12 +100,12 @@ model Student {
   firstName          String   @default("")
   lastName           String   @default("")
   fatherName         String?
+  gender             Gender   @default(MALE)
   schoolId           String
   school             School   @relation(fields: [schoolId], references: [id])
   classId            String?
   class              Class?   @relation(fields: [classId], references: [id])
   parentPhone        String?
-  parentName         String?
   photoUrl           String?
   isActive           Boolean  @default(true)
   deviceSyncStatus   ProvisioningStatus?
@@ -151,6 +151,11 @@ model Device {
 enum DeviceType {
   ENTRANCE
   EXIT
+}
+
+enum Gender {
+  MALE
+  FEMALE
 }
 
 enum ProvisioningStatus {

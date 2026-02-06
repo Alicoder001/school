@@ -10,6 +10,7 @@ import { AddStudentsPage } from './pages/AddStudentsPage';
 import { StudentsPage } from './pages/StudentsPage';
 import { DevicesPage } from './pages/DevicesPage';
 import { ClassesPage } from './pages/ClassesPage';
+import { AuditLogsPage } from './pages/AuditLogsPage';
 import type { AuthUser } from './types';
 
 // Toast context
@@ -50,6 +51,7 @@ function App() {
             <Route path="/students" element={<StudentsPage />} />
             <Route path="/classes" element={<ClassesPage />} />
             <Route path="/devices" element={<DevicesPage />} />
+            <Route path="/audit-logs" element={<AuditLogsPage />} />
             <Route path="*" element={<Navigate to="/add-students" replace />} />
           </Routes>
         </Layout>

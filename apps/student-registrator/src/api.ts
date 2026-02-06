@@ -26,6 +26,15 @@ export interface DeviceConnectionResult {
   deviceId?: string;
 }
 
+export interface StudentDeviceLiveCheckResult {
+  deviceId: string;
+  deviceExternalId?: string | null;
+  status: 'PRESENT' | 'ABSENT' | 'OFFLINE' | 'EXPIRED';
+  present: boolean;
+  message?: string | null;
+  checkedAt: string;
+}
+
 export interface RegisterResult {
   employeeNo: string;
   provisioningId?: string;
@@ -74,6 +83,40 @@ export interface ProvisioningLogEntry {
   message?: string | null;
   payload?: Record<string, any> | null;
   createdAt: string;
+  student?: {
+    id: string;
+    name: string;
+    firstName?: string;
+    lastName?: string;
+    deviceStudentId?: string | null;
+  } | null;
+  device?: {
+    id: string;
+    name: string;
+    deviceId?: string | null;
+    location?: string | null;
+  } | null;
+}
+
+export interface ProvisioningAuditQuery {
+  page?: number;
+  limit?: number;
+  q?: string;
+  level?: 'INFO' | 'WARN' | 'ERROR' | '';
+  stage?: string;
+  status?: string;
+  provisioningId?: string;
+  studentId?: string;
+  deviceId?: string;
+  from?: string;
+  to?: string;
+}
+
+export interface ProvisioningAuditResponse {
+  data: ProvisioningLogEntry[];
+  total: number;
+  page: number;
+  limit: number;
 }
 
 export interface UserInfoEntry {
@@ -172,6 +215,28 @@ async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Re
   return fetch(url, { ...options, headers });
 }
 
+async function readErrorMessage(res: Response, fallback: string): Promise<string> {
+  const text = await res.text().catch(() => "");
+  if (!text) return fallback;
+  try {
+    const parsed = JSON.parse(text);
+    if (typeof parsed?.error === "string" && parsed.error.trim()) return parsed.error.trim();
+    if (typeof parsed?.message === "string" && parsed.message.trim()) return parsed.message.trim();
+  } catch {
+    // keep raw text
+  }
+  return text;
+}
+
+async function assertSchoolScopedResponse(res: Response, fallback: string): Promise<void> {
+  if (res.ok) return;
+  if (res.status === 404) {
+    logout();
+    throw new Error("Sessiya eskirgan: maktab topilmadi. Qayta login qiling.");
+  }
+  throw new Error(await readErrorMessage(res, fallback));
+}
+
 export interface SchoolInfo {
   id: string;
   name: string;
@@ -184,6 +249,59 @@ export interface ClassInfo {
   gradeLevel: number;
   schoolId: string;
   totalStudents?: number;
+}
+
+export interface SchoolStudent {
+  id: string;
+  name: string;
+  gender?: 'MALE' | 'FEMALE';
+  firstName?: string;
+  lastName?: string;
+  fatherName?: string | null;
+  classId?: string | null;
+  class?: {
+    id: string;
+    name: string;
+  } | null;
+  deviceStudentId?: string | null;
+  deviceSyncStatus?: 'PENDING' | 'PROCESSING' | 'PARTIAL' | 'CONFIRMED' | 'FAILED' | null;
+}
+
+export interface SchoolStudentsResponse {
+  data: SchoolStudent[];
+  total: number;
+  page: number;
+}
+
+export interface StudentDeviceDiagnostic {
+  deviceId: string;
+  deviceName: string;
+  deviceExternalId?: string | null;
+  status: 'SUCCESS' | 'FAILED' | 'PENDING' | 'MISSING';
+  lastError?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface StudentDiagnosticsRow {
+  studentId: string;
+  studentName: string;
+  firstName?: string;
+  lastName?: string;
+  fatherName?: string | null;
+  classId?: string | null;
+  className?: string | null;
+  deviceStudentId?: string | null;
+  devices: StudentDeviceDiagnostic[];
+}
+
+export interface StudentDiagnosticsResponse {
+  devices: Array<{
+    id: string;
+    name: string;
+    deviceId?: string | null;
+    isActive?: boolean | null;
+  }>;
+  data: StudentDiagnosticsRow[];
 }
 
 export interface SchoolDeviceInfo {
@@ -214,32 +332,83 @@ export async function fetchSchools(): Promise<SchoolInfo[]> {
   // If user has schoolId, return just their school
   if (user.schoolId) {
     const res = await fetchWithAuth(`${BACKEND_URL}/schools/${user.schoolId}`);
-    if (!res.ok) throw new Error('Failed to fetch school');
+    await assertSchoolScopedResponse(res, 'Failed to fetch school');
     const school = await res.json();
     return [school];
   }
   
   // SUPER_ADMIN can see all schools
   const res = await fetchWithAuth(`${BACKEND_URL}/schools`);
-  if (!res.ok) throw new Error('Failed to fetch schools');
+  if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to fetch schools'));
   return res.json();
 }
 
 export async function fetchClasses(schoolId: string): Promise<ClassInfo[]> {
   const res = await fetchWithAuth(`${BACKEND_URL}/schools/${schoolId}/classes`);
-  if (!res.ok) throw new Error('Failed to fetch classes');
+  await assertSchoolScopedResponse(res, 'Failed to fetch classes');
+  return res.json();
+}
+
+export async function fetchSchoolStudents(
+  schoolId: string,
+  params: { classId?: string; search?: string; page?: number } = {},
+): Promise<SchoolStudentsResponse> {
+  const query = new URLSearchParams();
+  if (params.classId) query.set('classId', params.classId);
+  if (params.search) query.set('search', params.search);
+  if (params.page) query.set('page', String(params.page));
+  const suffix = query.toString() ? `?${query.toString()}` : '';
+  const res = await fetchWithAuth(`${BACKEND_URL}/schools/${schoolId}/students${suffix}`);
+  if (!res.ok) throw new Error('Failed to fetch students');
+  return res.json();
+}
+
+export async function fetchStudentDiagnostics(
+  schoolId: string,
+  params: { classId?: string; search?: string; page?: number } = {},
+): Promise<StudentDiagnosticsResponse> {
+  const query = new URLSearchParams();
+  if (params.classId) query.set('classId', params.classId);
+  if (params.search) query.set('search', params.search);
+  if (params.page) query.set('page', String(params.page));
+  const suffix = query.toString() ? `?${query.toString()}` : '';
+  const res = await fetchWithAuth(`${BACKEND_URL}/schools/${schoolId}/students/device-diagnostics${suffix}`);
+  if (!res.ok) throw new Error('Failed to fetch student diagnostics');
+  return res.json();
+}
+
+export async function updateStudentProfile(
+  studentId: string,
+  payload: {
+    firstName?: string;
+    lastName?: string;
+    fatherName?: string;
+    gender?: 'male' | 'female' | 'MALE' | 'FEMALE';
+    classId?: string;
+    parentPhone?: string;
+    deviceStudentId?: string;
+  },
+): Promise<SchoolStudent> {
+  const res = await fetchWithAuth(`${BACKEND_URL}/students/${studentId}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(text || 'Failed to update student');
+  }
   return res.json();
 }
 
 export async function fetchSchoolDevices(schoolId: string): Promise<SchoolDeviceInfo[]> {
   const res = await fetchWithAuth(`${BACKEND_URL}/schools/${schoolId}/devices`);
-  if (!res.ok) throw new Error('Failed to fetch devices');
+  await assertSchoolScopedResponse(res, 'Failed to fetch devices');
   return res.json();
 }
 
 export async function getWebhookInfo(schoolId: string): Promise<WebhookInfo> {
   const res = await fetchWithAuth(`${BACKEND_URL}/schools/${schoolId}/webhook-info`);
-  if (!res.ok) throw new Error('Failed to fetch webhook info');
+  await assertSchoolScopedResponse(res, 'Failed to fetch webhook info');
   return res.json();
 }
 
@@ -333,6 +502,16 @@ export async function deleteDevice(id: string): Promise<boolean> {
 
 export async function testDeviceConnection(deviceId: string): Promise<DeviceConnectionResult> {
   return invoke<DeviceConnectionResult>('test_device_connection', { deviceId });
+}
+
+export async function checkStudentOnDevice(
+  deviceId: string,
+  employeeNo: string,
+): Promise<StudentDeviceLiveCheckResult> {
+  return invoke<StudentDeviceLiveCheckResult>('check_student_on_device', {
+    deviceId,
+    employeeNo,
+  });
 }
 
 // ============ Student Registration ============
@@ -450,12 +629,55 @@ export async function getProvisioningLogs(
   return res.json();
 }
 
+export async function getSchoolProvisioningLogs(
+  schoolId: string,
+  query: ProvisioningAuditQuery = {},
+): Promise<ProvisioningAuditResponse> {
+  const params = new URLSearchParams();
+  if (query.page) params.set('page', String(query.page));
+  if (query.limit) params.set('limit', String(query.limit));
+  if (query.q) params.set('q', query.q);
+  if (query.level) params.set('level', query.level);
+  if (query.stage) params.set('stage', query.stage);
+  if (query.status) params.set('status', query.status);
+  if (query.provisioningId) params.set('provisioningId', query.provisioningId);
+  if (query.studentId) params.set('studentId', query.studentId);
+  if (query.deviceId) params.set('deviceId', query.deviceId);
+  if (query.from) params.set('from', query.from);
+  if (query.to) params.set('to', query.to);
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+  const res = await fetchWithAuth(`${BACKEND_URL}/schools/${schoolId}/provisioning-logs${suffix}`);
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(text || 'Failed to fetch audit logs');
+  }
+  return res.json();
+}
+
 export async function retryProvisioning(
   provisioningId: string,
   deviceIds: string[] = [],
-): Promise<{ ok: boolean; updated?: number }> {
+): Promise<{
+  ok: boolean;
+  updated?: number;
+  targetDeviceIds?: string[];
+  connectionCheck?: {
+    checked: number;
+    failed: number;
+    missingCredentials: number;
+  };
+}> {
   const token = getAuthToken();
-  return invoke<{ ok: boolean; updated?: number }>('retry_provisioning', {
+  return invoke<{
+    ok: boolean;
+    updated?: number;
+    targetDeviceIds?: string[];
+    connectionCheck?: {
+      checked: number;
+      failed: number;
+      missingCredentials: number;
+    };
+  }>('retry_provisioning', {
     provisioningId,
     backendUrl: BACKEND_URL,
     backendToken: token || '',

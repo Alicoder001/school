@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getProvisioning, getProvisioningLogs, retryProvisioning } from '../../api';
 import { Icons } from '../ui/Icons';
 import type { ProvisioningDetails, ProvisioningLogEntry, RegisterResult } from '../../types';
+import { useGlobalToast } from '../../hooks/useToast';
 
 interface ProvisioningPanelProps {
   provisioningId?: string | null;
@@ -12,6 +13,7 @@ export function ProvisioningPanel({
   provisioningId,
   registerResult,
 }: ProvisioningPanelProps) {
+  const { addToast } = useGlobalToast();
   const [details, setDetails] = useState<ProvisioningDetails | null>(null);
   const [logs, setLogs] = useState<ProvisioningLogEntry[]>([]);
   const [loading, setLoading] = useState(false);
@@ -68,7 +70,14 @@ export function ProvisioningPanel({
     setLoading(true);
     setError(null);
     try {
-      await retryProvisioning(provisioningId, failed);
+      const result = await retryProvisioning(provisioningId, failed);
+      const checked = result.connectionCheck?.checked ?? 0;
+      const failedChecks = result.connectionCheck?.failed ?? 0;
+      const missing = result.connectionCheck?.missingCredentials ?? 0;
+      addToast(
+        `Retry yuborildi. Tekshirildi: ${checked}, ulanish xato: ${failedChecks}, sozlama yo'q: ${missing}`,
+        failedChecks > 0 || missing > 0 ? 'error' : 'success',
+      );
       await fetchDetails();
     } catch (err) {
       setError(String(err));
@@ -211,6 +220,12 @@ export function ProvisioningPanel({
               Loglar ko'p: oxirgi 50 ta ko'rsatildi.
             </div>
           )}
+        </div>
+      )}
+
+      {provisioningId && !loading && !error && logs.length === 0 && (
+        <div className="notice notice-warning">
+          Hozircha loglar yo'q. Qayta yangilang yoki provisioning amalini qayta ishga tushiring.
         </div>
       )}
     </div>

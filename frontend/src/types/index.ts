@@ -10,6 +10,7 @@ export type EffectiveAttendanceStatus =
 
 // Device type
 export type DeviceType = "ENTRANCE" | "EXIT";
+export type Gender = "MALE" | "FEMALE";
 
 // Event type
 export type EventType = "IN" | "OUT";
@@ -106,11 +107,14 @@ export interface Student {
   id: string;
   deviceStudentId?: string;
   name: string;
+  gender?: Gender;
+  firstName?: string;
+  lastName?: string;
+  fatherName?: string;
   schoolId: string;
   classId?: string;
   class?: Class;
   parentPhone?: string;
-  parentName?: string;
   photoUrl?: string;
   isActive: boolean;
   createdAt: string;
