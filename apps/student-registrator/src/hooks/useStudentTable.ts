@@ -318,6 +318,12 @@ export function useStudentTable(): UseStudentTableReturn {
         s.id === id ? { ...s, status: 'success' as const } : s
       ));
     } catch (err) {
+      console.error("[Save Student] registerStudent failed:", {
+        studentId: student.id,
+        name: fullName,
+        error: err instanceof Error ? err.message : String(err || "Unknown error"),
+        raw: err,
+      });
       const normalized = normalizeSaveError(err);
       setStudents(prev => prev.map(s => 
         s.id === id ? { 

@@ -1423,6 +1423,18 @@ export default async function (fastify: FastifyInstance) {
         auditRequestId = requestId;
         auditTargetDeviceIds = targetDeviceIds;
         auditTargetAllActive = targetAllActive;
+        fastify.log.info(
+          {
+            schoolId,
+            requestId,
+            studentId,
+            hasImage: Boolean(body?.faceImageBase64 || body?.faceImage),
+            classId: studentPayload?.classId || body?.classId,
+            targetDeviceIdsCount: targetDeviceIds.length,
+            targetAllActive,
+          },
+          "students.provision start",
+        );
 
         const payloadFirstName = normalizeNamePart(studentPayload?.firstName || "");
         const payloadLastName = normalizeNamePart(studentPayload?.lastName || "");
@@ -1754,6 +1766,16 @@ export default async function (fastify: FastifyInstance) {
           },
         });
 
+        fastify.log.info(
+          {
+            schoolId,
+            studentId: result.student.id,
+            provisioningId: result.provisioning.id,
+            status: result.provisioning.status,
+            targetDevices: result.targetDevices.length,
+          },
+          "students.provision success",
+        );
         return {
           student: result.student,
           studentId: result.student.id,
@@ -1763,6 +1785,10 @@ export default async function (fastify: FastifyInstance) {
           targetDevices: result.targetDevices,
         };
       } catch (err: any) {
+        fastify.log.error(
+          { err, schoolId: auditSchoolId, requestId: auditRequestId },
+          "students.provision failed",
+        );
         if (auditSchoolId) {
           await logProvisioningEvent({
             schoolId: auditSchoolId,
@@ -1832,6 +1858,17 @@ export default async function (fastify: FastifyInstance) {
       if (!provisioning) {
         return reply.status(404).send({ error: "Provisioning not found" });
       }
+
+      fastify.log.info(
+        {
+          provisioningId: id,
+          status,
+          deviceId: body.deviceId,
+          deviceExternalId: body.deviceExternalId,
+          deviceName: body.deviceName,
+        },
+        "provisioning.device-result received",
+      );
 
       const auth = await ensureProvisioningAuth(
         request,
@@ -2008,6 +2045,7 @@ export default async function (fastify: FastifyInstance) {
         deviceStatus: result.link.status,
       };
     } catch (err) {
+      fastify.log.error({ err }, "provisioning.device-result failed");
       return sendHttpError(reply, err);
     }
   });

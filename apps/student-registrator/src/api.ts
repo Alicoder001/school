@@ -194,6 +194,7 @@ export function logout(): void {
 }
 
 export async function login(email: string, password: string): Promise<{ token: string; user: AuthUser }> {
+  console.debug('[Auth] login attempt', { email, backendUrl: BACKEND_URL });
   const res = await fetch(`${BACKEND_URL}/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -202,6 +203,7 @@ export async function login(email: string, password: string): Promise<{ token: s
   
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: 'Login failed' }));
+    console.warn('[Auth] login failed', { status: res.status, error: err.error || 'Login failed' });
     throw new Error(err.error || 'Login failed');
   }
   
@@ -221,7 +223,11 @@ async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Re
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
-  return fetch(url, { ...options, headers });
+  const method = options.method || 'GET';
+  console.debug('[API] fetchWithAuth', { method, url });
+  const res = await fetch(url, { ...options, headers });
+  console.debug('[API] response', { method, url, status: res.status, ok: res.ok });
+  return res;
 }
 
 async function readErrorMessage(res: Response, fallback: string): Promise<string> {
@@ -540,6 +546,12 @@ export async function registerStudent(
 ): Promise<RegisterResult> {
   const token = getAuthToken();
   const user = getAuthUser();
+  console.debug('[Register] register_student', {
+    backendUrl: BACKEND_URL,
+    hasToken: Boolean(token),
+    schoolId: user?.schoolId || '',
+    targetDeviceIds: options?.targetDeviceIds?.length || 0,
+  });
   
   return invoke<RegisterResult>('register_student', {
     name,
@@ -703,6 +715,7 @@ export async function syncStudentToDevices(studentId: string): Promise<boolean> 
   if (!user?.schoolId) return false;
 
   try {
+    console.debug('[Sync] start', { studentId, schoolId: user.schoolId, backendUrl: BACKEND_URL });
     // 1. Find the last provisioning ID for this student from audit logs
     const response = await getSchoolProvisioningLogs(user.schoolId, {
       studentId,
@@ -718,7 +731,9 @@ export async function syncStudentToDevices(studentId: string): Promise<boolean> 
     }
 
     // 2. Retry the provisioning
+    console.debug('[Sync] retry provisioning', { provisioningId: lastLog.provisioningId });
     const result = await retryProvisioning(lastLog.provisioningId);
+    console.debug('[Sync] retry result', result);
     return result.ok;
   } catch (err) {
     console.error(`[Sync] Failed to sync student ${studentId}:`, err);
