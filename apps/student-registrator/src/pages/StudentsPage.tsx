@@ -8,6 +8,8 @@ import {
   getAuthUser,
   updateStudentProfile,
   syncStudentToDevices,
+  BACKEND_URL,
+  fileToBase64,
 } from '../api';
 import { useGlobalToast } from '../hooks/useToast';
 import { useTableSelection } from '../hooks/useTableSelection';
@@ -167,6 +169,8 @@ export function StudentsPage() {
   const [editFatherName, setEditFatherName] = useState('');
   const [editClassId, setEditClassId] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
+  const [editImageFile, setEditImageFile] = useState<File | null>(null);
+  const [editImagePreview, setEditImagePreview] = useState<string>('');
 
   const [page, setPage] = useState(1);
   
@@ -258,6 +262,8 @@ export function StudentsPage() {
     setEditLastName(student.lastName || lastName);
     setEditFatherName(student.fatherName || fatherName);
     setEditClassId(student.classId || '');
+    setEditImageFile(null);
+    setEditImagePreview(student.photoUrl ? buildPhotoUrl(student.photoUrl) : '');
   };
 
   const cancelEdit = () => setEditingStudent(null);
@@ -266,11 +272,17 @@ export function StudentsPage() {
     if (!editingStudent) return;
     setSavingEdit(true);
     try {
+      let faceImageBase64: string | undefined = undefined;
+      if (editImageFile) {
+        const base64 = await fileToBase64(editImageFile);
+        faceImageBase64 = base64;
+      }
       await updateStudentProfile(editingStudent.studentId, {
         firstName: editFirstName.trim(),
         lastName: editLastName.trim(),
         fatherName: editFatherName.trim() || undefined,
         classId: editClassId,
+        faceImageBase64,
       });
       addToast("O'quvchi yangilandi", 'success');
       cancelEdit();
@@ -292,6 +304,25 @@ export function StudentsPage() {
     } finally {
       setSavingEdit(false);
     }
+  };
+
+  const buildPhotoUrl = (url?: string | null) => {
+    if (!url) return '';
+    if (url.startsWith('http://') || url.startsWith('https://')) return url;
+    return `${BACKEND_URL}${url}`;
+  };
+
+  const handleEditImageChange = (file: File | null) => {
+    setEditImageFile(file);
+    if (!file) {
+      setEditImagePreview('');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setEditImagePreview(String(reader.result || ''));
+    };
+    reader.readAsDataURL(file);
   };
 
   const runLiveCheck = async (row: StudentDiagnosticsRow) => {
@@ -368,6 +399,15 @@ export function StudentsPage() {
       accessorKey: 'studentName',
       sortable: true,
       width: '25%',
+    },
+    {
+      header: 'Rasm',
+      cell: (row) => {
+        const url = buildPhotoUrl(row.photoUrl);
+        if (!url) return <span className="text-secondary">-</span>;
+        return <img src={url} alt="photo" className="student-avatar" />;
+      },
+      width: '80px',
     },
     {
       header: 'Sinf',
@@ -480,6 +520,24 @@ export function StudentsPage() {
                     <option key={item.id} value={item.id}>{item.name}</option>
                   ))}
                 </select>
+              </div>
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label className="label">Rasm</label>
+                <input
+                  className="input"
+                  type="file"
+                  accept="image/jpeg,image/png"
+                  onChange={(e) => handleEditImageChange(e.target.files?.[0] || null)}
+                />
+              </div>
+              <div className="form-group">
+                {editImagePreview ? (
+                  <img src={editImagePreview} alt="preview" className="student-avatar" />
+                ) : (
+                  <div className="text-secondary">Rasm tanlanmagan</div>
+                )}
               </div>
             </div>
             <div className="form-actions">

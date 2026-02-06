@@ -91,6 +91,7 @@ impl ApiClient {
         last_name: Option<&str>,
         father_name: Option<&str>,
         parent_phone: Option<&str>,
+        face_image_base64: Option<&str>,
         target_device_ids: Option<&[String]>,
         request_id: &str,
     ) -> Result<ProvisioningStartResponse, String> {
@@ -105,7 +106,8 @@ impl ApiClient {
                 "fatherName": father_name,
                 "deviceStudentId": device_student_id,
                 "classId": class_id,
-                "parentPhone": parent_phone
+                "parentPhone": parent_phone,
+                "faceImageBase64": face_image_base64
             },
             "requestId": request_id,
             "targetAllActive": target_device_ids.is_empty(),

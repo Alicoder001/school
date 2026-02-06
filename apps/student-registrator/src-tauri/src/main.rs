@@ -27,6 +27,9 @@ fn main() {
             // Provisioning
             get_provisioning,
             retry_provisioning,
+            // Clone
+            clone_students_to_device,
+            clone_device_to_device,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -29,6 +29,8 @@ import {
   DEVICE_STUDENT_ID_LENGTH,
 } from "../../../config";
 import crypto from "crypto";
+import fs from "fs";
+import path from "path";
 
 function normalizeHeader(value: string): string {
   return value
@@ -146,6 +148,41 @@ async function logProvisioningEvent(params: {
   } catch (err) {
     console.error("[ProvisioningLog] Failed to write log:", err);
   }
+}
+
+function normalizeBase64(input: string): string {
+  const trimmed = String(input || "").trim();
+  if (!trimmed) return "";
+  const comma = trimmed.indexOf(",");
+  if (trimmed.startsWith("data:") && comma !== -1) {
+    return trimmed.slice(comma + 1).trim();
+  }
+  return trimmed;
+}
+
+function isBase64(value: string): boolean {
+  if (!value) return false;
+  try {
+    return Buffer.from(value, "base64").toString("base64") === value.replace(/\s+/g, "");
+  } catch {
+    return false;
+  }
+}
+
+async function saveStudentFaceImage(params: {
+  studentId: string;
+  faceImageBase64: string;
+}): Promise<string | null> {
+  const base64 = normalizeBase64(params.faceImageBase64);
+  if (!base64 || !isBase64(base64)) return null;
+  const buffer = Buffer.from(base64, "base64");
+  if (buffer.length === 0) return null;
+  const uploadsDir = path.join(process.cwd(), "uploads", "student-faces");
+  await fs.promises.mkdir(uploadsDir, { recursive: true });
+  const filename = `${params.studentId}.jpg`;
+  const filePath = path.join(uploadsDir, filename);
+  await fs.promises.writeFile(filePath, buffer);
+  return `/uploads/student-faces/${filename}`;
 }
 
 type ProvisioningAuth = { user: any | null; tokenAuth: boolean };
@@ -586,6 +623,7 @@ export default async function (fastify: FastifyInstance) {
             classId: student.classId,
             className: student.class?.name || null,
             deviceStudentId: student.deviceStudentId,
+            photoUrl: student.photoUrl,
             devices: perDevice,
           };
         });
@@ -1357,6 +1395,16 @@ export default async function (fastify: FastifyInstance) {
             .send({ error: "Bu sinfda bunday o'quvchi mavjud" });
         }
 
+        if (data.faceImageBase64) {
+          const photoUrl = await saveStudentFaceImage({
+            studentId: id,
+            faceImageBase64: data.faceImageBase64,
+          });
+          if (photoUrl) {
+            (sanitized as any).photoUrl = photoUrl;
+          }
+        }
+
         const student = await prisma.student.update({
           where: { id },
           data: sanitized,
@@ -1414,6 +1462,7 @@ export default async function (fastify: FastifyInstance) {
 
         const body = request.body || {};
         const studentPayload = body.student || body;
+        const faceImageBase64 = studentPayload?.faceImageBase64 || body?.faceImageBase64 || "";
         const studentId = body.studentId as string | undefined;
         const requestId = body.requestId ? String(body.requestId) : undefined;
         const targetDeviceIds = Array.isArray(body.targetDeviceIds)
@@ -1742,6 +1791,19 @@ export default async function (fastify: FastifyInstance) {
               deviceSyncUpdatedAt: new Date(),
             },
           });
+
+          if (faceImageBase64) {
+            const photoUrl = await saveStudentFaceImage({
+              studentId: studentRecord.id,
+              faceImageBase64,
+            });
+            if (photoUrl) {
+              studentRecord = await tx.student.update({
+                where: { id: studentRecord.id },
+                data: { photoUrl },
+              });
+            }
+          }
 
           return {
             student: studentRecord,

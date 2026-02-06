@@ -280,6 +280,7 @@ export interface SchoolStudent {
   } | null;
   deviceStudentId?: string | null;
   deviceSyncStatus?: 'PENDING' | 'PROCESSING' | 'PARTIAL' | 'CONFIRMED' | 'FAILED' | null;
+  photoUrl?: string | null;
 }
 
 export interface SchoolStudentsResponse {
@@ -306,6 +307,7 @@ export interface StudentDiagnosticsRow {
   classId?: string | null;
   className?: string | null;
   deviceStudentId?: string | null;
+  photoUrl?: string | null;
   devices: StudentDeviceDiagnostic[];
 }
 
@@ -402,6 +404,7 @@ export async function updateStudentProfile(
     classId?: string;
     parentPhone?: string;
     deviceStudentId?: string;
+    faceImageBase64?: string;
   },
 ): Promise<SchoolStudent> {
   const res = await fetchWithAuth(`${BACKEND_URL}/students/${studentId}`, {
@@ -455,6 +458,52 @@ export async function updateSchoolDevice(
     throw new Error(text || 'Failed to update backend device');
   }
   return res.json();
+}
+
+export async function cloneStudentsToDevice(params: {
+  backendDeviceId: string;
+  pageSize?: number;
+  maxStudents?: number;
+}): Promise<{
+  ok: boolean;
+  device: string;
+  processed: number;
+  success: number;
+  failed: number;
+  skipped: number;
+  errors: Array<{ studentId?: string; name?: string; reason?: string }>;
+}> {
+  const token = getAuthToken();
+  const user = getAuthUser();
+  return invoke('clone_students_to_device', {
+    backendDeviceId: params.backendDeviceId,
+    backendUrl: BACKEND_URL,
+    backendToken: token || '',
+    schoolId: user?.schoolId || '',
+    pageSize: params.pageSize,
+    maxStudents: params.maxStudents,
+  });
+}
+
+export async function cloneDeviceToDevice(params: {
+  sourceDeviceId: string;
+  targetDeviceId: string;
+  limit?: number;
+}): Promise<{
+  ok: boolean;
+  source: string;
+  target: string;
+  processed: number;
+  success: number;
+  failed: number;
+  skipped: number;
+  errors: Array<{ employeeNo?: string; name?: string; reason?: string }>;
+}> {
+  return invoke('clone_device_to_device', {
+    sourceDeviceId: params.sourceDeviceId,
+    targetDeviceId: params.targetDeviceId,
+    limit: params.limit,
+  });
 }
 
 export async function deleteSchoolDevice(id: string): Promise<boolean> {

@@ -12,6 +12,8 @@ import {
   getWebhookInfo,
   BACKEND_URL,
   deleteDevice,
+  cloneStudentsToDevice,
+  cloneDeviceToDevice,
 } from '../api';
 import { useGlobalToast } from '../hooks/useToast';
 import { Icons } from '../components/ui/Icons';
@@ -43,6 +45,25 @@ export function DevicesPage() {
   const [backendDevices, setBackendDevices] = useState<SchoolDeviceInfo[]>([]);
   const [backendLoading, setBackendLoading] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<SchoolDeviceInfo | null>(null);
+  const [pendingClone, setPendingClone] = useState<SchoolDeviceInfo | null>(null);
+  const [pendingDeviceClone, setPendingDeviceClone] = useState<SchoolDeviceInfo | null>(null);
+  const [sourceCloneId, setSourceCloneId] = useState<string>('');
+  const [cloneStatus, setCloneStatus] = useState<{
+    running: boolean;
+    processed: number;
+    success: number;
+    failed: number;
+    skipped: number;
+    errors: Array<{ studentId?: string; name?: string; reason?: string }>;
+  } | null>(null);
+  const [deviceCloneStatus, setDeviceCloneStatus] = useState<{
+    running: boolean;
+    processed: number;
+    success: number;
+    failed: number;
+    skipped: number;
+    errors: Array<{ employeeNo?: string; name?: string; reason?: string }>;
+  } | null>(null);
   const { addToast } = useGlobalToast();
 
   useEffect(() => {
@@ -418,6 +439,67 @@ export function DevicesPage() {
     }
   };
 
+  const handleStartClone = async () => {
+    if (!pendingClone) return;
+    setCloneStatus({ running: true, processed: 0, success: 0, failed: 0, skipped: 0, errors: [] });
+    try {
+      const result = await cloneStudentsToDevice({
+        backendDeviceId: pendingClone.id,
+      });
+      setCloneStatus({
+        running: false,
+        processed: result.processed,
+        success: result.success,
+        failed: result.failed,
+        skipped: result.skipped,
+        errors: result.errors || [],
+      });
+      addToast(
+        `Clone yakunlandi: ${result.success} muvaffaqiyatli, ${result.failed} xato, ${result.skipped} o'tkazildi.`,
+        result.failed > 0 ? 'error' : 'success',
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Clone jarayonida xato';
+      setCloneStatus((prev) => prev ? { ...prev, running: false } : null);
+      addToast(message, 'error');
+    }
+  };
+
+  const handleStartDeviceClone = async () => {
+    if (!pendingDeviceClone || !sourceCloneId) return;
+    const source = getCredentialsForBackend(
+      backendDevices.find((d) => d.id === sourceCloneId) || ({} as SchoolDeviceInfo),
+    );
+    const target = getCredentialsForBackend(pendingDeviceClone);
+    if (!source || !target) {
+      addToast("Manba yoki maqsad qurilmaning local sozlamalari topilmadi", 'error');
+      return;
+    }
+    setDeviceCloneStatus({ running: true, processed: 0, success: 0, failed: 0, skipped: 0, errors: [] });
+    try {
+      const result = await cloneDeviceToDevice({
+        sourceDeviceId: source.id,
+        targetDeviceId: target.id,
+      });
+      setDeviceCloneStatus({
+        running: false,
+        processed: result.processed,
+        success: result.success,
+        failed: result.failed,
+        skipped: result.skipped,
+        errors: result.errors || [],
+      });
+      addToast(
+        `Clone yakunlandi: ${result.success} muvaffaqiyatli, ${result.failed} xato, ${result.skipped} o'tkazildi.`,
+        result.failed > 0 ? 'error' : 'success',
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Clone jarayonida xato';
+      setDeviceCloneStatus((prev) => prev ? { ...prev, running: false } : null);
+      addToast(message, 'error');
+    }
+  };
+
   const deviceLimitReached = credentials.length >= 6;
   const openCreateModal = () => {
     setEditingBackendId(null);
@@ -749,6 +831,24 @@ export function DevicesPage() {
                           <Icons.Edit />
                         </button>
                         <button
+                          className="btn-icon"
+                          onClick={() => setPendingClone(backend)}
+                          title="Clone (barcha o'quvchilarni yuklash)"
+                        >
+                          <Icons.Download />
+                        </button>
+                        <button
+                          className="btn-icon"
+                          onClick={() => {
+                            setPendingDeviceClone(backend);
+                            setSourceCloneId('');
+                            setDeviceCloneStatus(null);
+                          }}
+                          title="Clone (qurilmadan qurilmaga)"
+                        >
+                          <Icons.Link />
+                        </button>
+                        <button
                           className="btn-icon btn-danger"
                           onClick={() => setPendingDelete(backend)}
                           title="O'chirish"
@@ -958,6 +1058,143 @@ export function DevicesPage() {
                   disabled={loading}
                 >
                   <Icons.X /> Bekor qilish
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pendingClone && (
+        <div className="modal-overlay" onClick={() => !cloneStatus?.running && setPendingClone(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Clone mode</h3>
+              <button
+                className="modal-close"
+                onClick={() => !cloneStatus?.running && setPendingClone(null)}
+                disabled={cloneStatus?.running}
+              >
+                <Icons.X />
+              </button>
+            </div>
+            <div className="modal-body">
+              <p className="notice notice-warning">
+                <strong>{pendingClone.name}</strong> qurilmasiga bazadagi barcha o'quvchilar yuboriladi.
+              </p>
+
+              {cloneStatus && (
+                <div className="notice">
+                  <div>Jami: {cloneStatus.processed}</div>
+                  <div>Muvaffaqiyatli: {cloneStatus.success}</div>
+                  <div>Xato: {cloneStatus.failed}</div>
+                  <div>O'tkazildi: {cloneStatus.skipped}</div>
+                </div>
+              )}
+
+              {cloneStatus?.errors?.length ? (
+                <div className="notice notice-error" style={{ maxHeight: 200, overflow: 'auto' }}>
+                  {cloneStatus.errors.slice(0, 20).map((item, idx) => (
+                    <div key={`${item.studentId || 'x'}-${idx}`}>
+                      {(item.name || item.studentId || 'Student')}: {item.reason || "Xato"}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
+              <div className="form-actions">
+                <button
+                  type="button"
+                  className="button button-primary"
+                  onClick={handleStartClone}
+                  disabled={cloneStatus?.running}
+                >
+                  <Icons.Download /> {cloneStatus?.running ? 'Yuklanmoqda...' : 'Boshlash'}
+                </button>
+                <button
+                  type="button"
+                  className="button button-secondary"
+                  onClick={() => setPendingClone(null)}
+                  disabled={cloneStatus?.running}
+                >
+                  <Icons.X /> Yopish
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pendingDeviceClone && (
+        <div className="modal-overlay" onClick={() => !deviceCloneStatus?.running && setPendingDeviceClone(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Qurilmadan qurilmaga clone</h3>
+              <button
+                className="modal-close"
+                onClick={() => !deviceCloneStatus?.running && setPendingDeviceClone(null)}
+                disabled={deviceCloneStatus?.running}
+              >
+                <Icons.X />
+              </button>
+            </div>
+            <div className="modal-body">
+              <p className="notice notice-warning">
+                <strong>{pendingDeviceClone.name}</strong> qurilmasiga boshqa qurilmadagi o'quvchilar ko'chiriladi.
+              </p>
+
+              <div className="form-group">
+                <label>Manba qurilma</label>
+                <select
+                  className="input"
+                  value={sourceCloneId}
+                  onChange={(e) => setSourceCloneId(e.target.value)}
+                  disabled={deviceCloneStatus?.running}
+                >
+                  <option value="">Tanlang</option>
+                  {backendDevices
+                    .filter((d) => d.id !== pendingDeviceClone.id)
+                    .map((d) => (
+                      <option key={d.id} value={d.id}>{d.name}</option>
+                    ))}
+                </select>
+              </div>
+
+              {deviceCloneStatus && (
+                <div className="notice">
+                  <div>Jami: {deviceCloneStatus.processed}</div>
+                  <div>Muvaffaqiyatli: {deviceCloneStatus.success}</div>
+                  <div>Xato: {deviceCloneStatus.failed}</div>
+                  <div>O'tkazildi: {deviceCloneStatus.skipped}</div>
+                </div>
+              )}
+
+              {deviceCloneStatus?.errors?.length ? (
+                <div className="notice notice-error" style={{ maxHeight: 200, overflow: 'auto' }}>
+                  {deviceCloneStatus.errors.slice(0, 20).map((item, idx) => (
+                    <div key={`${item.employeeNo || 'x'}-${idx}`}>
+                      {(item.name || item.employeeNo || 'Student')}: {item.reason || "Xato"}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
+              <div className="form-actions">
+                <button
+                  type="button"
+                  className="button button-primary"
+                  onClick={handleStartDeviceClone}
+                  disabled={deviceCloneStatus?.running || !sourceCloneId}
+                >
+                  <Icons.Download /> {deviceCloneStatus?.running ? 'Yuklanmoqda...' : 'Boshlash'}
+                </button>
+                <button
+                  type="button"
+                  className="button button-secondary"
+                  onClick={() => setPendingDeviceClone(null)}
+                  disabled={deviceCloneStatus?.running}
+                >
+                  <Icons.X /> Yopish
                 </button>
               </div>
             </div>

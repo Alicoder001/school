@@ -8,6 +8,8 @@ use chrono::{Datelike, Local, Timelike, Utc, Duration};
 use uuid::Uuid;
 use std::collections::{HashMap, HashSet};
 use serde_json::Value;
+use reqwest::Client;
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 
 const MAX_FACE_IMAGE_BYTES: usize = 200 * 1024;
 
@@ -60,6 +62,20 @@ fn find_local_device_index(
                     .position(|d| d.device_id.as_deref() == Some(external))
             })
         })
+}
+
+fn device_match_label(device: &DeviceConfig) -> String {
+    if let Some(name) = device.backend_id.as_ref() {
+        if !name.trim().is_empty() {
+            return name.to_string();
+        }
+    }
+    if let Some(device_id) = device.device_id.as_ref() {
+        if !device_id.trim().is_empty() {
+            return device_id.to_string();
+        }
+    }
+    format!("{}:{}", device.host, device.port)
 }
 
 // ============ Device Management Commands ============
@@ -316,6 +332,7 @@ pub async fn register_student(
                 last_name.as_deref(),
                 father_name.as_deref(),
                 parent_phone.as_deref(),
+                Some(&face_image_base64),
                 target_device_ids.as_deref(),
                 &request_id,
             )
@@ -922,6 +939,296 @@ pub async fn retry_provisioning(
             "failed": failed,
             "missingCredentials": missing_credentials
         }
+    }))
+}
+
+// ============ Clone Commands ============
+
+#[tauri::command]
+pub async fn clone_students_to_device(
+    backend_device_id: String,
+    backend_url: Option<String>,
+    backend_token: Option<String>,
+    school_id: Option<String>,
+    page_size: Option<u32>,
+    max_students: Option<u32>,
+) -> Result<Value, String> {
+    let backend_url = backend_url.filter(|v| !v.trim().is_empty())
+        .ok_or("backendUrl is required")?;
+    let school_id = school_id.filter(|v| !v.trim().is_empty())
+        .ok_or("schoolId is required")?;
+    let token = backend_token.filter(|v| !v.trim().is_empty());
+    let per_page = page_size.unwrap_or(50).max(10).min(200);
+    let limit = max_students.unwrap_or(10000);
+
+    let local_devices = load_devices();
+    let local_index = find_local_device_index(&local_devices, &backend_device_id, None)
+        .ok_or("Local ulanish sozlamasi topilmadi")?;
+    let target_device = local_devices[local_index].clone();
+    if is_credentials_expired(&target_device) {
+        return Err("Ulanish sozlamalari muddati tugagan".to_string());
+    }
+
+    let client = Client::new();
+    let mut page = 1u32;
+    let mut total_processed = 0u32;
+    let mut success = 0u32;
+    let mut failed = 0u32;
+    let mut skipped = 0u32;
+    let mut errors: Vec<Value> = Vec::new();
+
+    loop {
+        if total_processed >= limit {
+            break;
+        }
+        let url = format!(
+            "{}/schools/{}/students?page={}",
+            backend_url, school_id, page
+        );
+        let mut req = client.get(&url);
+        if let Some(t) = token.as_ref() {
+            req = req.header("Authorization", format!("Bearer {}", t));
+        }
+        let res = req.send().await.map_err(|e| e.to_string())?;
+        if !res.status().is_success() {
+            let text = res.text().await.unwrap_or_default();
+            return Err(text);
+        }
+        let payload: Value = res.json().await.map_err(|e| e.to_string())?;
+        let data = payload.get("data").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+        if data.is_empty() {
+            break;
+        }
+
+        for item in data {
+            if total_processed >= limit {
+                break;
+            }
+            total_processed += 1;
+            let student_id = item.get("id").and_then(|v| v.as_str()).unwrap_or("");
+            let device_student_id = item.get("deviceStudentId").and_then(|v| v.as_str()).unwrap_or("");
+            let full_name = item.get("name").and_then(|v| v.as_str()).unwrap_or("");
+            let gender = item.get("gender").and_then(|v| v.as_str()).unwrap_or("MALE");
+            let photo_url = item.get("photoUrl").and_then(|v| v.as_str()).unwrap_or("");
+
+            if device_student_id.is_empty() || full_name.is_empty() || photo_url.is_empty() {
+                skipped += 1;
+                errors.push(serde_json::json!({
+                    "studentId": student_id,
+                    "name": full_name,
+                    "reason": "Ma'lumot yetarli emas (deviceStudentId/name/photoUrl)"
+                }));
+                continue;
+            }
+
+            let photo_full_url = if photo_url.starts_with("http://") || photo_url.starts_with("https://") {
+                photo_url.to_string()
+            } else {
+                format!("{}{}", backend_url, photo_url)
+            };
+
+            let img_res = client.get(&photo_full_url).send().await;
+            let bytes = match img_res {
+                Ok(resp) if resp.status().is_success() => resp.bytes().await.map_err(|e| e.to_string())?.to_vec(),
+                _ => {
+                    failed += 1;
+                    errors.push(serde_json::json!({
+                        "studentId": student_id,
+                        "name": full_name,
+                        "reason": "Rasm yuklab bo'lmadi"
+                    }));
+                    continue;
+                }
+            };
+
+            let face_base64 = STANDARD.encode(&bytes);
+            let hik = HikvisionClient::new(target_device.clone());
+
+            let now = Local::now();
+            let begin_time = to_device_time(now);
+            let end_time = to_device_time(now.with_year(now.year() + 10).unwrap_or(now));
+
+            let create = hik.create_user(device_student_id, full_name, gender, &begin_time, &end_time).await;
+            if !create.ok {
+                failed += 1;
+                errors.push(serde_json::json!({
+                    "studentId": student_id,
+                    "name": full_name,
+                    "reason": create.error_msg.unwrap_or_else(|| "Create failed".to_string())
+                }));
+                continue;
+            }
+
+            let upload = hik.upload_face(device_student_id, full_name, gender, &face_base64).await;
+            if !upload.ok {
+                failed += 1;
+                errors.push(serde_json::json!({
+                    "studentId": student_id,
+                    "name": full_name,
+                    "reason": upload.error_msg.unwrap_or_else(|| "Upload failed".to_string())
+                }));
+                continue;
+            }
+
+            success += 1;
+        }
+
+        page += 1;
+    }
+
+    Ok(serde_json::json!({
+        "ok": true,
+        "device": device_match_label(&target_device),
+        "processed": total_processed,
+        "success": success,
+        "failed": failed,
+        "skipped": skipped,
+        "errors": errors
+    }))
+}
+
+#[tauri::command]
+pub async fn clone_device_to_device(
+    source_device_id: String,
+    target_device_id: String,
+    limit: Option<u32>,
+) -> Result<Value, String> {
+    let source = get_device_by_id(&source_device_id)
+        .ok_or("Manba qurilma topilmadi")?;
+    let target = get_device_by_id(&target_device_id)
+        .ok_or("Maqsad qurilma topilmadi")?;
+
+    if is_credentials_expired(&source) {
+        return Err("Manba qurilmaning ulanish sozlamalari muddati tugagan".to_string());
+    }
+    if is_credentials_expired(&target) {
+        return Err("Maqsad qurilmaning ulanish sozlamalari muddati tugagan".to_string());
+    }
+
+    let src_client = HikvisionClient::new(source.clone());
+    let tgt_client = HikvisionClient::new(target.clone());
+
+    let mut offset = 0i32;
+    let page_size = 30i32;
+    let max = limit.unwrap_or(10000) as i32;
+
+    let mut processed = 0u32;
+    let mut success = 0u32;
+    let mut failed = 0u32;
+    let mut skipped = 0u32;
+    let mut errors: Vec<Value> = Vec::new();
+
+    loop {
+        if processed as i32 >= max {
+            break;
+        }
+        let response = src_client.search_users(offset, page_size).await;
+        let info = response.user_info_search;
+        let users = info.and_then(|v| v.user_info).unwrap_or_default();
+        if users.is_empty() {
+            break;
+        }
+
+        for user in users {
+            if processed as i32 >= max {
+                break;
+            }
+            processed += 1;
+
+            let employee_no = user.employee_no.clone();
+            let name = user.name.clone();
+            let gender_raw = user.gender.clone().unwrap_or_else(|| "male".to_string());
+            let gender = match gender_raw.trim().to_lowercase().as_str() {
+                "female" | "f" | "ayol" | "2" => "female",
+                "male" | "m" | "erkak" | "1" => "male",
+                "ma" | "male " => "male",
+                "fa" | "female " => "female",
+                "male" | "female" => "male",
+                other if other.contains("female") => "female",
+                _ => "male",
+            }.to_string();
+            let face_url = user.face_url.clone().unwrap_or_default();
+
+            if employee_no.trim().is_empty() || name.trim().is_empty() || face_url.trim().is_empty() {
+                skipped += 1;
+                errors.push(serde_json::json!({
+                    "employeeNo": employee_no,
+                    "name": name,
+                    "reason": "Ma'lumot yetarli emas (employeeNo/name/faceURL)"
+                }));
+                continue;
+            }
+
+            let face_bytes = match src_client.fetch_face_image(&face_url).await {
+                Ok(bytes) => bytes,
+                Err(_) => {
+                    failed += 1;
+                    errors.push(serde_json::json!({
+                        "employeeNo": employee_no,
+                        "name": name,
+                        "reason": "Rasmni manba qurilmadan olishda xato"
+                    }));
+                    continue;
+                }
+            };
+            let face_base64 = STANDARD.encode(&face_bytes);
+
+            let existing = tgt_client.get_user_by_employee_no(&employee_no).await;
+            if existing.is_none() {
+                let now = Local::now();
+                let begin_time = to_device_time(now);
+                let end_time = to_device_time(now.with_year(now.year() + 10).unwrap_or(now));
+                let create = tgt_client
+                    .create_user(&employee_no, &name, &gender, &begin_time, &end_time)
+                    .await;
+                if !create.ok {
+                    let reason = create.error_msg.unwrap_or_else(|| "Create failed".to_string());
+                    let lower = reason.to_lowercase();
+                    if lower.contains("already exist")
+                        || lower.contains("duplicate")
+                        || lower.contains("exist")
+                        || lower.contains("already")
+                    {
+                        skipped += 1;
+                    } else {
+                        failed += 1;
+                        errors.push(serde_json::json!({
+                            "employeeNo": employee_no,
+                            "name": name,
+                            "reason": reason
+                        }));
+                    }
+                    continue;
+                }
+            }
+
+            let upload = tgt_client
+                .upload_face(&employee_no, &name, &gender, &face_base64)
+                .await;
+            if !upload.ok {
+                failed += 1;
+                errors.push(serde_json::json!({
+                    "employeeNo": employee_no,
+                    "name": name,
+                    "reason": upload.error_msg.unwrap_or_else(|| "Upload failed".to_string())
+                }));
+                continue;
+            }
+            success += 1;
+        }
+
+        offset += page_size;
+    }
+
+    Ok(serde_json::json!({
+        "ok": true,
+        "source": device_match_label(&source),
+        "target": device_match_label(&target),
+        "processed": processed,
+        "success": success,
+        "failed": failed,
+        "skipped": skipped,
+        "errors": errors
     }))
 }
 
