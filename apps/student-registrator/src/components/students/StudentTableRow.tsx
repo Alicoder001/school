@@ -11,9 +11,20 @@ interface StudentTableRowProps {
   onEdit: (id: string, updates: Partial<StudentRow>) => void;
   onDelete: (id: string) => void;
   onSave: (id: string) => Promise<void>;
+  onRefreshFace?: (id: string) => Promise<boolean>;
+  isFaceRefreshing?: boolean;
 }
 
-export function StudentTableRow({ index, student, availableClasses, onEdit, onDelete, onSave }: StudentTableRowProps) {
+export function StudentTableRow({
+  index,
+  student,
+  availableClasses,
+  onEdit,
+  onDelete,
+  onSave,
+  onRefreshFace,
+  isFaceRefreshing = false,
+}: StudentTableRowProps) {
   const { addToast } = useGlobalToast();
   const [isSaving, setIsSaving] = useState(false);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
@@ -158,14 +169,26 @@ export function StudentTableRow({ index, student, availableClasses, onEdit, onDe
               )}
             </div>
           ) : (
-            <button
-              className="btn-upload"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={student.status === 'success'}
-              title="Rasm yuklash"
-            >
-              <Icons.Upload />
-            </button>
+            <div className="image-preview-wrapper">
+              <button
+                className="btn-upload"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={student.status === 'success'}
+                title="Rasm yuklash"
+              >
+                <Icons.Upload />
+              </button>
+              {onRefreshFace && student.source === 'import' && student.deviceStudentId && (
+                <button
+                  className="btn-change-image"
+                  onClick={() => void onRefreshFace(student.id)}
+                  disabled={isFaceRefreshing}
+                  title="Qurilmadan rasmni qayta olish"
+                >
+                  {isFaceRefreshing ? <span className="spinner" /> : <Icons.Refresh />}
+                </button>
+              )}
+            </div>
           )}
           <input
             ref={fileInputRef}

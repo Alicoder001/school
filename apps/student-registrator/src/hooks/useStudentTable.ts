@@ -9,7 +9,7 @@ interface UseStudentTableReturn {
   addStudent: (student: Omit<StudentRow, 'id' | 'source' | 'status'>) => void;
   updateStudent: (id: string, updates: Partial<StudentRow>) => void;
   deleteStudent: (id: string) => void;
-  importStudents: (rows: Omit<StudentRow, 'id' | 'source' | 'status'>[]) => void;
+  importStudents: (rows: Omit<StudentRow, 'id' | 'source' | 'status'>[]) => StudentRow[];
   applyClassMapping: (className: string, classId: string, classDisplayName?: string) => void;
   saveStudent: (id: string, targetDeviceIds?: string[]) => Promise<void>;
   saveAllPending: (targetDeviceIds?: string[]) => Promise<{
@@ -188,6 +188,7 @@ export function useStudentTable(options?: {
       status: 'pending',
     }));
     setStudents(prev => [...prev, ...imported]);
+    return imported;
   }, []);
 
   // Update student
@@ -279,7 +280,7 @@ export function useStudentTable(options?: {
           fatherName: student.fatherName,
           parentPhone: student.parentPhone,
           classId: student.classId,
-          targetDeviceIds: targetDeviceIds && targetDeviceIds.length > 0 ? targetDeviceIds : undefined,
+          targetDeviceIds,
         }
       );
 

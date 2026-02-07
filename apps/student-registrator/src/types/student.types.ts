@@ -15,6 +15,8 @@ export interface StudentRow {
   errorCode?: string;
   errorRaw?: string;
   source: "manual" | "import"; // Qayerdan kelgani
+  deviceStudentId?: string;
+  sourceDeviceBackendId?: string;
   isEditing?: boolean; // Inline edit uchun
 }
 

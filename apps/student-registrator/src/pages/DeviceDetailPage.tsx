@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   BACKEND_URL,
   cloneDeviceToDevice,
@@ -91,6 +91,7 @@ type ImportPreview = {
 
 export function DeviceDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const location = useLocation();
   const navigate = useNavigate();
   const { addToast } = useGlobalToast();
 
@@ -107,6 +108,8 @@ export function DeviceDetailPage() {
   const [usersTotal, setUsersTotal] = useState(0);
   const [hasMoreUsers, setHasMoreUsers] = useState(true);
   const [selectedUser, setSelectedUser] = useState<UserInfoEntry | null>(null);
+  const [deviceFaceMap, setDeviceFaceMap] = useState<Record<string, string>>({});
+  const [deviceFaceLoading, setDeviceFaceLoading] = useState<Record<string, boolean>>({});
   const [selectedStudentDetail, setSelectedStudentDetail] = useState<StudentProfileDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [editFirstName, setEditFirstName] = useState('');
@@ -138,6 +141,7 @@ export function DeviceDetailPage() {
     meanLatencyMs: number;
   } | null>(null);
   const importIdempotencyRef = useRef<string | null>(null);
+  const autoImportKeyRef = useRef<string | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [sourceCloneId, setSourceCloneId] = useState<string>('');
   const [showSecrets, setShowSecrets] = useState(false);
@@ -323,6 +327,9 @@ export function DeviceDetailPage() {
     setIsEditingUser(false);
     setEditFaceBase64('');
     setEditFacePreview('');
+    if ((user.numOfFace || 0) > 0) {
+      void loadDeviceFace(user);
+    }
 
     const auth = getAuthUser();
     if (!auth?.schoolId || !user.employeeNo) return;
@@ -343,6 +350,33 @@ export function DeviceDetailPage() {
     } finally {
       setDetailLoading(false);
     }
+  };
+
+  const loadDeviceFace = async (user: UserInfoEntry) => {
+    if (!localDevice?.id || !user.employeeNo) return;
+    if (!(user.numOfFace && user.numOfFace > 0)) return;
+    if (deviceFaceMap[user.employeeNo]) return;
+    if (deviceFaceLoading[user.employeeNo]) return;
+
+    setDeviceFaceLoading((prev) => ({ ...prev, [user.employeeNo]: true }));
+    try {
+      const face = await getUserFace(localDevice.id, user.employeeNo);
+      setDeviceFaceMap((prev) => ({
+        ...prev,
+        [user.employeeNo]: `data:image/jpeg;base64,${face.imageBase64}`,
+      }));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Qurilmadan rasmni olib bo\'lmadi';
+      addToast(message, 'error');
+    } finally {
+      setDeviceFaceLoading((prev) => ({ ...prev, [user.employeeNo]: false }));
+    }
+  };
+
+  const closeSelectedUserDetail = () => {
+    setSelectedUser(null);
+    setSelectedStudentDetail(null);
+    setIsEditingUser(false);
   };
 
   const handleFaceFileChange = async (file?: File) => {
@@ -946,6 +980,14 @@ export function DeviceDetailPage() {
   }, [id]);
 
   useEffect(() => {
+    const queryTab = new URLSearchParams(location.search).get('tab');
+    const allowedTabs: DetailTab[] = ['overview', 'configuration', 'users', 'webhook', 'sync'];
+    if (queryTab && allowedTabs.includes(queryTab as DetailTab)) {
+      setTab(queryTab as DetailTab);
+    }
+  }, [location.search]);
+
+  useEffect(() => {
     if (tab === 'users') {
       setSelectedUser(null);
       setSelectedStudentDetail(null);
@@ -954,6 +996,17 @@ export function DeviceDetailPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, localDevice?.id]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const shouldAutoOpenImport = params.get('import') === '1';
+    const key = `${location.pathname}${location.search}`;
+    if (!shouldAutoOpenImport) return;
+    if (tab !== 'users' || usersLoading || users.length === 0) return;
+    if (autoImportKeyRef.current === key) return;
+    autoImportKeyRef.current = key;
+    void openImportWizard();
+  }, [location.pathname, location.search, tab, usersLoading, users.length]);
 
   useEffect(() => {
     const loadHealth = async () => {
@@ -1191,6 +1244,13 @@ export function DeviceDetailPage() {
                 {users.map((user) => (
                   <div className="device-item" key={`${user.employeeNo}-${user.name}`}>
                     <div className="device-item-header">
+                      {deviceFaceMap[user.employeeNo] && (
+                        <img
+                          src={deviceFaceMap[user.employeeNo]}
+                          alt={user.name}
+                          className="student-avatar"
+                        />
+                      )}
                       <strong>{user.name}</strong>
                       <div className="device-item-meta">
                         <span className="badge">EmployeeNo: {user.employeeNo}</span>
@@ -1201,6 +1261,14 @@ export function DeviceDetailPage() {
                       </div>
                     </div>
                     <div className="device-item-actions">
+                      <button
+                        className="btn-icon"
+                        title="Rasmni olish"
+                        onClick={() => loadDeviceFace(user)}
+                        disabled={(user.numOfFace || 0) === 0 || Boolean(deviceFaceLoading[user.employeeNo])}
+                      >
+                        <Icons.Download />
+                      </button>
                       <button
                         className="btn-icon"
                         title="Detail"
@@ -1239,110 +1307,6 @@ export function DeviceDetailPage() {
                 <Icons.ChevronDown /> {hasMoreUsers ? 'Yana yuklash' : 'Hammasi yuklandi'}
               </button>
             </div>
-            {selectedUser && (
-              <div className="card" style={{ marginTop: 12 }}>
-                <div className="panel-header">
-                  <div className="panel-title">User detail</div>
-                  <button
-                    type="button"
-                    className="btn-icon"
-                    onClick={() => {
-                      setSelectedUser(null);
-                      setSelectedStudentDetail(null);
-                      setIsEditingUser(false);
-                    }}
-                  >
-                    <Icons.X />
-                  </button>
-                </div>
-                <p><strong>Ism:</strong> {selectedUser.name}</p>
-                <p><strong>EmployeeNo:</strong> {selectedUser.employeeNo}</p>
-                <p><strong>Gender:</strong> {selectedUser.gender || '-'}</p>
-                <p><strong>Face count:</strong> {selectedUser.numOfFace ?? '-'}</p>
-                {detailLoading && <p className="notice">DB detail yuklanmoqda...</p>}
-                {!detailLoading && !selectedStudentDetail && (
-                  <p className="notice notice-warning">DB da mos o'quvchi topilmadi (device-only user).</p>
-                )}
-                <div className="form-actions">
-                  <button
-                    type="button"
-                    className="button button-secondary"
-                    onClick={() => setIsEditingUser((prev) => !prev)}
-                    disabled={!selectedStudentDetail}
-                    title={!selectedStudentDetail ? "Avval user DB bilan bog'langan bo'lishi kerak" : ''}
-                  >
-                    <Icons.Edit /> {isEditingUser ? 'Editni yopish' : 'DB + Device Edit'}
-                  </button>
-                </div>
-                {!detailLoading && selectedStudentDetail && (
-                  <>
-                    <p><strong>DB Student ID:</strong> {selectedStudentDetail.id}</p>
-                    <p><strong>Sinf:</strong> {selectedStudentDetail.class?.name || '-'}</p>
-                    <p><strong>Telefon:</strong> {selectedStudentDetail.parentPhone || '-'}</p>
-                    {selectedStudentDetail.photoUrl && !editFacePreview && (
-                      <img src={buildPhotoUrl(selectedStudentDetail.photoUrl)} alt="student" className="student-avatar" />
-                    )}
-                    {editFacePreview && (
-                      <img src={editFacePreview} alt="student preview" className="student-avatar" />
-                    )}
-                  </>
-                )}
-                {isEditingUser && selectedStudentDetail && (
-                  <div style={{ marginTop: 12 }}>
-                    <div className="form-group">
-                      <label>Familiya</label>
-                      <input className="input" value={editLastName} onChange={(e) => setEditLastName(e.target.value)} />
-                    </div>
-                    <div className="form-group">
-                      <label>Ism</label>
-                      <input className="input" value={editFirstName} onChange={(e) => setEditFirstName(e.target.value)} />
-                    </div>
-                    <div className="form-group">
-                      <label>Otasining ismi</label>
-                      <input className="input" value={editFatherName} onChange={(e) => setEditFatherName(e.target.value)} />
-                    </div>
-                    <div className="form-group">
-                      <label>Telefon</label>
-                      <input className="input" value={editParentPhone} onChange={(e) => setEditParentPhone(e.target.value)} />
-                    </div>
-                    <div className="form-group">
-                      <label>Class ID</label>
-                      <input className="input" value={editClassId} onChange={(e) => setEditClassId(e.target.value)} />
-                    </div>
-                    <div className="form-group">
-                      <label>Jins</label>
-                      <select
-                        className="input"
-                        value={editGender}
-                        onChange={(e) => setEditGender(e.target.value as 'MALE' | 'FEMALE')}
-                      >
-                        <option value="MALE">MALE</option>
-                        <option value="FEMALE">FEMALE</option>
-                      </select>
-                    </div>
-                    <div className="form-group">
-                      <label>Yangi rasm (ixtiyoriy)</label>
-                      <input
-                        className="input"
-                        type="file"
-                        accept="image/png,image/jpeg"
-                        onChange={(e) => handleFaceFileChange(e.target.files?.[0])}
-                      />
-                    </div>
-                    <div className="form-actions">
-                      <button
-                        type="button"
-                        className="button button-primary"
-                        onClick={handleSaveUserEdit}
-                        disabled={busyAction === `save-edit-${selectedUser.employeeNo}`}
-                      >
-                        <Icons.Save /> Saqlash (DB + Device)
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         )}
 
@@ -1467,6 +1431,124 @@ export function DeviceDetailPage() {
           </div>
         )}
       </div>
+
+      {selectedUser && (
+        <div className="modal-overlay" onClick={closeSelectedUserDetail}>
+          <div className="modal modal-provisioning user-detail-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <h3>User detail</h3>
+                <p className="text-secondary text-xs">{selectedUser.employeeNo}</p>
+              </div>
+              <button className="modal-close" onClick={closeSelectedUserDetail}>
+                <Icons.X />
+              </button>
+            </div>
+            <div className="modal-body user-detail-modal-body">
+              <div className="user-detail-grid">
+                <div className="user-detail-main">
+                  <div className="user-detail-kv">
+                    <p><strong>Ism:</strong> {selectedUser.name}</p>
+                    <p><strong>EmployeeNo:</strong> {selectedUser.employeeNo}</p>
+                    <p><strong>Gender:</strong> {selectedUser.gender || '-'}</p>
+                    <p><strong>Face count:</strong> {selectedUser.numOfFace ?? '-'}</p>
+                  </div>
+                  {detailLoading && <p className="notice">DB detail yuklanmoqda...</p>}
+                  {!detailLoading && !selectedStudentDetail && (
+                    <p className="notice notice-warning">DB da mos o'quvchi topilmadi (device-only user).</p>
+                  )}
+                  <div className="form-actions">
+                    <button
+                      type="button"
+                      className="button button-secondary"
+                      onClick={() => setIsEditingUser((prev) => !prev)}
+                      disabled={!selectedStudentDetail}
+                      title={!selectedStudentDetail ? "Avval user DB bilan bog'langan bo'lishi kerak" : ''}
+                    >
+                      <Icons.Edit /> {isEditingUser ? 'Editni yopish' : 'DB + Device Edit'}
+                    </button>
+                  </div>
+                  {!detailLoading && selectedStudentDetail && (
+                    <div className="user-detail-db-card">
+                      <p><strong>DB Student ID:</strong> {selectedStudentDetail.id}</p>
+                      <p><strong>Sinf:</strong> {selectedStudentDetail.class?.name || '-'}</p>
+                      <p><strong>Telefon:</strong> {selectedStudentDetail.parentPhone || '-'}</p>
+                    </div>
+                  )}
+                  {isEditingUser && selectedStudentDetail && (
+                    <div className="user-detail-form">
+                      <div className="form-group">
+                        <label>Familiya</label>
+                        <input className="input" value={editLastName} onChange={(e) => setEditLastName(e.target.value)} />
+                      </div>
+                      <div className="form-group">
+                        <label>Ism</label>
+                        <input className="input" value={editFirstName} onChange={(e) => setEditFirstName(e.target.value)} />
+                      </div>
+                      <div className="form-group">
+                        <label>Otasining ismi</label>
+                        <input className="input" value={editFatherName} onChange={(e) => setEditFatherName(e.target.value)} />
+                      </div>
+                      <div className="form-group">
+                        <label>Telefon</label>
+                        <input className="input" value={editParentPhone} onChange={(e) => setEditParentPhone(e.target.value)} />
+                      </div>
+                      <div className="form-group">
+                        <label>Class ID</label>
+                        <input className="input" value={editClassId} onChange={(e) => setEditClassId(e.target.value)} />
+                      </div>
+                      <div className="form-group">
+                        <label>Jins</label>
+                        <select
+                          className="input"
+                          value={editGender}
+                          onChange={(e) => setEditGender(e.target.value as 'MALE' | 'FEMALE')}
+                        >
+                          <option value="MALE">MALE</option>
+                          <option value="FEMALE">FEMALE</option>
+                        </select>
+                      </div>
+                      <div className="form-group user-detail-form-wide">
+                        <label>Yangi rasm (ixtiyoriy)</label>
+                        <input
+                          className="input"
+                          type="file"
+                          accept="image/png,image/jpeg"
+                          onChange={(e) => handleFaceFileChange(e.target.files?.[0])}
+                        />
+                      </div>
+                      <div className="form-actions user-detail-form-wide">
+                        <button
+                          type="button"
+                          className="button button-primary"
+                          onClick={handleSaveUserEdit}
+                          disabled={busyAction === `save-edit-${selectedUser.employeeNo}`}
+                        >
+                          <Icons.Save /> Saqlash (DB + Device)
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <aside className="user-detail-side">
+                  {selectedStudentDetail?.photoUrl && !editFacePreview && (
+                    <img src={buildPhotoUrl(selectedStudentDetail.photoUrl)} alt="student" className="user-detail-image" />
+                  )}
+                  {!selectedStudentDetail?.photoUrl && !editFacePreview && deviceFaceMap[selectedUser.employeeNo] && (
+                    <img src={deviceFaceMap[selectedUser.employeeNo]} alt="device face" className="user-detail-image" />
+                  )}
+                  {editFacePreview && (
+                    <img src={editFacePreview} alt="student preview" className="user-detail-image" />
+                  )}
+                  {!selectedStudentDetail?.photoUrl && !deviceFaceMap[selectedUser.employeeNo] && !editFacePreview && (
+                    <div className="user-detail-image-empty">Rasm mavjud emas</div>
+                  )}
+                </aside>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {isImportOpen && (
         <div className="modal-overlay" onClick={() => setIsImportOpen(false)}>

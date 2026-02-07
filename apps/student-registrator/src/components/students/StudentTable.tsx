@@ -7,10 +7,21 @@ interface StudentTableProps {
   onEdit: (id: string, updates: Partial<StudentRow>) => void;
   onDelete: (id: string) => void;
   onSave: (id: string) => Promise<void>;
+  onRefreshFace?: (id: string) => Promise<boolean>;
+  refreshingFaceIds?: string[];
   onAddRow: () => void;
 }
 
-export function StudentTable({ students, availableClasses, onEdit, onDelete, onSave, onAddRow }: StudentTableProps) {
+export function StudentTable({
+  students,
+  availableClasses,
+  onEdit,
+  onDelete,
+  onSave,
+  onRefreshFace,
+  refreshingFaceIds = [],
+  onAddRow,
+}: StudentTableProps) {
   return (
     <div className="table-container">
       <table className="table">
@@ -39,6 +50,8 @@ export function StudentTable({ students, availableClasses, onEdit, onDelete, onS
               onEdit={onEdit}
               onDelete={onDelete}
               onSave={onSave}
+              onRefreshFace={onRefreshFace}
+              isFaceRefreshing={refreshingFaceIds.includes(student.id)}
             />
           ))}
           {/* Empty row with Add button */}

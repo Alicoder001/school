@@ -5,6 +5,8 @@ import {
   createClass,
   fetchSchoolDevices,
   fetchDevices,
+  fetchUsers,
+  getUserFace,
   testDeviceConnection,
   getAuthUser,
 } from '../api';
@@ -24,6 +26,7 @@ import type { ClassInfo, DeviceConfig, SchoolDeviceInfo } from '../types';
 export function AddStudentsPage() {
   const [availableClasses, setAvailableClasses] = useState<ClassInfo[]>([]);
   const [loading, setLoading] = useState(false);
+  const [isDeviceImporting, setIsDeviceImporting] = useState(false);
   const [backendDevices, setBackendDevices] = useState<SchoolDeviceInfo[]>([]);
   const [credentials, setCredentials] = useState<DeviceConfig[]>([]);
   const [deviceStatus, setDeviceStatus] = useState<Record<string, DeviceStatus>>({});
@@ -37,6 +40,11 @@ export function AddStudentsPage() {
   const [isCreatingClass, setIsCreatingClass] = useState(false);
   const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
   const [isProvModalOpen, setIsProvModalOpen] = useState(false);
+  const [sourceImportDeviceId, setSourceImportDeviceId] = useState('');
+  const [refreshingFaceIds, setRefreshingFaceIds] = useState<string[]>([]);
+  const [isSourceImportModalOpen, setIsSourceImportModalOpen] = useState(false);
+  const [sourceImportDeviceIds, setSourceImportDeviceIds] = useState<string[]>([]);
+  const [isTargetSaveModalOpen, setIsTargetSaveModalOpen] = useState(false);
 
   const resolveDeviceLabel = useCallback((input: string) => {
     if (!backendDevices.length) return input;
@@ -234,10 +242,6 @@ export function AddStudentsPage() {
 
   // Handle save student
   const handleSaveStudent = async (id: string) => {
-    if (selectedDeviceIds.length === 0) {
-      addToast('Qurilma tanlanmagan', 'error');
-      return;
-    }
     try {
       await saveStudent(id, selectedDeviceIds);
       addToast('O\'quvchi saqlandi', 'success');
@@ -250,10 +254,10 @@ export function AddStudentsPage() {
 
   // Handle save all
   const handleSaveAll = async () => {
-    if (selectedDeviceIds.length === 0) {
-      addToast('Qurilma tanlanmagan', 'error');
-      return;
-    }
+    setIsTargetSaveModalOpen(true);
+  };
+
+  const handleConfirmSaveAll = async () => {
     const pendingCount = students.filter(s => s.status === 'pending').length;
     if (pendingCount === 0) {
       addToast('Saqlanishi kerak bo\'lgan o\'quvchilar yo\'q', 'error');
@@ -273,6 +277,7 @@ export function AddStudentsPage() {
         return;
       }
       addToast(`${successCount} ta o'quvchi saqlandi`, 'success');
+      setIsTargetSaveModalOpen(false);
     } catch (err) {
       addToast('Ba\'zi o\'quvchilarni saqlashda xato', 'error');
     }
@@ -366,6 +371,253 @@ export function AddStudentsPage() {
     }
   };
 
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const getFaceWithRetry = useCallback(
+    async (localDeviceId: string, employeeNo: string, attempts = 3): Promise<string | undefined> => {
+      for (let attempt = 1; attempt <= attempts; attempt += 1) {
+        try {
+          const face = await getUserFace(localDeviceId, employeeNo);
+          return face.imageBase64 || undefined;
+        } catch {
+          if (attempt < attempts) {
+            await sleep(250 * attempt);
+          }
+        }
+      }
+      return undefined;
+    },
+    [],
+  );
+
+  const findLocalByBackendDeviceId = useCallback((backendId?: string) => {
+    if (!backendId) return null;
+    const backendDevice = backendDevices.find((d) => d.id === backendId);
+    const normalizedExternalId = (backendDevice?.deviceId || '').trim().toLowerCase();
+    return (
+      credentials.find((item) => item.backendId === backendId) ||
+      credentials.find((item) => (item.deviceId || '').trim().toLowerCase() === normalizedExternalId) ||
+      null
+    );
+  }, [backendDevices, credentials]);
+
+  const refreshFaceForStudent = useCallback(async (studentId: string): Promise<boolean> => {
+    const row = students.find((item) => item.id === studentId);
+    if (!row?.deviceStudentId) {
+      addToast('Bu qator uchun device student ID topilmadi', 'error');
+      return false;
+    }
+    const localDevice = findLocalByBackendDeviceId(row.sourceDeviceBackendId || sourceImportDeviceId || selectedDeviceIds[0]);
+    if (!localDevice?.id) {
+      addToast("Face refresh uchun local credentials topilmadi", 'error');
+      return false;
+    }
+    setRefreshingFaceIds((prev) => (prev.includes(studentId) ? prev : [...prev, studentId]));
+    try {
+      const imageBase64 = await getFaceWithRetry(localDevice.id, row.deviceStudentId, 3);
+      if (!imageBase64) throw new Error("Qurilmadan rasmni olib bo'lmadi");
+      updateStudent(studentId, { imageBase64 });
+      addToast('Rasm yangilandi', 'success');
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Rasmni yangilashda xato';
+      addToast(message, 'error');
+      return false;
+    } finally {
+      setRefreshingFaceIds((prev) => prev.filter((id) => id !== studentId));
+    }
+  }, [students, addToast, findLocalByBackendDeviceId, sourceImportDeviceId, selectedDeviceIds, updateStudent, getFaceWithRetry]);
+
+  const refreshAllMissingFaces = useCallback(async () => {
+    const targetRows = students.filter(
+      (item) => item.source === 'import' && !item.imageBase64 && Boolean(item.deviceStudentId),
+    );
+    if (targetRows.length === 0) {
+      addToast("Rasm yangilash uchun mos qator topilmadi", 'error');
+      return;
+    }
+    let success = 0;
+    let failed = 0;
+    for (const row of targetRows) {
+      const ok = await refreshFaceForStudent(row.id);
+      if (ok) {
+        success += 1;
+      } else {
+        failed += 1;
+      }
+    }
+    addToast(`Rasm refresh yakunlandi: ${success} success, ${failed} failed`, failed > 0 ? 'error' : 'success');
+  }, [students, addToast, refreshFaceForStudent]);
+
+  const splitName = (value: string) => {
+    const cleaned = (value || '').trim();
+    if (!cleaned) return { firstName: '', lastName: '' };
+    const parts = cleaned.split(/\s+/);
+    if (parts.length === 1) return { firstName: parts[0], lastName: '' };
+    return { lastName: parts[0], firstName: parts.slice(1).join(' ') };
+  };
+
+  const openDeviceModeImportModal = () => {
+    if (backendDevices.length === 0) {
+      addToast('Device mode import uchun qurilma tanlanmagan', 'error');
+      return;
+    }
+    const defaults = sourceImportDeviceIds.length > 0
+      ? sourceImportDeviceIds
+      : (selectedDeviceIds.length > 0 ? selectedDeviceIds : [backendDevices[0].id]);
+    setSourceImportDeviceIds(defaults);
+    setIsSourceImportModalOpen(true);
+  };
+
+  const handleConfirmDeviceModeImport = async () => {
+    if (sourceImportDeviceIds.length === 0) {
+      addToast('Manba qurilmalarni tanlang', 'error');
+      return;
+    }
+
+    setSourceImportDeviceId(sourceImportDeviceIds[0] || '');
+    setIsDeviceImporting(true);
+    try {
+      const collected: Array<{
+        employeeNo: string;
+        name: string;
+        gender?: string;
+        numOfFace?: number;
+        sourceBackendId: string;
+      }> = [];
+      const unresolvedSources: string[] = [];
+      for (const backendId of sourceImportDeviceIds) {
+        const backendDevice = backendDevices.find((d) => d.id === backendId);
+        const normalizedExternalId = (backendDevice?.deviceId || '').trim().toLowerCase();
+        const localDevice =
+          credentials.find((item) => item.backendId === backendId) ||
+          credentials.find((item) => (item.deviceId || '').trim().toLowerCase() === normalizedExternalId);
+
+        if (!localDevice?.id) {
+          unresolvedSources.push(backendDevice?.name || backendId);
+          continue;
+        }
+
+        let offset = 0;
+        const limit = 100;
+        for (;;) {
+          const result = await fetchUsers(localDevice.id, { offset, limit });
+          const list = result.UserInfoSearch?.UserInfo || [];
+          const total = result.UserInfoSearch?.totalMatches || 0;
+          if (list.length === 0) break;
+          collected.push(
+            ...list.map((item) => ({
+              employeeNo: item.employeeNo || '',
+              name: item.name || '',
+              gender: item.gender,
+              numOfFace: item.numOfFace,
+              sourceBackendId: backendId,
+            })),
+          );
+          offset += list.length;
+          if (offset >= total) break;
+        }
+      }
+
+      if (collected.length === 0) {
+        if (unresolvedSources.length > 0) {
+          addToast(`Local credentials topilmadi: ${unresolvedSources.join(', ')}`, 'error');
+        } else {
+          addToast('Tanlangan qurilmalarda user topilmadi', 'error');
+        }
+        return;
+      }
+
+      const uniq = new Map<string, {
+        employeeNo: string;
+        name: string;
+        gender?: string;
+        numOfFace?: number;
+        sourceBackendId: string;
+      }>();
+      for (const item of collected) {
+        const key = `${item.employeeNo}::${item.name}`.toLowerCase();
+        if (!uniq.has(key)) uniq.set(key, item);
+      }
+      const merged = Array.from(uniq.values());
+
+      if (merged.length === 0) {
+        addToast('Tanlangan qurilmada user topilmadi', 'error');
+        return;
+      }
+
+      const rows = merged.map((item) => {
+        const parsed = splitName(item.name);
+        const lowerGender = String(item.gender || '').toLowerCase();
+        const gender = lowerGender.startsWith('f') ? 'female' : 'male';
+        return {
+          firstName: parsed.firstName,
+          lastName: parsed.lastName,
+          fatherName: undefined,
+          gender,
+          classId: undefined,
+          className: undefined,
+          parentPhone: undefined,
+          imageBase64: undefined as string | undefined,
+          deviceStudentId: item.employeeNo,
+          sourceDeviceBackendId: item.sourceBackendId,
+        };
+      });
+
+      const importedRows = importStudents(rows);
+      const candidates = importedRows.filter((row) =>
+        Boolean(row.deviceStudentId) &&
+        merged.some((item) => item.employeeNo === row.deviceStudentId && (item.numOfFace || 0) > 0),
+      );
+
+      if (candidates.length === 0) {
+        addToast(`${rows.length} ta user yuklandi. Rasm mavjud emas`, 'success');
+        return;
+      }
+
+      setRefreshingFaceIds((prev) => [...new Set([...prev, ...candidates.map((row) => row.id)])]);
+      addToast(`${rows.length} ta user yuklandi. Rasmlar fon rejimida olinmoqda...`, 'success');
+
+      const concurrency = 4;
+      let cursor = 0;
+      let pulled = 0;
+
+      const worker = async () => {
+        while (cursor < candidates.length) {
+          const idx = cursor;
+          cursor += 1;
+          const row = candidates[idx];
+          const employeeNo = row.deviceStudentId || '';
+          const localForRow = findLocalByBackendDeviceId(row.sourceDeviceBackendId || sourceImportDeviceIds[0]);
+          if (!localForRow?.id) {
+            setRefreshingFaceIds((prev) => prev.filter((id) => id !== row.id));
+            continue;
+          }
+          const imageBase64 = await getFaceWithRetry(localForRow.id, employeeNo, 3);
+          if (imageBase64) {
+            updateStudent(row.id, { imageBase64 });
+            pulled += 1;
+          }
+          setRefreshingFaceIds((prev) => prev.filter((id) => id !== row.id));
+        }
+      };
+
+      await Promise.all(
+        Array.from({ length: Math.min(concurrency, candidates.length) }, () => worker()),
+      );
+      addToast(
+        `Rasm yuklash yakunlandi: ${pulled} ta muvaffaqiyatli, ${candidates.length - pulled} ta muvaffaqiyatsiz`,
+        pulled < candidates.length ? 'error' : 'success',
+      );
+      setIsSourceImportModalOpen(false);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Device mode importda xato';
+      addToast(message, 'error');
+    } finally {
+      setIsDeviceImporting(false);
+    }
+  };
+
   return (
     <div className="page">
       {/* Page Header */}
@@ -385,6 +637,15 @@ export function AddStudentsPage() {
             title="Yangi sinf qo'shish"
           >
             <Icons.Plus /> Sinf qo'shish
+          </button>
+          <button
+            type="button"
+            className="button button-secondary"
+            onClick={openDeviceModeImportModal}
+            disabled={backendDevices.length === 0 || isDeviceImporting}
+            title="Qurilmadan jadvalga import (device mode)"
+          >
+            <Icons.Download /> {isDeviceImporting ? 'Device import...' : 'Device mode import'}
           </button>
           <div className="device-select">
             <button
@@ -575,6 +836,118 @@ export function AddStudentsPage() {
         </div>
       )}
 
+      {isSourceImportModalOpen && (
+        <div className="modal-overlay" onClick={() => !isDeviceImporting && setIsSourceImportModalOpen(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Device mode import: manba qurilmalar</h3>
+              <button
+                className="modal-close"
+                onClick={() => !isDeviceImporting && setIsSourceImportModalOpen(false)}
+                disabled={isDeviceImporting}
+              >
+                <Icons.X />
+              </button>
+            </div>
+            <div className="modal-body">
+              <div className="device-list">
+                {backendDevices.map((device) => {
+                  const checked = sourceImportDeviceIds.includes(device.id);
+                  return (
+                    <label key={device.id} className="device-item" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() =>
+                          setSourceImportDeviceIds((prev) =>
+                            checked ? prev.filter((id) => id !== device.id) : [...prev, device.id],
+                          )
+                        }
+                        disabled={isDeviceImporting}
+                      />
+                      <span>{device.name}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button
+                className="button button-primary"
+                onClick={handleConfirmDeviceModeImport}
+                disabled={isDeviceImporting || sourceImportDeviceIds.length === 0}
+              >
+                {isDeviceImporting ? 'Import qilinmoqda...' : 'Importni boshlash'}
+              </button>
+              <button
+                className="button button-secondary"
+                onClick={() => setIsSourceImportModalOpen(false)}
+                disabled={isDeviceImporting}
+              >
+                Bekor qilish
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isTargetSaveModalOpen && (
+        <div className="modal-overlay" onClick={() => !isSaving && setIsTargetSaveModalOpen(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Saqlash: target qurilmalar</h3>
+              <button
+                className="modal-close"
+                onClick={() => !isSaving && setIsTargetSaveModalOpen(false)}
+                disabled={isSaving}
+              >
+                <Icons.X />
+              </button>
+            </div>
+            <div className="modal-body">
+              <div className="device-list">
+                {backendDevices.map((device) => {
+                  const checked = selectedDeviceIds.includes(device.id);
+                  const status = deviceStatus[device.id] || 'unknown';
+                  return (
+                    <label key={device.id} className="device-item" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => handleToggleDevice(device.id)}
+                        disabled={isSaving}
+                      />
+                      <span>{device.name}</span>
+                      <span className={`badge ${
+                        status === 'online' ? 'badge-success' : status === 'offline' ? 'badge-danger' : ''
+                      }`}>
+                        {status === 'online' ? 'Online' : status === 'offline' ? 'Offline' : "Sozlanmagan"}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button
+                className="button button-primary"
+                onClick={handleConfirmSaveAll}
+                disabled={isSaving}
+              >
+                {isSaving ? 'Saqlanmoqda...' : 'Saqlashni boshlash'}
+              </button>
+              <button
+                className="button button-secondary"
+                onClick={() => setIsTargetSaveModalOpen(false)}
+                disabled={isSaving}
+              >
+                Bekor qilish
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Table */}
       <div className="page-content">
         <StudentTable
@@ -586,6 +959,8 @@ export function AddStudentsPage() {
             addToast('O\'quvchi o\'chirildi', 'success');
           }}
           onSave={handleSaveStudent}
+          onRefreshFace={refreshFaceForStudent}
+          refreshingFaceIds={refreshingFaceIds}
           onAddRow={handleAddRow}
         />
       </div>

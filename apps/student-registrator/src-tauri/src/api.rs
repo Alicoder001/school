@@ -96,7 +96,10 @@ impl ApiClient {
         request_id: &str,
     ) -> Result<ProvisioningStartResponse, String> {
         let url = format!("{}/schools/{}/students/provision", self.base_url, school_id);
-        let target_device_ids = target_device_ids.unwrap_or(&[]).to_vec();
+        let (target_all_active, target_device_ids): (bool, Vec<String>) = match target_device_ids {
+            None => (true, vec![]),           // legacy/default: all active devices
+            Some(ids) => (false, ids.to_vec()), // explicit selection, including empty => no device push
+        };
         let payload = json!({
             "student": {
                 "name": name,
@@ -110,7 +113,7 @@ impl ApiClient {
                 "faceImageBase64": face_image_base64
             },
             "requestId": request_id,
-            "targetAllActive": target_device_ids.is_empty(),
+            "targetAllActive": target_all_active,
             "targetDeviceIds": target_device_ids
         });
 
