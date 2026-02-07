@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   BACKEND_URL,
   cloneDeviceToDevice,
   cloneStudentsToDevice,
+  createImportAuditLog,
   createSchoolStudent,
   deleteUser,
   fetchDevices,
@@ -52,6 +53,21 @@ type ImportRow = {
   error?: string;
 };
 
+type ImportJobStatus = 'PENDING' | 'PROCESSING' | 'SUCCESS' | 'FAILED';
+
+type ImportJob = {
+  id: string;
+  status: ImportJobStatus;
+  retryCount: number;
+  startedAt: string;
+  finishedAt?: string;
+  lastError?: string;
+  processed: number;
+  success: number;
+  failed: number;
+  synced: number;
+};
+
 export function DeviceDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -88,6 +104,9 @@ export function DeviceDetailPage() {
   const [importSyncMode, setImportSyncMode] = useState<'none' | 'current' | 'all' | 'selected'>('none');
   const [importSelectedDeviceIds, setImportSelectedDeviceIds] = useState<string[]>([]);
   const [importPullFace, setImportPullFace] = useState(true);
+  const [importJob, setImportJob] = useState<ImportJob | null>(null);
+  const [importAuditTrail, setImportAuditTrail] = useState<Array<{ at: string; stage: string; message: string }>>([]);
+  const importIdempotencyRef = useRef<string | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [sourceCloneId, setSourceCloneId] = useState<string>('');
   const [showSecrets, setShowSecrets] = useState(false);
@@ -507,7 +526,13 @@ export function DeviceDetailPage() {
       setImportSyncMode('none');
       setImportSelectedDeviceIds(schoolDevice?.id ? [schoolDevice.id] : []);
       setImportPullFace(true);
+      setImportJob(null);
+      setImportAuditTrail([]);
       setIsImportOpen(true);
+      await pushImportAudit('DEVICE_IMPORT_WIZARD_OPEN', 'Import wizard opened', {
+        users: users.length,
+        sourceDeviceId: schoolDevice?.id || null,
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Import wizard ochishda xato';
       addToast(message, 'error');
@@ -525,10 +550,71 @@ export function DeviceDetailPage() {
     return importSelectedDeviceIds;
   };
 
-  const saveImportRows = async () => {
+  const getImportDeviceStatus = (device: SchoolDeviceInfo): 'online' | 'offline' | 'no_credentials' => {
+    const local = findLocalForBackend(device, allLocalDevices);
+    if (!local?.id) return 'no_credentials';
+    if (!device.lastSeenAt) return 'offline';
+    const lastSeen = new Date(device.lastSeenAt).getTime();
+    if (Number.isNaN(lastSeen)) return 'offline';
+    return Date.now() - lastSeen < 2 * 60 * 60 * 1000 ? 'online' : 'offline';
+  };
+
+  const previewStats = useMemo(() => {
+    const total = importRows.length;
+    const invalid = importRows.filter((r) => !r.employeeNo || !r.firstName || !r.lastName || !r.classId).length;
+    const done = importRows.filter((r) => r.status === 'saved').length;
+    const failed = importRows.filter((r) => r.status === 'error').length;
+    const pending = total - done - failed;
+    return { total, invalid, done, failed, pending };
+  }, [importRows]);
+
+  const validateImportRows = (): { ok: boolean; rows: ImportRow[]; errors: number } => {
+    const seen = new Set<string>();
+    let errors = 0;
+    const next = importRows.map((row) => {
+      let error = '';
+      const key = `${row.employeeNo}`.trim();
+      if (!row.employeeNo || !row.firstName || !row.lastName || !row.classId) {
+        error = 'Majburiy maydonlar to\'liq emas';
+      } else if (seen.has(key)) {
+        error = 'Duplicate employeeNo import ichida';
+      }
+      seen.add(key);
+      if (error) errors += 1;
+      return { ...row, error: error || row.error };
+    });
+    return { ok: errors === 0, rows: next, errors };
+  };
+
+  const pushImportAudit = async (
+    stage: string,
+    message: string,
+    payload?: Record<string, unknown>,
+  ) => {
+    const auth = getAuthUser();
+    const at = new Date().toISOString();
+    setImportAuditTrail((prev) => [...prev, { at, stage, message }]);
+    if (!auth?.schoolId) return;
+    try {
+      await createImportAuditLog(auth.schoolId, {
+        stage,
+        status: 'INFO',
+        message,
+        payload,
+      });
+    } catch {
+      // best-effort audit
+    }
+  };
+
+  const processImportRows = async (targetIndexes?: number[], retryOnly = false) => {
     const auth = getAuthUser();
     if (!auth?.schoolId) {
       addToast('Maktab topilmadi', 'error');
+      return;
+    }
+    if (importLoading) {
+      addToast('Import jarayoni allaqachon ishlayapti', 'error');
       return;
     }
     const invalidIndexes = importRows
@@ -543,16 +629,50 @@ export function DeviceDetailPage() {
       return;
     }
 
+    const validation = validateImportRows();
+    setImportRows(validation.rows);
+    if (!validation.ok) {
+      addToast(`Validation xatolari: ${validation.errors}`, 'error');
+      return;
+    }
+
+    const targetDeviceIds = resolveImportTargetDeviceIds();
+    const idempotencyKey = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    importIdempotencyRef.current = idempotencyKey;
+
     setImportLoading(true);
+    const startedAt = new Date().toISOString();
+    setImportJob({
+      id: idempotencyKey,
+      status: 'PROCESSING',
+      retryCount: retryOnly ? (importJob?.retryCount || 0) + 1 : 0,
+      startedAt,
+      processed: 0,
+      success: 0,
+      failed: 0,
+      synced: 0,
+    });
+    await pushImportAudit('DEVICE_IMPORT_START', 'Import started', {
+      idempotencyKey,
+      syncMode: importSyncMode,
+      targetDeviceIds,
+      pullFace: importPullFace,
+      retryOnly,
+      targetIndexes: targetIndexes || null,
+    });
+
     let success = 0;
     let failed = 0;
     let synced = 0;
     const nextRows = [...importRows];
-    const targetDeviceIds = resolveImportTargetDeviceIds();
 
     try {
-      for (let i = 0; i < nextRows.length; i++) {
+      const queue = (targetIndexes && targetIndexes.length > 0)
+        ? targetIndexes
+        : nextRows.map((_, idx) => idx);
+      for (const i of queue) {
         const row = nextRows[i];
+        if (!row) continue;
         try {
           let existing: StudentProfileDetail | null = null;
           try {
@@ -627,9 +747,31 @@ export function DeviceDetailPage() {
           nextRows[i] = { ...row, status: 'error', error: msg };
           failed += 1;
         }
+        setImportJob((prev) => prev ? ({
+          ...prev,
+          processed: prev.processed + 1,
+          success,
+          failed,
+          synced,
+        }) : prev);
       }
 
       setImportRows(nextRows);
+      const finishedAt = new Date().toISOString();
+      setImportJob((prev) => prev ? {
+        ...prev,
+        status: failed > 0 ? 'FAILED' : 'SUCCESS',
+        finishedAt,
+        success,
+        failed,
+        synced,
+      } : prev);
+      await pushImportAudit('DEVICE_IMPORT_FINISH', 'Import finished', {
+        idempotencyKey,
+        success,
+        failed,
+        synced,
+      });
       addToast(
         `Import yakunlandi: ${success} success, ${failed} failed, ${synced} sync`,
         failed > 0 ? 'error' : 'success',
@@ -637,9 +779,24 @@ export function DeviceDetailPage() {
       if (success > 0) {
         await loadUsers(true);
       }
+      importIdempotencyRef.current = null;
     } finally {
       setImportLoading(false);
     }
+  };
+
+  const saveImportRows = async () => processImportRows();
+
+  const retryFailedImportRows = async () => {
+    const failedIndexes = importRows
+      .map((r, idx) => ({ r, idx }))
+      .filter(({ r }) => r.status === 'error')
+      .map(({ idx }) => idx);
+    if (failedIndexes.length === 0) {
+      addToast('Retry uchun xato qatorlar yo\'q', 'error');
+      return;
+    }
+    await processImportRows(failedIndexes, true);
   };
 
   useEffect(() => {
@@ -1184,6 +1341,13 @@ export function DeviceDetailPage() {
             </div>
             <div className="modal-body">
               <div className="notice">EmployeeNo, ism/familiya, sinf majburiy.</div>
+              <div className="device-item-meta" style={{ marginBottom: 8 }}>
+                <span className="badge">Total: {previewStats.total}</span>
+                <span className="badge">Pending: {previewStats.pending}</span>
+                <span className="badge badge-success">Saved: {previewStats.done}</span>
+                <span className={`badge ${previewStats.failed > 0 ? 'badge-danger' : ''}`}>Failed: {previewStats.failed}</span>
+                <span className={`badge ${previewStats.invalid > 0 ? 'badge-danger' : ''}`}>Invalid: {previewStats.invalid}</span>
+              </div>
               <div className="form-group" style={{ marginTop: 10 }}>
                 <label>Saqlash siyosati (Sync mode)</label>
                 <select
@@ -1205,6 +1369,7 @@ export function DeviceDetailPage() {
                   <div className="device-list">
                     {allSchoolDevices.map((d) => {
                       const checked = importSelectedDeviceIds.includes(d.id);
+                      const status = getImportDeviceStatus(d);
                       return (
                         <label key={d.id} className="device-item" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           <input
@@ -1217,6 +1382,11 @@ export function DeviceDetailPage() {
                             }
                           />
                           <span>{d.name}</span>
+                          <span className={`badge ${
+                            status === 'online' ? 'badge-success' : status === 'offline' ? 'badge-danger' : 'badge-warning'
+                          }`}>
+                            {status === 'online' ? 'Online' : status === 'offline' ? 'Offline' : 'No credentials'}
+                          </span>
                         </label>
                       );
                     })}
@@ -1296,6 +1466,11 @@ export function DeviceDetailPage() {
               </div>
             </div>
             <div className="modal-footer">
+              {importJob && (
+                <div className="notice" style={{ marginRight: 'auto' }}>
+                  Job: {importJob.status} | processed {importJob.processed} | success {importJob.success} | failed {importJob.failed} | synced {importJob.synced}
+                </div>
+              )}
               <button
                 type="button"
                 className="button button-primary"
@@ -1307,12 +1482,32 @@ export function DeviceDetailPage() {
               <button
                 type="button"
                 className="button button-secondary"
+                onClick={retryFailedImportRows}
+                disabled={importLoading || importRows.every((r) => r.status !== 'error')}
+              >
+                <Icons.Refresh /> Failedlarni retry
+              </button>
+              <button
+                type="button"
+                className="button button-secondary"
                 onClick={() => setIsImportOpen(false)}
                 disabled={importLoading}
               >
                 Yopish
               </button>
             </div>
+            {importAuditTrail.length > 0 && (
+              <div className="modal-body" style={{ borderTop: '1px solid var(--border-color)' }}>
+                <div className="panel-title">Audit trail</div>
+                <div style={{ maxHeight: 120, overflow: 'auto' }}>
+                  {importAuditTrail.map((item, idx) => (
+                    <div key={`${item.at}-${idx}`} className="text-xs">
+                      [{new Date(item.at).toLocaleTimeString()}] {item.stage}: {item.message}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

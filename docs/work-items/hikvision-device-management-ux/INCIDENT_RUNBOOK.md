@@ -21,3 +21,9 @@
 ## Escalation
 1. L1 -> L2 after 15m unresolved
 2. L2 -> Engineering owner after 30m unresolved
+### Device Import / Sync Failure
+1. Verify `syncMode` and selected target devices.
+2. Check import job status in Device Detail import modal.
+3. Retry failed rows only (`Failedlarni retry`).
+4. Validate local credentials for target devices (`online/offline/no credentials`).
+5. Review import audit trail entries (`DEVICE_IMPORT_START/FINISH`).

@@ -2289,6 +2289,44 @@ export default async function (fastify: FastifyInstance) {
     },
   );
 
+  // Device user import audit (UI import wizard telemetry)
+  fastify.post(
+    "/schools/:schoolId/import-audit",
+    { preHandler: [(fastify as any).authenticate] } as any,
+    async (request: any, reply) => {
+      try {
+        const { schoolId } = request.params as { schoolId: string };
+        const user = request.user;
+        const body = request.body || {};
+
+        requireRoles(user, ["SCHOOL_ADMIN"]);
+        requireSchoolScope(user, schoolId);
+
+        const stage = String(body.stage || "DEVICE_IMPORT").trim().slice(0, 80);
+        const status = String(body.status || "INFO").trim().slice(0, 40);
+        const message =
+          typeof body.message === "string" ? body.message.slice(0, 1000) : null;
+        const payload =
+          body.payload && typeof body.payload === "object" ? body.payload : null;
+
+        const log = await prisma.provisioningLog.create({
+          data: {
+            schoolId,
+            level: "INFO",
+            stage,
+            status,
+            message,
+            payload: payload || undefined,
+          },
+        });
+
+        return { ok: true, id: log.id, createdAt: log.createdAt };
+      } catch (err) {
+        return sendHttpError(reply, err);
+      }
+    },
+  );
+
   fastify.get("/provisioning/:id/logs", async (request: any, reply) => {
     try {
       const { id } = request.params as { id: string };

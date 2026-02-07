@@ -855,6 +855,26 @@ export async function getSchoolProvisioningLogs(
   return res.json();
 }
 
+export async function createImportAuditLog(
+  schoolId: string,
+  payload: {
+    stage: string;
+    status: string;
+    message?: string;
+    payload?: Record<string, unknown>;
+  },
+): Promise<{ ok: boolean; id: string; createdAt: string }> {
+  const res = await fetchWithAuth(`${BACKEND_URL}/schools/${schoolId}/import-audit`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(text || 'Failed to create import audit log');
+  }
+  return res.json();
+}
+
 export async function retryProvisioning(
   provisioningId: string,
   deviceIds: string[] = [],
