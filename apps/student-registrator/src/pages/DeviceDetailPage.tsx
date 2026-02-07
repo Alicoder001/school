@@ -4,38 +4,19 @@ import {
   BACKEND_URL,
   cloneDeviceToDevice,
   cloneStudentsToDevice,
-  commitDeviceImport,
-  createImportAuditLog,
   deleteUser,
   fetchDevices,
-  fetchClasses,
-  getImportJob,
-  getImportMetrics,
-  fetchStudentByDeviceStudentId,
   getDeviceCapabilities,
   getDeviceConfiguration,
   fetchSchoolDevices,
   fetchUsers,
-  fileToFaceBase64,
-  getDeviceWebhookHealth,
   getAuthUser,
-  getUserFace,
-  getWebhookInfo,
-  previewDeviceImport,
   recreateUser,
-  retryImportJob,
-  rotateWebhookSecret,
   testDeviceConnection,
-  testWebhookEndpoint,
   updateDeviceConfiguration,
-  updateStudentProfile,
-  syncStudentToDevices,
-  type ClassInfo,
   type DeviceConfig,
   type SchoolDeviceInfo,
-  type StudentProfileDetail,
   type UserInfoEntry,
-  type WebhookInfo,
 } from '../api';
 import { Icons } from '../components/ui/Icons';
 import { useGlobalToast } from '../hooks/useToast';
@@ -49,7 +30,6 @@ import { UserDetailModal } from '../features/device-detail/UserDetailModal';
 import { useDeviceUserDetail } from '../features/device-detail/useDeviceUserDetail';
 import { UsersTab } from '../features/device-detail/UsersTab';
 import { useDeviceImportWorkflow } from '../features/device-detail/useDeviceImportWorkflow';
-import { WebhookTab } from '../features/device-detail/WebhookTab';
 import type { DetailTab } from '../features/device-detail/types';
 
 export function DeviceDetailPage() {
@@ -65,7 +45,6 @@ export function DeviceDetailPage() {
   const [localDevice, setLocalDevice] = useState<DeviceConfig | null>(null);
   const [allSchoolDevices, setAllSchoolDevices] = useState<SchoolDeviceInfo[]>([]);
   const [allLocalDevices, setAllLocalDevices] = useState<DeviceConfig[]>([]);
-  const [webhookInfo, setWebhookInfo] = useState<WebhookInfo | null>(null);
   const [users, setUsers] = useState<UserInfoEntry[]>([]);
   const [usersOffset, setUsersOffset] = useState(0);
   const [usersTotal, setUsersTotal] = useState(0);
@@ -73,16 +52,11 @@ export function DeviceDetailPage() {
   const autoImportKeyRef = useRef<string | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [sourceCloneId, setSourceCloneId] = useState<string>('');
-  const [showSecrets, setShowSecrets] = useState(false);
   const [capabilities, setCapabilities] = useState<Record<string, unknown> | null>(null);
   const [configSnapshot, setConfigSnapshot] = useState<Record<string, unknown> | null>(null);
   const [timeConfigText, setTimeConfigText] = useState('');
   const [ntpConfigText, setNtpConfigText] = useState('');
   const [networkConfigText, setNetworkConfigText] = useState('');
-  const [webhookHealth, setWebhookHealth] = useState<{
-    lastWebhookEventAt: string | null;
-    lastSeenAt: string | null;
-  } | null>(null);
 
   const isOnline = useMemo(() => {
     if (!schoolDevice?.lastSeenAt) return false;
@@ -112,17 +86,15 @@ export function DeviceDetailPage() {
 
     setLoading(true);
     try {
-      const [backendDevices, localDevices, webhook] = await Promise.all([
+      const [backendDevices, localDevices] = await Promise.all([
         fetchSchoolDevices(user.schoolId),
         fetchDevices(),
-        getWebhookInfo(user.schoolId),
       ]);
       setAllSchoolDevices(backendDevices);
       setAllLocalDevices(localDevices);
 
       const backend = backendDevices.find((item) => item.id === id) || null;
       setSchoolDevice(backend);
-      setWebhookInfo(webhook);
       setLocalDevice(backend ? findLocalForBackend(backend, localDevices) : null);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Qurilma ma\'lumotini yuklab bo\'lmadi';
@@ -272,42 +244,6 @@ export function DeviceDetailPage() {
     });
   };
 
-  const handleRotateSecret = async (direction: 'in' | 'out') => {
-    const auth = getAuthUser();
-    if (!auth?.schoolId) return;
-    if (!confirm(`${direction.toUpperCase()} webhook secretni yangilaysizmi?`)) return;
-    await withBusy(`rotate-${direction}`, async () => {
-      const result = await rotateWebhookSecret(auth.schoolId!, direction);
-      setWebhookInfo(result.info);
-      addToast(`Webhook secret yangilandi (${direction})`, 'success');
-    });
-  };
-
-  const handleTestWebhook = async (direction: 'in' | 'out') => {
-    const auth = getAuthUser();
-    if (!auth?.schoolId) return;
-    await withBusy(`test-webhook-${direction}`, async () => {
-      const result = await testWebhookEndpoint(auth.schoolId!, direction);
-      addToast(`Webhook test tayyor: ${result.path}`, 'success');
-      if (schoolDevice?.id) {
-        const health = await getDeviceWebhookHealth(schoolDevice.id);
-        setWebhookHealth({
-          lastWebhookEventAt: health.lastWebhookEventAt,
-          lastSeenAt: health.lastSeenAt,
-        });
-      }
-    });
-  };
-
-  const copyToClipboard = async (value: string, label: string) => {
-    try {
-      await navigator.clipboard.writeText(value);
-      addToast(`${label} nusxalandi`, 'success');
-    } catch {
-      addToast('Nusxalashda xato', 'error');
-    }
-  };
-
   const saveConfig = async (
     key: 'time' | 'ntpServers' | 'networkInterfaces',
     text: string,
@@ -408,7 +344,7 @@ export function DeviceDetailPage() {
 
   useEffect(() => {
     const queryTab = new URLSearchParams(location.search).get('tab');
-    const allowedTabs: DetailTab[] = ['overview', 'configuration', 'users', 'webhook', 'sync'];
+    const allowedTabs: DetailTab[] = ['overview', 'configuration', 'users', 'sync'];
     if (queryTab && allowedTabs.includes(queryTab as DetailTab)) {
       setTab(queryTab as DetailTab);
     }
@@ -432,22 +368,6 @@ export function DeviceDetailPage() {
     autoImportKeyRef.current = key;
     void openImportWizard();
   }, [location.pathname, location.search, tab, usersLoading, users.length]);
-
-  useEffect(() => {
-    const loadHealth = async () => {
-      if (tab !== 'webhook' || !schoolDevice?.id) return;
-      try {
-        const health = await getDeviceWebhookHealth(schoolDevice.id);
-        setWebhookHealth({
-          lastWebhookEventAt: health.lastWebhookEventAt,
-          lastSeenAt: health.lastSeenAt,
-        });
-      } catch {
-        setWebhookHealth(null);
-      }
-    };
-    loadHealth();
-  }, [tab, schoolDevice?.id]);
 
   useEffect(() => {
     const loadConfigData = async () => {
@@ -493,7 +413,6 @@ export function DeviceDetailPage() {
     { key: 'overview', label: 'Overview' },
     { key: 'configuration', label: 'Config' },
     { key: 'users', label: 'Users' },
-    { key: 'webhook', label: 'Webhook' },
     { key: 'sync', label: 'Sync' },
   ];
 
@@ -584,19 +503,6 @@ export function DeviceDetailPage() {
             onRecreateUser={handleRecreateUser}
             onDeleteUser={handleDeleteUser}
             onLoadMoreUsers={() => loadUsers(false)}
-          />
-        )}
-
-        {tab === 'webhook' && (
-          <WebhookTab
-            webhookInfo={webhookInfo}
-            webhookHealth={webhookHealth}
-            showSecrets={showSecrets}
-            busyAction={busyAction}
-            onToggleSecrets={() => setShowSecrets((prev) => !prev)}
-            onCopy={copyToClipboard}
-            onTestWebhook={handleTestWebhook}
-            onRotateSecret={handleRotateSecret}
           />
         )}
 
