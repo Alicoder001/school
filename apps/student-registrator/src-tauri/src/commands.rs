@@ -422,7 +422,17 @@ pub async fn register_student(
     let mut provisioning_id: Option<String> = None;
     let mut api_client: Option<ApiClient> = None;
     let mut backend_device_map: HashMap<String, String> = HashMap::new();
-    let mut target_backend_ids: HashSet<String> = HashSet::new();
+    let requested_target_backend_ids: Option<HashSet<String>> = target_device_ids.as_ref().map(|ids| {
+        ids.iter()
+            .map(|item| item.trim().to_string())
+            .filter(|item| !item.is_empty())
+            .collect::<HashSet<String>>()
+    });
+    let explicit_db_only = requested_target_backend_ids
+        .as_ref()
+        .map(|ids| ids.is_empty())
+        .unwrap_or(false);
+    let mut provisioned_target_backend_ids: HashSet<String> = HashSet::new();
 
     if backend_url.is_some() && school_id.is_none() {
         return Err("schoolId is required when backendUrl is set".to_string());
@@ -456,7 +466,7 @@ pub async fn register_student(
         if let Some(targets) = provisioning.target_devices.as_ref() {
             for device in targets {
                 backend_device_map.insert(device.device_id.clone(), device.id.clone());
-                target_backend_ids.insert(device.id.clone());
+                provisioned_target_backend_ids.insert(device.id.clone());
             }
         }
         api_client = Some(client);
@@ -478,21 +488,36 @@ pub async fn register_student(
         if abort_error.is_some() {
             break;
         }
-        let selected_by_backend_id = if target_backend_ids.is_empty() {
-            true
+        if explicit_db_only {
+            continue;
+        }
+
+        let selected_set: Option<&HashSet<String>> = if let Some(requested) = requested_target_backend_ids.as_ref() {
+            Some(requested)
+        } else if !provisioned_target_backend_ids.is_empty() {
+            Some(&provisioned_target_backend_ids)
         } else {
+            None
+        };
+
+        let selected_by_backend_id = selected_set.map_or(true, |ids| {
             device
                 .backend_id
                 .as_ref()
-                .map(|id| target_backend_ids.contains(id))
+                .map(|id| ids.contains(id))
                 .unwrap_or(false)
-        };
-        if !selected_by_backend_id && !target_backend_ids.is_empty() {
-            let selected_by_legacy_device_id = device
-                .device_id
-                .as_ref()
-                .and_then(|id| backend_device_map.get(id))
-                .is_some();
+        });
+
+        if !selected_by_backend_id && selected_set.is_some() {
+            let selected_by_legacy_device_id = selected_set
+                .and_then(|ids| {
+                    device
+                        .device_id
+                        .as_ref()
+                        .and_then(|id| backend_device_map.get(id))
+                        .map(|backend_id| ids.contains(backend_id))
+                })
+                .unwrap_or(false);
             if !selected_by_legacy_device_id {
                 continue;
             }
@@ -547,7 +572,6 @@ pub async fn register_student(
         }
 
         let client = HikvisionClient::new(device.clone());
-        let mut user_created = false;
         
         // Test connection
         let connection = client.test_connection().await;
@@ -648,8 +672,6 @@ pub async fn register_student(
             }
             continue;
         }
-        user_created = true;
-
         // Upload face
         let face_upload = client.upload_face(
             &employee_no,
@@ -689,9 +711,7 @@ pub async fn register_student(
         if face_upload.ok {
             successful_devices.push(device.clone());
         } else {
-            if user_created {
-                let _ = client.delete_user(&employee_no).await;
-            }
+            let _ = client.delete_user(&employee_no).await;
             if abort_error.is_none() {
                 abort_error = Some(format!(
                     "Qurilma {}: Qurilmaga rasm yuklashda xato",
@@ -1154,7 +1174,7 @@ pub async fn clone_students_to_device(
     let school_id = school_id.filter(|v| !v.trim().is_empty())
         .ok_or("schoolId is required")?;
     let token = backend_token.filter(|v| !v.trim().is_empty());
-    let per_page = page_size.unwrap_or(50).max(10).min(200);
+    let _per_page = page_size.unwrap_or(50).max(10).min(200);
     let limit = max_students.unwrap_or(10000);
 
     let local_devices = load_devices();
@@ -1339,7 +1359,6 @@ pub async fn clone_device_to_device(
                 "male" | "m" | "erkak" | "1" => "male",
                 "ma" | "male " => "male",
                 "fa" | "female " => "female",
-                "male" | "female" => "male",
                 other if other.contains("female") => "female",
                 _ => "male",
             }.to_string();

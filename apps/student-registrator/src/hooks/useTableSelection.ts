@@ -10,6 +10,7 @@ interface UseTableSelectionReturn {
   selectedCount: number;
   isAllSelected: boolean;
   isSelected: (key: string) => boolean;
+  replaceSelection: (keys: Set<string>) => void;
   toggleItem: (key: string) => void;
   selectAll: () => void;
   clearSelection: () => void;
@@ -33,6 +34,10 @@ export function useTableSelection<T>({
     (key: string) => selectedKeys.has(key),
     [selectedKeys]
   );
+
+  const replaceSelection = useCallback((keys: Set<string>) => {
+    setSelectedKeys(new Set(keys));
+  }, []);
 
   const toggleItem = useCallback((key: string) => {
     setSelectedKeys((prev) => {
@@ -67,6 +72,7 @@ export function useTableSelection<T>({
     selectedCount,
     isAllSelected,
     isSelected,
+    replaceSelection,
     toggleItem,
     selectAll,
     clearSelection,

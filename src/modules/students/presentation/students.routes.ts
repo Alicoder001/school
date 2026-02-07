@@ -1709,7 +1709,7 @@ export default async function (fastify: FastifyInstance) {
             }
           }
 
-          let studentRecord: Prisma.StudentGetPayload<{}>;
+          let studentRecord: Prisma.StudentGetPayload<Record<string, never>>;
           let deviceStudentId =
             providedDeviceStudentId !== "" ? providedDeviceStudentId : null;
 

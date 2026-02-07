@@ -6,10 +6,7 @@ import {
   fetchStudentDiagnostics,
   fetchSchoolDevices,
   getAuthUser,
-  updateStudentProfile,
-  syncStudentToDevices,
   BACKEND_URL,
-  fileToBase64,
 } from '../api';
 import { useGlobalToast } from '../hooks/useToast';
 import { useTableSelection } from '../hooks/useTableSelection';
@@ -20,13 +17,14 @@ import { DiagnosticsFilterBar } from '../components/students/DiagnosticsFilterBa
 import { DiagnosticSummary } from '../components/students/DiagnosticSummary';
 import { Pagination } from '../components/ui/Pagination';
 import { ExportButton } from '../components/students/ExportButton';
+import { useStudentEdit } from '../features/students/useStudentEdit';
 import type {
   ClassInfo,
-  DeviceConfig,
-  SchoolDeviceInfo,
   StudentDiagnosticsResponse,
   StudentDiagnosticsRow,
 } from '../types';
+import { buildBackendPhotoUrl } from '../utils/photo';
+import { resolveLocalDeviceForBackend } from '../utils/deviceResolver';
 
 type LiveStatus =
   | 'PRESENT'
@@ -51,10 +49,6 @@ type StudentLiveState = {
 };
 
 const PAGE_SIZE = 25;
-
-function normalize(value?: string | null): string {
-  return (value || '').trim().toLowerCase();
-}
 
 function statusBadgeClass(status: LiveStatus): string {
   if (status === 'PRESENT') return 'badge badge-success';
@@ -154,23 +148,14 @@ function extractNameComponents(fullName: string) {
 
 export function StudentsPage() {
   const [availableClasses, setAvailableClasses] = useState<ClassInfo[]>([]);
-  const [localDevices, setLocalDevices] = useState<DeviceConfig[]>([]);
-  const [backendDevices, setBackendDevices] = useState<SchoolDeviceInfo[]>([]);
+  const [localDevices, setLocalDevices] = useState<Awaited<ReturnType<typeof fetchDevices>>>([]);
+  const [backendDevices, setBackendDevices] = useState<Awaited<ReturnType<typeof fetchSchoolDevices>>>([]);
   const [selectedClassId, setSelectedClassId] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [diagnostics, setDiagnostics] = useState<StudentDiagnosticsResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [liveStateByStudent, setLiveStateByStudent] = useState<Record<string, StudentLiveState>>({});
-  
-  const [editingStudent, setEditingStudent] = useState<StudentDiagnosticsRow | null>(null);
-  const [editFirstName, setEditFirstName] = useState('');
-  const [editLastName, setEditLastName] = useState('');
-  const [editFatherName, setEditFatherName] = useState('');
-  const [editClassId, setEditClassId] = useState('');
-  const [savingEdit, setSavingEdit] = useState(false);
-  const [editImageFile, setEditImageFile] = useState<File | null>(null);
-  const [editImagePreview, setEditImagePreview] = useState<string>('');
 
   const [page, setPage] = useState(1);
   
@@ -188,25 +173,9 @@ export function StudentsPage() {
   const {
     selectedKeys,
     selectedCount,
-    toggleItem,
+    replaceSelection,
     clearSelection,
   } = useTableSelection({ items: sortedData, keyField: 'studentId' });
-
-  const localByBackendId = useMemo(() => {
-    const map = new Map<string, DeviceConfig>();
-    localDevices.forEach((device) => {
-      if (device.backendId) map.set(device.backendId, device);
-    });
-    return map;
-  }, [localDevices]);
-
-  const localByExternalId = useMemo(() => {
-    const map = new Map<string, DeviceConfig>();
-    localDevices.forEach((device) => {
-      if (device.deviceId) map.set(normalize(device.deviceId), device);
-    });
-    return map;
-  }, [localDevices]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -255,75 +224,32 @@ export function StudentsPage() {
     loadDiagnostics();
   }, [loadDiagnostics]);
 
-  const startEdit = (student: StudentDiagnosticsRow) => {
-    setEditingStudent(student);
-    const { firstName, lastName, fatherName } = extractNameComponents(student.studentName);
-    setEditFirstName(student.firstName || firstName);
-    setEditLastName(student.lastName || lastName);
-    setEditFatherName(student.fatherName || fatherName);
-    setEditClassId(student.classId || '');
-    setEditImageFile(null);
-    setEditImagePreview(student.photoUrl ? buildPhotoUrl(student.photoUrl) : '');
-  };
-
-  const cancelEdit = () => setEditingStudent(null);
-
-  const saveEdit = async () => {
-    if (!editingStudent) return;
-    setSavingEdit(true);
-    try {
-      let faceImageBase64: string | undefined = undefined;
-      if (editImageFile) {
-        const base64 = await fileToBase64(editImageFile);
-        faceImageBase64 = base64;
-      }
-      await updateStudentProfile(editingStudent.studentId, {
-        firstName: editFirstName.trim(),
-        lastName: editLastName.trim(),
-        fatherName: editFatherName.trim() || undefined,
-        classId: editClassId,
-        faceImageBase64,
-      });
-      addToast("O'quvchi yangilandi", 'success');
-      cancelEdit();
-      await loadDiagnostics();
-
-      // Background sync to devices
-      try {
-        const syncResult = await syncStudentToDevices(editingStudent.studentId);
-        if (syncResult.ok) {
-          addToast("Qurilmalar bilan sinxronizatsiya qilindi", 'success');
-        } else {
-          addToast("Qurilmalarga yuborishda xato yoki provisioning topilmadi", 'error');
-        }
-      } catch (syncErr) {
-        console.error('Device sync error:', syncErr);
-      }
-    } catch (err) {
-      addToast('Yangilashda xato', 'error');
-    } finally {
-      setSavingEdit(false);
-    }
-  };
-
   const buildPhotoUrl = (url?: string | null) => {
-    if (!url) return '';
-    if (url.startsWith('http://') || url.startsWith('https://')) return url;
-    return `${BACKEND_URL}${url}`;
+    return buildBackendPhotoUrl(BACKEND_URL, url);
   };
 
-  const handleEditImageChange = (file: File | null) => {
-    setEditImageFile(file);
-    if (!file) {
-      setEditImagePreview('');
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      setEditImagePreview(String(reader.result || ''));
-    };
-    reader.readAsDataURL(file);
-  };
+  const {
+    editingStudent,
+    editFirstName,
+    editLastName,
+    editFatherName,
+    editClassId,
+    savingEdit,
+    editImagePreview,
+    startEdit,
+    cancelEdit,
+    saveEdit,
+    handleEditImageChange,
+    setEditFirstName,
+    setEditLastName,
+    setEditFatherName,
+    setEditClassId,
+  } = useStudentEdit({
+    addToast,
+    loadDiagnostics,
+    buildPhotoUrl,
+    extractNameComponents,
+  });
 
   const runLiveCheck = async (row: StudentDiagnosticsRow) => {
     if (!row.deviceStudentId) {
@@ -341,11 +267,7 @@ export function StudentsPage() {
 
     const checks = await Promise.all(
       backendDevices.map(async (backendDevice) => {
-        const localDevice =
-          localByBackendId.get(backendDevice.id) ||
-          (backendDevice.deviceId
-            ? localByExternalId.get(normalize(backendDevice.deviceId))
-            : undefined);
+        const localDevice = resolveLocalDeviceForBackend(backendDevice, localDevices).localDevice;
 
         if (!localDevice) {
           return { backendDeviceId: backendDevice.id, status: 'NO_CREDENTIALS' as LiveStatus };
@@ -379,6 +301,20 @@ export function StudentsPage() {
       [row.studentId]: { running: false, byDeviceId },
     }));
   };
+
+  const sortableColumns = useMemo(
+    () => new Set(['studentName', 'className', 'deviceStudentId']),
+    [],
+  );
+
+  const handleSort = useCallback(
+    (column: string) => {
+      if (sortableColumns.has(column)) {
+        toggleSort(column as keyof StudentDiagnosticsRow);
+      }
+    },
+    [sortableColumns, toggleSort],
+  );
 
   const paginatedRows = useMemo(() => {
     const start = (page - 1) * PAGE_SIZE;
@@ -567,11 +503,11 @@ export function StudentsPage() {
           rowKey="studentId"
           selectable
           selectedKeys={selectedKeys}
-        onSelectionChange={toggleItem as any}
-        sortColumn={sortColumn as string}
-        sortDirection={sortDirection}
-        onSort={toggleSort as any}
-      />
+          onSelectionChange={replaceSelection}
+          sortColumn={sortColumn ? String(sortColumn) : null}
+          sortDirection={sortDirection}
+          onSort={handleSort}
+        />
         
         <Pagination
           page={page}

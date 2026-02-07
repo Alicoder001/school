@@ -36,7 +36,7 @@ export function StudentTableRow({
       throw new Error('Faqat JPG yoki PNG formatidagi rasm qabul qilinadi.');
     }
     if (file.size < 10 * 1024) {
-      throw new Error('Rasm hajmi 10KB dan kichik bo‘lmasligi kerak.');
+      throw new Error("Rasm hajmi 10KB dan kichik bo'lmasligi kerak.");
     }
   };
   const getErrorMessage = (err: unknown) => {
@@ -45,7 +45,7 @@ export function StudentTableRow({
     return "Noma'lum xato";
   };
 
-  const handleChange = (field: keyof StudentRow, value: any) => {
+  const handleChange = <K extends keyof StudentRow>(field: K, value: StudentRow[K]) => {
     console.log(`[Table Row] Editing ${field}:`, value);
     onEdit(student.id, { [field]: value });
   };
@@ -264,3 +264,4 @@ export function StudentTableRow({
     </tr>
   );
 }
+

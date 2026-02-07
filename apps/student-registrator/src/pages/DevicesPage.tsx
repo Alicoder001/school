@@ -21,6 +21,11 @@ import { useGlobalToast } from '../hooks/useToast';
 import { Icons } from '../components/ui/Icons';
 import type { DeviceConfig, SchoolDeviceInfo } from '../types';
 import type { WebhookInfo } from '../api';
+import {
+  isDeviceCredentialsExpired,
+  normalizeDeviceId,
+  resolveLocalDeviceForBackend,
+} from '../utils/deviceResolver';
 
 export function DevicesPage() {
   const navigate = useNavigate();
@@ -117,13 +122,13 @@ export function DevicesPage() {
         const byDeviceId = new Map<string, DeviceConfig>();
         localCredentials.forEach((device) => {
           if (device.deviceId) {
-            byDeviceId.set(normalize(device.deviceId), device);
+            byDeviceId.set(normalizeDeviceId(device.deviceId), device);
           }
         });
         const toUpdate = data
           .map((backend) => {
             if (!backend.deviceId) return null;
-            const match = byDeviceId.get(normalize(backend.deviceId));
+            const match = byDeviceId.get(normalizeDeviceId(backend.deviceId));
             if (!match) return null;
             if (match.backendId === backend.id) return null;
             return { backend, match };
@@ -155,42 +160,12 @@ export function DevicesPage() {
     }
   };
 
-  const normalize = (value?: string | null) => (value || '').trim().toLowerCase();
-
-  const credentialsByBackendId = useMemo(() => {
-    const map = new Map<string, DeviceConfig>();
-    credentials.forEach((device) => {
-      if (device.backendId) {
-        map.set(device.backendId, device);
-      }
-    });
-    return map;
-  }, [credentials]);
-
-  const credentialsByDeviceId = useMemo(() => {
-    const map = new Map<string, DeviceConfig>();
-    credentials.forEach((device) => {
-      if (device.deviceId) {
-        map.set(normalize(device.deviceId), device);
-      }
-    });
-    return map;
-  }, [credentials]);
-
   const getCredentialsForBackend = (device: SchoolDeviceInfo) => {
-    const byBackend = credentialsByBackendId.get(device.id);
-    if (byBackend) return byBackend;
-    if (device.deviceId) {
-      return credentialsByDeviceId.get(normalize(device.deviceId));
-    }
-    return undefined;
+    return resolveLocalDeviceForBackend(device, credentials).localDevice || undefined;
   };
 
   const isCredentialsExpired = (device?: DeviceConfig | null) => {
-    if (!device?.credentialsExpiresAt) return false;
-    const expires = new Date(device.credentialsExpiresAt).getTime();
-    if (Number.isNaN(expires)) return false;
-    return Date.now() > expires;
+    return isDeviceCredentialsExpired(device);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {

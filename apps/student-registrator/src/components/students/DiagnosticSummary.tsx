@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import type { StudentDiagnosticsRow, LiveDeviceResult, LiveStatus } from '../../types';
+import type { SchoolDeviceInfo, StudentDiagnosticsRow, LiveDeviceResult, LiveStatus } from '../../types';
 
 interface DiagnosticSummaryProps {
   row: StudentDiagnosticsRow;
-  backendDevices: any[];
+  backendDevices: SchoolDeviceInfo[];
   liveState: { running: boolean; byDeviceId: Record<string, LiveDeviceResult> } | undefined;
   mapBackendStatus: (row: StudentDiagnosticsRow) => Record<string, LiveDeviceResult>;
   formatDateTime: (value?: string) => string;
