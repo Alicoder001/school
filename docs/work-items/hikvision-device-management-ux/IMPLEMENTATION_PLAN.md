@@ -266,3 +266,61 @@ Exit criteria:
 4. Pagination:
 - Device users endpoint (`offset/limit`) asosida incremental loading.
 - UI `loaded/total` ko'rsatadi, yirik ro'yxatlarda first paint tez qoladi.
+
+## Addendum - Device-to-DB Import and Selective Sync Plan
+1. New product flow:
+- Device Users tab ichida `Import to DB` wizard ochiladi.
+- Wizard 3 qadamdan iborat bo'ladi:
+- Step 1: Device'dan userlarni yuklash (staging).
+- Step 2: Excel-like mapping jadvalda qo'lda to'ldirish.
+- Step 3: Save policy tanlash va commit.
+
+2. Import data model (staging):
+- Device payload: `employeeNo`, `name`, `gender`, `hasFace`, `faceURL`.
+- UI-only mapped fields: `firstName`, `lastName`, `fatherName`, `classId`, `parentPhone`.
+- Identity key: `schoolId + employeeNo` (`deviceStudentId`ga map).
+
+3. Save policy (professional):
+- `syncMode = none`: faqat DB save.
+- `syncMode = current`: faqat joriy detail device.
+- `syncMode = all`: barcha active device.
+- `syncMode = selected`: operator tanlagan device ro'yxati.
+- Contract fields:
+- `syncMode`, `targetDeviceIds[]`, `sourceDeviceId`.
+
+4. Image strategy (device-first for face):
+- Device source-of-truth for face image.
+- `Qurilmadan rasmni sync qilish` action:
+- device `faceURL`dan image bytes olish,
+- server upload,
+- DB `photoUrl` update.
+- DBda binary/base64 saqlanmaydi; faqat URL saqlanadi.
+
+5. Transaction and consistency:
+- DB write + device writes distributed transaction emas.
+- Pattern: DB commit + per-device sync result + retry queue.
+- Optional strict mode:
+- device fail bo'lsa kompensatsion rollback.
+- Default mode:
+- DB saqlanadi, device fail bo'lsa `FAILED` status + retry.
+
+6. Backend changes (planned):
+- `POST /devices/:id/import-users/preview`
+- `POST /devices/:id/import-users/commit`
+- `POST /devices/:id/users/:employeeNo/sync-face-to-db`
+- `POST /students/:id/sync-to-devices` (`syncMode`, `targetDeviceIds`)
+- `GET /sync-jobs/:id` / `POST /sync-jobs/:id/retry`
+
+7. UX changes (planned):
+- Device users listda `Import to DB` CTA.
+- Mapping table: row-level validation va inline errors.
+- Save panel: sync mode select + device multi-select.
+- Result drawer: per-device status (`SUCCESS/FAILED/SKIPPED`) + retry.
+- Face status badges: `NO_FACE`, `SYNCED`, `FAILED`.
+
+8. QA matrix extension:
+- Device'da rasm bor/yo'q holatlari.
+- DB-only save vs selected devices sync.
+- Partial failure (offline device) va retry.
+- Duplicate `deviceStudentId` va class validation.
+- Large import (1k+ users) performance va pagination.

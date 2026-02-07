@@ -99,3 +99,44 @@
 - [x] `deviceStudentId` bo'yicha school-scoped backend lookup endpoint qo'shildi
 - [x] Edit flow DB + device uchun kompensatsion tranzaksiya (rollback on device failure)
 - [x] Device image early-load yo'q: detail panelda DB photo preview only when opened
+
+## Epic 11 - Device User Import Wizard (Excel-Style)
+- [ ] Device usersni staging ro'yxatga yuklash (`employeeNo`, `name`, `gender`, `hasFace`)
+- [ ] Import preview panel (create/update/skip estimatsiya)
+- [ ] Mapping table (firstName, lastName, fatherName, classId, parentPhone) qo'lda to'ldirish
+- [ ] Validation pipeline (required fields, class exists, duplicate policy)
+- [ ] Batch commit (`create/update`) transactional qilib yozish
+- [ ] Import natija hisobotini chiqarish (`created/updated/skipped/failed`)
+- [ ] Import audit log (`who/when/sourceDevice/result`)
+
+## Epic 12 - Device Face Pull and URL Storage
+- [ ] Tauri command: device'dan mavjud user rasmini olish (`employeeNo -> faceURL -> bytes`)
+- [ ] UI action: "Qurilmadan rasmni sync qilish"
+- [ ] Serverga rasm upload qilish va `photoUrl` olish
+- [ ] DB'da faqat `photoUrl` saqlash (binary/base64 saqlamaslik)
+- [ ] Rasm yo'q/auth fail/error holatlarini aniq ko'rsatish
+- [ ] Retry action (single user va batch)
+
+## Epic 13 - Save Policy with Target Device Selection
+- [ ] Save vaqtida `syncMode` tanlash: `none | current | all | selected`
+- [ ] `selected` mode uchun multi-select device picker
+- [ ] Device status ko'rsatish (`online/offline/no credentials`)
+- [ ] Backend contractga `syncMode` va `targetDeviceIds` qo'shish
+- [ ] Per-device natija qaytarish (`SUCCESS/FAILED/SKIPPED`)
+- [ ] Partial failure UX (DB saved + device fail) va retry queue
+
+## Epic 14 - Sync Consistency, Jobs, and Observability
+- [ ] Import/sync job model (queue + status + retryCount + lastError)
+- [ ] Idempotency key (double-submit oldini olish)
+- [ ] Concurrency lock (`student/device` level) race conditiondan himoya
+- [ ] Structured audit trail (`before/after`, actor, target devices)
+- [ ] Metrics: sync success rate, mean sync latency, retry rate
+- [ ] Incident playbook update (device sync failure triage)
+
+## Expanded Acceptance Checklist (New Scope)
+- [ ] Operator qurilmadan userlarni Excel-style jadvalga import qila oladi
+- [ ] Qo'lda to'ldirishdan keyin DB ga batch saqlash ishlaydi
+- [ ] Qurilmadagi mavjud rasmni olib serverga joylab `photoUrl`ga bog'lash ishlaydi
+- [ ] Save paytida qaysi devicelarga yuborish tanlanadi
+- [ ] Har bir target device bo'yicha alohida natija ko'rinadi
+- [ ] Partial failure holatida retry bilan tiklash mumkin

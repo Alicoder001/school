@@ -4,8 +4,10 @@ import {
   BACKEND_URL,
   cloneDeviceToDevice,
   cloneStudentsToDevice,
+  createSchoolStudent,
   deleteUser,
   fetchDevices,
+  fetchClasses,
   fetchStudentByDeviceStudentId,
   getDeviceCapabilities,
   getDeviceConfiguration,
@@ -21,6 +23,7 @@ import {
   testWebhookEndpoint,
   updateDeviceConfiguration,
   updateStudentProfile,
+  type ClassInfo,
   type DeviceConfig,
   type SchoolDeviceInfo,
   type StudentProfileDetail,
@@ -31,6 +34,19 @@ import { Icons } from '../components/ui/Icons';
 import { useGlobalToast } from '../hooks/useToast';
 
 type DetailTab = 'overview' | 'configuration' | 'users' | 'webhook' | 'sync';
+type ImportRow = {
+  employeeNo: string;
+  name: string;
+  firstName: string;
+  lastName: string;
+  fatherName: string;
+  gender: 'MALE' | 'FEMALE';
+  classId: string;
+  parentPhone: string;
+  hasFace: boolean;
+  status?: 'pending' | 'saved' | 'error';
+  error?: string;
+};
 
 export function DeviceDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -61,6 +77,10 @@ export function DeviceDetailPage() {
   const [editFaceBase64, setEditFaceBase64] = useState<string>('');
   const [editFacePreview, setEditFacePreview] = useState<string>('');
   const [isEditingUser, setIsEditingUser] = useState(false);
+  const [isImportOpen, setIsImportOpen] = useState(false);
+  const [importRows, setImportRows] = useState<ImportRow[]>([]);
+  const [importLoading, setImportLoading] = useState(false);
+  const [availableClasses, setAvailableClasses] = useState<ClassInfo[]>([]);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [sourceCloneId, setSourceCloneId] = useState<string>('');
   const [showSecrets, setShowSecrets] = useState(false);
@@ -438,6 +458,127 @@ export function DeviceDetailPage() {
     });
   };
 
+  const splitName = (value: string): { firstName: string; lastName: string } => {
+    const cleaned = (value || '').trim();
+    if (!cleaned) return { firstName: '', lastName: '' };
+    const parts = cleaned.split(/\s+/);
+    if (parts.length === 1) return { firstName: parts[0], lastName: '' };
+    return { lastName: parts[0], firstName: parts.slice(1).join(' ') };
+  };
+
+  const openImportWizard = async () => {
+    const auth = getAuthUser();
+    if (!auth?.schoolId) {
+      addToast('Maktab topilmadi', 'error');
+      return;
+    }
+    if (users.length === 0) {
+      addToast('Import uchun avval qurilmadan userlarni yuklang', 'error');
+      return;
+    }
+
+    try {
+      const classes = await fetchClasses(auth.schoolId);
+      setAvailableClasses(classes);
+      setImportRows(
+        users.map((u) => {
+          const nameParts = splitName(u.name || '');
+          return {
+            employeeNo: u.employeeNo || '',
+            name: u.name || '',
+            firstName: nameParts.firstName,
+            lastName: nameParts.lastName,
+            fatherName: '',
+            gender: (String(u.gender || '').toLowerCase().startsWith('f') ? 'FEMALE' : 'MALE'),
+            classId: '',
+            parentPhone: '',
+            hasFace: (u.numOfFace || 0) > 0,
+            status: 'pending',
+          };
+        }),
+      );
+      setIsImportOpen(true);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Import wizard ochishda xato';
+      addToast(message, 'error');
+    }
+  };
+
+  const updateImportRow = (idx: number, patch: Partial<ImportRow>) => {
+    setImportRows((prev) => prev.map((row, i) => (i === idx ? { ...row, ...patch } : row)));
+  };
+
+  const saveImportRows = async () => {
+    const auth = getAuthUser();
+    if (!auth?.schoolId) {
+      addToast('Maktab topilmadi', 'error');
+      return;
+    }
+    const invalidIndexes = importRows
+      .map((r, idx) => ({ r, idx }))
+      .filter(({ r }) => !r.employeeNo || !r.firstName || !r.lastName || !r.classId);
+    if (invalidIndexes.length > 0) {
+      addToast(`Majburiy maydonlar to'ldirilmagan qatorlar: ${invalidIndexes.length}`, 'error');
+      return;
+    }
+
+    setImportLoading(true);
+    let success = 0;
+    let failed = 0;
+    const nextRows = [...importRows];
+
+    try {
+      for (let i = 0; i < nextRows.length; i++) {
+        const row = nextRows[i];
+        try {
+          let existing: StudentProfileDetail | null = null;
+          try {
+            existing = await fetchStudentByDeviceStudentId(auth.schoolId, row.employeeNo);
+          } catch {
+            existing = null;
+          }
+
+          if (existing?.id) {
+            await updateStudentProfile(existing.id, {
+              firstName: row.firstName,
+              lastName: row.lastName,
+              fatherName: row.fatherName || undefined,
+              classId: row.classId,
+              parentPhone: row.parentPhone || undefined,
+              gender: row.gender,
+              deviceStudentId: row.employeeNo,
+            });
+          } else {
+            await createSchoolStudent(auth.schoolId, {
+              firstName: row.firstName,
+              lastName: row.lastName,
+              fatherName: row.fatherName || undefined,
+              classId: row.classId,
+              parentPhone: row.parentPhone || undefined,
+              gender: row.gender,
+              deviceStudentId: row.employeeNo,
+            });
+          }
+
+          nextRows[i] = { ...row, status: 'saved', error: undefined };
+          success += 1;
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : 'Saqlashda xato';
+          nextRows[i] = { ...row, status: 'error', error: msg };
+          failed += 1;
+        }
+      }
+
+      setImportRows(nextRows);
+      addToast(`Import yakunlandi: ${success} success, ${failed} failed`, failed > 0 ? 'error' : 'success');
+      if (success > 0) {
+        await loadUsers(true);
+      }
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
   useEffect(() => {
     loadDetail();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -672,6 +813,16 @@ export function DeviceDetailPage() {
             <p className="notice">
               Minimal ro'yxat: {usersOffset}/{usersTotal || users.length} yuklandi. Detail ma'lumot row bosilganda olinadi.
             </p>
+            <div className="form-actions" style={{ marginBottom: 12 }}>
+              <button
+                type="button"
+                className="button button-secondary"
+                onClick={openImportWizard}
+                disabled={usersLoading || users.length === 0}
+              >
+                <Icons.Download /> Device usersni DB ga import qilish
+              </button>
+            </div>
             {usersLoading && <p className="notice">Userlar yuklanmoqda...</p>}
             {!usersLoading && users.length === 0 && <p className="notice">User topilmadi</p>}
             {!usersLoading && users.length > 0 && (
@@ -751,6 +902,17 @@ export function DeviceDetailPage() {
                 {!detailLoading && !selectedStudentDetail && (
                   <p className="notice notice-warning">DB da mos o'quvchi topilmadi (device-only user).</p>
                 )}
+                <div className="form-actions">
+                  <button
+                    type="button"
+                    className="button button-secondary"
+                    onClick={() => setIsEditingUser((prev) => !prev)}
+                    disabled={!selectedStudentDetail}
+                    title={!selectedStudentDetail ? "Avval user DB bilan bog'langan bo'lishi kerak" : ''}
+                  >
+                    <Icons.Edit /> {isEditingUser ? 'Editni yopish' : 'DB + Device Edit'}
+                  </button>
+                </div>
                 {!detailLoading && selectedStudentDetail && (
                   <>
                     <p><strong>DB Student ID:</strong> {selectedStudentDetail.id}</p>
@@ -762,15 +924,6 @@ export function DeviceDetailPage() {
                     {editFacePreview && (
                       <img src={editFacePreview} alt="student preview" className="student-avatar" />
                     )}
-                    <div className="form-actions">
-                      <button
-                        type="button"
-                        className="button button-secondary"
-                        onClick={() => setIsEditingUser((prev) => !prev)}
-                      >
-                        <Icons.Edit /> {isEditingUser ? 'Editni yopish' : 'DB + Device Edit'}
-                      </button>
-                    </div>
                   </>
                 )}
                 {isEditingUser && selectedStudentDetail && (
@@ -953,6 +1106,106 @@ export function DeviceDetailPage() {
           </div>
         )}
       </div>
+
+      {isImportOpen && (
+        <div className="modal-overlay" onClick={() => setIsImportOpen(false)}>
+          <div className="modal modal-provisioning" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <h3>Device Users Import (DB)</h3>
+                <p className="text-secondary text-xs">Qolgan maydonlarni to'ldirib, batch saqlang.</p>
+              </div>
+              <button className="modal-close" onClick={() => setIsImportOpen(false)}>
+                <Icons.X />
+              </button>
+            </div>
+            <div className="modal-body">
+              <div className="notice">EmployeeNo, ism/familiya, sinf majburiy.</div>
+              <div style={{ maxHeight: 420, overflow: 'auto', marginTop: 8 }}>
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>EmployeeNo</th>
+                      <th>Ism</th>
+                      <th>Familiya</th>
+                      <th>Otasining ismi</th>
+                      <th>Sinf</th>
+                      <th>Jins</th>
+                      <th>Face</th>
+                      <th>Holat</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {importRows.map((row, idx) => (
+                      <tr key={`${row.employeeNo}-${idx}`}>
+                        <td>{row.employeeNo}</td>
+                        <td>
+                          <input className="input" value={row.firstName} onChange={(e) => updateImportRow(idx, { firstName: e.target.value })} />
+                        </td>
+                        <td>
+                          <input className="input" value={row.lastName} onChange={(e) => updateImportRow(idx, { lastName: e.target.value })} />
+                        </td>
+                        <td>
+                          <input className="input" value={row.fatherName} onChange={(e) => updateImportRow(idx, { fatherName: e.target.value })} />
+                        </td>
+                        <td>
+                          <select className="input" value={row.classId} onChange={(e) => updateImportRow(idx, { classId: e.target.value })}>
+                            <option value="">Tanlang</option>
+                            {availableClasses.map((cls) => (
+                              <option key={cls.id} value={cls.id}>{cls.name}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td>
+                          <select className="input" value={row.gender} onChange={(e) => updateImportRow(idx, { gender: e.target.value as 'MALE' | 'FEMALE' })}>
+                            <option value="MALE">MALE</option>
+                            <option value="FEMALE">FEMALE</option>
+                          </select>
+                        </td>
+                        <td>
+                          <span className={`badge ${row.hasFace ? 'badge-success' : 'badge-warning'}`}>
+                            {row.hasFace ? 'Bor' : "Yo'q"}
+                          </span>
+                        </td>
+                        <td>
+                          <span className={`badge ${
+                            row.status === 'saved'
+                              ? 'badge-success'
+                              : row.status === 'error'
+                              ? 'badge-danger'
+                              : ''
+                          }`}>
+                            {row.status || 'pending'}
+                          </span>
+                          {row.error && <div className="text-xs text-danger">{row.error}</div>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button
+                type="button"
+                className="button button-primary"
+                onClick={saveImportRows}
+                disabled={importLoading || importRows.length === 0}
+              >
+                <Icons.Save /> {importLoading ? 'Saqlanmoqda...' : 'DB ga saqlash'}
+              </button>
+              <button
+                type="button"
+                className="button button-secondary"
+                onClick={() => setIsImportOpen(false)}
+                disabled={importLoading}
+              >
+                Yopish
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

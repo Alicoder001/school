@@ -384,6 +384,29 @@ export async function fetchSchoolStudents(
   return res.json();
 }
 
+export async function createSchoolStudent(
+  schoolId: string,
+  payload: {
+    firstName: string;
+    lastName: string;
+    fatherName?: string;
+    gender: 'male' | 'female' | 'MALE' | 'FEMALE';
+    classId: string;
+    parentPhone?: string;
+    deviceStudentId?: string;
+  },
+): Promise<SchoolStudent> {
+  const res = await fetchWithAuth(`${BACKEND_URL}/schools/${schoolId}/students`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(text || 'Failed to create student');
+  }
+  return res.json();
+}
+
 export async function fetchStudentByDeviceStudentId(
   schoolId: string,
   deviceStudentId: string,
