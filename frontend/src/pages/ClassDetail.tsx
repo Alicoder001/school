@@ -509,7 +509,7 @@ const ClassDetail: React.FC = () => {
                         borderLeft: `3px solid ${EVENT_TYPE_COLOR[eventType]}`,
                         cursor: "pointer",
                       }}
-                      onClick={() => navigate(`/students/${event.student.id}`)}
+                      onClick={() => navigate(`/schools/${schoolId}/students/${event.student.id}`)}
                     >
                       <Avatar
                         src={getAssetUrl(event.student.photoUrl)}
@@ -598,7 +598,7 @@ const ClassDetail: React.FC = () => {
                         borderLeft: `3px solid ${config.color}`,
                         cursor: "pointer",
                       }}
-                      onClick={() => navigate(`/students/${student.id}`)}
+                      onClick={() => navigate(`/schools/${schoolId}/students/${student.id}`)}
                     >
                       <Avatar
                         src={getAssetUrl(student.photoUrl)}

@@ -442,7 +442,7 @@ const Students: React.FC = () => {
             size="small"
             onClick={(e) => {
               e.stopPropagation();
-              navigate(`/students/${record.id}`);
+              navigate(`/schools/${schoolId}/students/${record.id}`);
             }}
           >
             Ko'rish
@@ -663,11 +663,11 @@ const Students: React.FC = () => {
           showTotal: (total) => `Jami: ${total}`,
         }}
         onRow={(record) => ({
-          onClick: () => navigate(`/students/${record.id}`),
+          onClick: () => navigate(`/schools/${schoolId}/students/${record.id}`),
           onKeyDown: (e) => {
             if (e.key === "Enter" || e.key === " ") {
               e.preventDefault();
-              navigate(`/students/${record.id}`);
+              navigate(`/schools/${schoolId}/students/${record.id}`);
             }
           },
           role: "button",
@@ -689,11 +689,32 @@ const Students: React.FC = () => {
             <Input placeholder="Student ID" />
           </Form.Item>
           <Form.Item
-            name="name"
-            label="Ism familiya"
+            name="lastName"
+            label="Familiya"
+            rules={[{ required: true, message: "Familiyani kiriting" }]}
+          >
+            <Input placeholder="Aliyev" />
+          </Form.Item>
+          <Form.Item
+            name="firstName"
+            label="Ism"
             rules={[{ required: true, message: "Ismni kiriting" }]}
           >
-            <Input placeholder="Masalan: Aliyev Ali" />
+            <Input placeholder="Ali" />
+          </Form.Item>
+          <Form.Item name="fatherName" label="Otasining ismi">
+            <Input placeholder="Vali o'g'li" />
+          </Form.Item>
+          <Form.Item
+            name="gender"
+            label="Jinsi"
+            rules={[{ required: true, message: "Jinsini tanlang" }]}
+            initialValue="MALE"
+          >
+            <Select placeholder="Jinsini tanlang">
+              <Select.Option value="MALE">Erkak</Select.Option>
+              <Select.Option value="FEMALE">Ayol</Select.Option>
+            </Select>
           </Form.Item>
           <Form.Item
             name="classId"
@@ -704,9 +725,6 @@ const Students: React.FC = () => {
               placeholder="Sinfni tanlang"
               options={classes.map((c) => ({ label: c.name, value: c.id }))}
             />
-          </Form.Item>
-          <Form.Item name="fatherName" label="Otasining ismi">
-            <Input placeholder="Masalan: Aliyev Vali" />
           </Form.Item>
           <Form.Item name="parentPhone" label="Telefon raqami">
             <Input placeholder="+998 XX XXX XX XX" />

@@ -2,6 +2,7 @@ import { PrismaClient, AttendanceStatus } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { getLocalDateKey, getLocalDateOnly } from "../src/utils/date";
 import crypto from "crypto";
+import { REAL_CLASSES, REAL_STUDENTS } from "./real_school_data";
 
 const prisma = new PrismaClient();
 
@@ -56,6 +57,12 @@ const START_TIMES = ["08:00", "09:00", "10:00", "12:00", "14:00"];
 
 const randomInt = (min: number, max: number) =>
   Math.floor(Math.random() * (max - min + 1)) + min;
+
+const splitName = (fullName: string) => {
+  const parts = fullName.trim().split(/\s+/);
+  if (parts.length === 1) return { lastName: parts[0], firstName: "" };
+  return { lastName: parts[0], firstName: parts.slice(1).join(" ") };
+};
 
 const pickStatus = (): AttendanceStatus => {
   const roll = Math.random();
@@ -136,6 +143,81 @@ async function ensureClass(params: {
       endTime: params.endTime,
     },
   });
+}
+
+async function seedRealSchoolData(schoolId: string) {
+  console.log("🏫 Seeding real school data (93 classes, ~3,641 students)...");
+
+  // 1. Sinflarni yaratish
+  const classMap = new Map<string, string>();
+  let classCount = 0;
+
+  for (const cls of REAL_CLASSES) {
+    const className = `${cls.grade}${cls.section}`;
+    const created = await ensureClass({
+      schoolId,
+      name: className,
+      gradeLevel: cls.grade,
+      startTime: "08:00",
+      endTime: "14:00",
+    });
+    classMap.set(className, created.id);
+    classCount++;
+
+    if (classCount % 10 === 0) {
+      console.log(`  ✓ Created ${classCount}/${REAL_CLASSES.length} classes`);
+    }
+  }
+
+  console.log(`  ✅ All ${REAL_CLASSES.length} classes created`);
+
+  // 2. O'quvchilarni batch yaratish
+  const studentBatch: Array<any> = [];
+  let studentCount = 0;
+  const batchSize = 500;
+
+  for (const student of REAL_STUDENTS) {
+    const classId = classMap.get(student.classKey);
+    if (!classId) {
+      console.warn(`  ⚠️  Class not found: ${student.classKey}`);
+      continue;
+    }
+
+    studentCount++;
+    studentBatch.push({
+      deviceStudentId: `R${studentCount}`,
+      lastName: student.lastName,
+      firstName: student.firstName,
+      fatherName: student.fatherName,
+      name: `${student.lastName} ${student.firstName}`,
+      gender: student.gender,
+      parentPhone: student.phone,
+      schoolId,
+      classId,
+      isActive: true,
+    });
+
+    // Batch insert har 500 ta o'quvchidan keyin
+    if (studentBatch.length >= batchSize) {
+      await prisma.student.createMany({
+        data: studentBatch,
+        skipDuplicates: true,
+      });
+      console.log(`  ✓ Inserted ${studentCount}/${REAL_STUDENTS.length} students`);
+      studentBatch.length = 0;
+    }
+  }
+
+  // Qolgan studentlarni insert qilish
+  if (studentBatch.length > 0) {
+    await prisma.student.createMany({
+      data: studentBatch,
+      skipDuplicates: true,
+    });
+  }
+
+  console.log(`  ✅ All ${REAL_STUDENTS.length} students created`);
+  console.log("🎉 Real school data seeded successfully!");
 }
 
 async function main() {
@@ -268,27 +350,35 @@ const buildEventKey = (parts: string[]) =>
 
     const baseStudents = [
       {
-        name: "Jaxongir Mirzaakhmedov",
+        lastName: "Mirzaakhmedov",
+        firstName: "Jaxongir",
+        name: "Mirzaakhmedov Jaxongir",
         gender: "MALE" as const,
         deviceStudentId: "1",
         schoolId: baseSchool.id,
         classId: baseClass1.id,
       },
       {
-        name: "Mukhammad Mirzaakhmedov",
+        lastName: "Mirzaakhmedov",
+        firstName: "Mukhammad",
+        name: "Mirzaakhmedov Mukhammad",
         gender: "MALE" as const,
         deviceStudentId: "2",
         schoolId: baseSchool.id,
         classId: baseClass1.id,
       },
       {
-        name: "Axmadxon Dexqonboyev",
+        lastName: "Dexqonboyev",
+        firstName: "Axmadxon",
+        name: "Dexqonboyev Axmadxon",
         gender: "MALE" as const,
         deviceStudentId: "484655",
         schoolId: baseSchool.id,
         classId: baseClass2.id,
       },
       {
+        lastName: "G'olibjon",
+        firstName: "",
         name: "G'olibjon",
         gender: "MALE" as const,
         deviceStudentId: "2302209",
@@ -296,21 +386,27 @@ const buildEventKey = (parts: string[]) =>
         classId: baseClass2.id,
       },
       {
-        name: "Abduvahob Abdurazzoqov",
+        lastName: "Abdurazzoqov",
+        firstName: "Abduvahob",
+        name: "Abdurazzoqov Abduvahob",
         gender: "MALE" as const,
         deviceStudentId: "6",
         schoolId: baseSchool.id,
         classId: baseClass1.id,
       },
       {
-        name: "Saidorifxo'ja Yo'ldoshxo'jayev",
+        lastName: "Yo'ldoshxo'jayev",
+        firstName: "Saidorifxo'ja",
+        name: "Yo'ldoshxo'jayev Saidorifxo'ja",
         gender: "MALE" as const,
         deviceStudentId: "456585",
         schoolId: baseSchool.id,
         classId: baseClass2.id,
       },
       {
-        name: "Ibroxim Sadriddinov",
+        lastName: "Sadriddinov",
+        firstName: "Ibroxim",
+        name: "Sadriddinov Ibroxim",
         gender: "MALE" as const,
         deviceStudentId: "9",
         schoolId: baseSchool.id,
@@ -328,6 +424,8 @@ const buildEventKey = (parts: string[]) =>
         },
         update: {
           name: s.name,
+          firstName: s.firstName,
+          lastName: s.lastName,
           classId: s.classId,
           isActive: true,
         },
@@ -336,6 +434,9 @@ const buildEventKey = (parts: string[]) =>
     }
 
     console.log("Base seed data created.");
+
+    // Real school ma'lumotlarini qo'shish
+    await seedRealSchoolData(baseSchool.id);
   }
 
   const schoolIndexOffset = config.includeBaseSeed ? 1 : 0;
@@ -439,6 +540,8 @@ const buildEventKey = (parts: string[]) =>
 
     const studentBatch: Array<{
       name: string;
+      firstName: string;
+      lastName: string;
       gender: "MALE" | "FEMALE";
       deviceStudentId: string;
       schoolId: string;
@@ -449,8 +552,12 @@ const buildEventKey = (parts: string[]) =>
     let studentCounter = 1;
     for (const cls of classRecords) {
       for (let i = 0; i < config.studentsPerClass; i++) {
+        const fullName = `Student ${schoolIndex}-${cls.name}-${studentCounter}`;
+        const { lastName, firstName } = splitName(fullName);
         studentBatch.push({
-          name: `Student ${schoolIndex}-${cls.name}-${studentCounter}`,
+          lastName,
+          firstName,
+          name: fullName,
           gender: Math.random() > 0.5 ? "MALE" : "FEMALE",
           deviceStudentId: `S${schoolIndex}C${cls.name}N${studentCounter}`,
           schoolId: school.id,

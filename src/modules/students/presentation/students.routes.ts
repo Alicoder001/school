@@ -341,7 +341,12 @@ export default async function (fastify: FastifyInstance) {
             skip,
             take,
             include: { class: true },
-            orderBy: { name: "asc" },
+            orderBy: [
+              { class: { gradeLevel: "asc" } },
+              { class: { name: "asc" } },
+              { lastName: "asc" },
+              { firstName: "asc" },
+            ],
           }),
           prisma.student.count({ where }),
         ]);
@@ -575,9 +580,14 @@ export default async function (fastify: FastifyInstance) {
             skip,
             take,
             include: {
-              class: { select: { id: true, name: true } },
+              class: { select: { id: true, name: true, gradeLevel: true } },
             },
-            orderBy: { name: "asc" },
+            orderBy: [
+              { class: { gradeLevel: "asc" } },
+              { class: { name: "asc" } },
+              { lastName: "asc" },
+              { firstName: "asc" },
+            ],
           }),
           prisma.student.count({ where }),
           prisma.device.findMany({
@@ -805,7 +815,12 @@ export default async function (fastify: FastifyInstance) {
         const students = await prisma.student.findMany({
           where: { schoolId, isActive: true },
           include: { class: true },
-          orderBy: { name: "asc" },
+          orderBy: [
+            { class: { gradeLevel: "asc" } },
+            { class: { name: "asc" } },
+            { lastName: "asc" },
+            { firstName: "asc" },
+          ],
         });
 
         const wb = new ExcelJS.Workbook();

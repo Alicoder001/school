@@ -176,14 +176,8 @@ function App() {
                 }
               />
 
-              {/* Dev-only UI gallery */}
-              {import.meta.env.DEV && (
-                <Route path="ui-gallery" element={<UiGallery />} />
-              )}
-
-              {/* Student detail (no school prefix needed) */}
                 <Route
-                  path="students/:id"
+                  path="schools/:schoolId/students/:id"
                   element={
                     <ProtectedRoute
                       requiredRoles={["SCHOOL_ADMIN", "TEACHER", "GUARD"]}
@@ -192,16 +186,11 @@ function App() {
                     </ProtectedRoute>
                   }
                 />
-                <Route
-                  path="classes/:classId"
-                  element={
-                    <ProtectedRoute
-                      requiredRoles={["SCHOOL_ADMIN", "TEACHER", "GUARD"]}
-                    >
-                      <ClassDetail />
-                    </ProtectedRoute>
-                  }
-                />
+
+              {/* Dev-only UI gallery */}
+              {import.meta.env.DEV && (
+                <Route path="ui-gallery" element={<UiGallery />} />
+              )}
               </Route>
 
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
