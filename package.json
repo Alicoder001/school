@@ -16,7 +16,8 @@
     "db:deploy": "prisma migrate deploy",
     "db:seed": "set SEED_WIPE=false&& ts-node prisma/seed.ts",
     "db:seed:reset": "set SEED_WIPE=true&& ts-node prisma/seed.ts",
-    "db:studio": "prisma studio",
+    "db:studio": "prisma studio", 
+    "db:seed:prod": "node dist/prisma/seed.js",
     "setup:mtx": "ts-node scripts/setup-mediamtx.ts",
     "excel:extract-images": "ts-node scripts/extract-excel-images.ts"
   },
