@@ -1,5 +1,6 @@
 import api from './api';
 import type { DashboardStats, AttendanceEvent, PeriodType, AttendanceScope } from '../types';
+import { isMockMode, mockDashboardService } from '../mock';
 
 // Re-export PeriodType for convenience
 export type { PeriodType } from '../types';
@@ -14,6 +15,9 @@ export interface DashboardFilters {
 
 export const dashboardService = {
     async getStats(schoolId: string, filters?: DashboardFilters): Promise<DashboardStats> {
+        if (isMockMode()) {
+            return mockDashboardService.getStats(schoolId, filters);
+        }
         const params: Record<string, string> = {};
         
         if (filters?.classId) params.classId = filters.classId;
@@ -29,6 +33,9 @@ export const dashboardService = {
     },
 
     async getAdminStats(filters?: { period?: PeriodType; startDate?: string; endDate?: string; scope?: AttendanceScope }): Promise<any> {
+        if (isMockMode()) {
+            return mockDashboardService.getAdminStats();
+        }
         const params: Record<string, string> = {};
         
         if (filters?.period) params.period = filters.period;
@@ -43,6 +50,9 @@ export const dashboardService = {
     },
 
     async getRecentEvents(schoolId: string, limit: number = 10): Promise<AttendanceEvent[]> {
+        if (isMockMode()) {
+            return mockDashboardService.getRecentEvents(schoolId, limit);
+        }
         const response = await api.get<AttendanceEvent[]>(`/schools/${schoolId}/events`, { params: { limit } });
         return response.data;
     },
@@ -51,7 +61,11 @@ export const dashboardService = {
         schoolId: string,
         params: { startDate: string; endDate: string; limit?: number; classId?: string },
     ): Promise<{ data: AttendanceEvent[]; timezone: string; startDate: string; endDate: string }> {
+        if (isMockMode()) {
+            return mockDashboardService.getEventHistory(schoolId, params);
+        }
         const response = await api.get(`/schools/${schoolId}/events/history`, { params });
         return response.data;
     },
 };
+

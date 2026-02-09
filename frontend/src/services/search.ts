@@ -1,4 +1,5 @@
 import api from './api';
+import { isMockMode, mockSearchService } from '../mock';
 
 export type SearchItem = {
   id: string;
@@ -18,11 +19,14 @@ export type SearchResponse = {
 };
 
 export const searchService = {
-  async search(q: string) {
+  async search(q: string, schoolId?: string) {
+    if (isMockMode() && schoolId) {
+      const groups = await mockSearchService.search(schoolId, q);
+      return { groups };
+    }
     const response = await api.get<SearchResponse>('/search', {
       params: { q },
     });
     return response.data;
   },
 };
-

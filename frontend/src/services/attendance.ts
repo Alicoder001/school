@@ -1,11 +1,15 @@
 import api from "./api";
 import type { DailyAttendance } from "../types";
+import { isMockMode, mockAttendanceService } from '../mock';
 
 export const attendanceService = {
   async getToday(
     schoolId: string,
     params?: { classId?: string; status?: string },
   ): Promise<DailyAttendance[]> {
+    if (isMockMode()) {
+      return mockAttendanceService.getToday(schoolId, params);
+    }
     const response = await api.get<DailyAttendance[]>(
       `/schools/${schoolId}/attendance/today`,
       { params },
@@ -17,6 +21,9 @@ export const attendanceService = {
     schoolId: string,
     params: { startDate: string; endDate: string; classId?: string },
   ): Promise<DailyAttendance[]> {
+    if (isMockMode()) {
+      return mockAttendanceService.getReport(schoolId, params);
+    }
     const response = await api.get<DailyAttendance[]>(
       `/schools/${schoolId}/attendance/report`,
       { params },
@@ -28,6 +35,9 @@ export const attendanceService = {
     id: string,
     data: Partial<DailyAttendance>,
   ): Promise<DailyAttendance> {
+    if (isMockMode()) {
+      return mockAttendanceService.update(id, data);
+    }
     const response = await api.put<DailyAttendance>(`/attendance/${id}`, data);
     return response.data;
   },
@@ -36,6 +46,9 @@ export const attendanceService = {
     schoolId: string,
     params: { startDate: string; endDate: string },
   ): Promise<Blob> {
+    if (isMockMode()) {
+      return mockAttendanceService.exportExcel();
+    }
     const response = await api.post(
       `/schools/${schoolId}/attendance/export`,
       params,
@@ -51,6 +64,9 @@ export const attendanceService = {
     status: string,
     notes?: string,
   ): Promise<{ updated: number }> {
+    if (isMockMode()) {
+      return mockAttendanceService.bulkUpdate(ids, status);
+    }
     const response = await api.put<{ updated: number }>("/attendance/bulk", {
       ids,
       status,
@@ -63,6 +79,9 @@ export const attendanceService = {
     schoolId: string,
     data: { studentId: string; date: string; status: string; notes?: string },
   ): Promise<DailyAttendance> {
+    if (isMockMode()) {
+      return mockAttendanceService.upsert(schoolId, data) as Promise<DailyAttendance>;
+    }
     const response = await api.post<DailyAttendance>(
       `/schools/${schoolId}/attendance/upsert`,
       data,
