@@ -95,6 +95,7 @@ const Students: React.FC = () => {
       try {
         const params: any = {
           page,
+          limit: DEFAULT_PAGE_SIZE,
           search,
           classId: classFilter,
           period: selectedPeriod,
@@ -144,6 +145,11 @@ const Students: React.FC = () => {
     fetchStudents();
     fetchClasses();
   }, [fetchStudents, fetchClasses]);
+
+  useEffect(() => {
+    setClassFilter(undefined);
+    setPage(1);
+  }, [schoolId]);
 
   const handleRefresh = useCallback(async () => {
     await Promise.all([fetchStudents(), fetchClasses()]);

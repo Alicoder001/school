@@ -27,6 +27,25 @@ import {
   getStatusCountsByRange,
   getWeeklyStatusMap,
 } from "../../../modules/attendance";
+function normalizeAbsentCount(params: {
+  totalStudents: number;
+  present: number;
+  late: number;
+  excused?: number;
+  pendingEarly?: number;
+  pendingLate?: number;
+  absentRaw: number;
+}): number {
+  const total = Math.max(0, params.totalStudents || 0);
+  const reserved =
+    Math.max(0, params.present || 0) +
+    Math.max(0, params.late || 0) +
+    Math.max(0, params.excused || 0) +
+    Math.max(0, params.pendingEarly || 0) +
+    Math.max(0, params.pendingLate || 0);
+  const maxAbsent = Math.max(0, total - reserved);
+  return Math.min(Math.max(0, params.absentRaw || 0), maxAbsent);
+}
 
 // ✅ OPTIMIZED: SuperAdmin uchun barcha maktablar statistikasi
 export async function adminDashboardRoutes(fastify: FastifyInstance) {
@@ -270,6 +289,16 @@ export async function adminDashboardRoutes(fastify: FastifyInstance) {
             avgLate,
             totalStudents,
           );
+          const absentRaw = avgAbsent + noScanSplit.absent;
+          const absentToday = normalizeAbsentCount({
+            totalStudents,
+            present: avgPresent,
+            late: avgLate,
+            excused: avgExcused,
+            pendingEarly: noScanSplit.pendingEarly,
+            pendingLate: noScanSplit.pendingLate,
+            absentRaw,
+          });
 
           return {
             id: school.id,
@@ -280,7 +309,7 @@ export async function adminDashboardRoutes(fastify: FastifyInstance) {
             totalDevices: school._count.devices,
             presentToday: avgPresent,
             lateToday: avgLate,
-            absentToday: avgAbsent + noScanSplit.absent,
+            absentToday,
             excusedToday: avgExcused,
             pendingEarlyCount: noScanSplit.pendingEarly,
             latePendingCount: noScanSplit.pendingLate,
@@ -688,8 +717,15 @@ export default async function (fastify: FastifyInstance) {
           latePendingCount = noScanSplit.pendingLate;
         }
 
-        const adjustedAbsentToday =
-          absentToday + (isToday ? noScanSplit.absent : 0);
+        const adjustedAbsentToday = normalizeAbsentCount({
+          totalStudents,
+          present: presentToday,
+          late: lateToday,
+          excused: excusedToday,
+          pendingEarly: isToday ? pendingEarlyCount : 0,
+          pendingLate: isToday ? latePendingCount : 0,
+          absentRaw: absentToday + (isToday ? noScanSplit.absent : 0),
+        });
 
         return {
           // Vaqt oralig'i ma'lumotlari
@@ -868,3 +904,4 @@ export default async function (fastify: FastifyInstance) {
     },
   );
 }
+

@@ -7,6 +7,7 @@ export type { StudentsResponse } from "../types";
 
 export interface StudentsFilters {
   page?: number;
+  limit?: number;
   search?: string;
   classId?: string;
   period?: PeriodType;

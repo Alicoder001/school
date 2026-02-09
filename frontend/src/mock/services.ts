@@ -172,7 +172,7 @@ export const mockClassesService = {
 export const mockStudentsService = {
   async getAll(
     schoolId: string,
-    params?: { page?: number; search?: string; classId?: string; period?: PeriodType }
+    params?: { page?: number; limit?: number; search?: string; classId?: string; period?: PeriodType }
   ): Promise<StudentsResponse> {
     await delay(MOCK_DELAY);
     
@@ -188,7 +188,7 @@ export const mockStudentsService = {
     }
     
     const page = params?.page || 1;
-    const limit = 25;
+    const limit = params?.limit || 50;
     const start = (page - 1) * limit;
     const paged = students.slice(start, start + limit);
     
