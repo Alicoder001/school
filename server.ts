@@ -26,6 +26,11 @@ import { startMediaMtxAuto } from "./src/modules/cameras/services/mediamtx-runne
 import { CORS_ORIGINS, IS_PROD, JWT_SECRET, PORT } from "./src/config";
 
 const server = Fastify({ logger: true });
+const DESKTOP_ALLOWED_ORIGINS = new Set([
+  "tauri://localhost",
+  "https://tauri.localhost",
+  "http://tauri.localhost",
+]);
 
 server.addHook("onRequest", async (request, reply) => {
   reply.header("x-request-id", request.id);
@@ -67,6 +72,7 @@ server.register(require("@fastify/cors"), {
   ) => {
     if (!IS_PROD) return cb(null, true);
     if (!origin) return cb(null, false);
+    if (DESKTOP_ALLOWED_ORIGINS.has(origin)) return cb(null, true);
     if (CORS_ORIGINS.length === 0) return cb(null, false);
     return cb(null, CORS_ORIGINS.includes(origin));
   },

@@ -187,6 +187,7 @@ export interface ApiDebugEntry {
   url: string;
   message: string;
   backendUrl: string;
+  clientOrigin: string | null;
   status?: number;
   durationMs?: number;
   online: boolean | null;
@@ -248,6 +249,15 @@ function getOnlineState(): boolean | null {
   return navigator.onLine;
 }
 
+function getClientOrigin(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return window.location.origin || null;
+  } catch {
+    return null;
+  }
+}
+
 function createDebugId(): string {
   return `dbg-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 }
@@ -273,12 +283,13 @@ function writeStoredApiDebugEntries(entries: ApiDebugEntry[]): void {
   }
 }
 
-function pushApiDebugEntry(input: Omit<ApiDebugEntry, 'id' | 'at' | 'backendUrl' | 'online'>): string {
+function pushApiDebugEntry(input: Omit<ApiDebugEntry, 'id' | 'at' | 'backendUrl' | 'online' | 'clientOrigin'>): string {
   const entry: ApiDebugEntry = {
     ...input,
     id: createDebugId(),
     at: new Date().toISOString(),
     backendUrl: BACKEND_URL,
+    clientOrigin: getClientOrigin(),
     online: getOnlineState(),
   };
   const current = readStoredApiDebugEntries();
