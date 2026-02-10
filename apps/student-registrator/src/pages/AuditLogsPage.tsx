@@ -108,10 +108,6 @@ export function AuditLogsPage() {
 
   const [draftQ, setDraftQ] = useState("");
   const [draftLevel, setDraftLevel] = useState<ProvisioningAuditQuery["level"]>("");
-  const [draftEventType, setDraftEventType] = useState("");
-  const [draftStage, setDraftStage] = useState("");
-  const [draftStatus, setDraftStatus] = useState("");
-  const [draftActorId, setDraftActorId] = useState("");
   const [filters, setFilters] = useState<ProvisioningAuditQuery>({});
 
   const totalPages = useMemo(() => (total === 0 ? 1 : Math.ceil(total / PAGE_SIZE)), [total]);
@@ -143,22 +139,14 @@ export function AuditLogsPage() {
       setFilters({
         q: draftQ.trim() || undefined,
         level: draftLevel || undefined,
-        eventType: draftEventType.trim() || undefined,
-        stage: draftStage.trim() || undefined,
-        status: draftStatus.trim() || undefined,
-        actorId: draftActorId.trim() || undefined,
       });
     }, 250);
     return () => window.clearTimeout(timer);
-  }, [draftQ, draftLevel, draftEventType, draftStage, draftStatus, draftActorId]);
+  }, [draftQ, draftLevel]);
 
   const resetFilters = () => {
     setDraftQ("");
     setDraftLevel("");
-    setDraftEventType("");
-    setDraftStage("");
-    setDraftStatus("");
-    setDraftActorId("");
     setPage(1);
     setFilters({});
   };
@@ -188,53 +176,39 @@ export function AuditLogsPage() {
   return (
     <div className="page">
       <div className="page-header">
-        <div>
+        <div className="header-main">
           <h1 className="page-title">Audit Loglar</h1>
           <p className="page-description">Auth, CRUD, provisioning va security audit tarixi</p>
         </div>
         <div className="page-actions">
-          <button type="button" className="device-select-trigger" onClick={fetchLogs} disabled={loading}>
+          <button type="button" className="button button-secondary" onClick={fetchLogs} disabled={loading}>
             <Icons.Refresh />
             <span>Yangilash</span>
           </button>
           <button type="button" className="button button-secondary" onClick={() => downloadCsv(logs)}>
-            CSV export
+            <Icons.Download />
+            <span>CSV export</span>
           </button>
         </div>
       </div>
 
-      <div className="filter-bar">
-        <div className="form-group">
-          <label>Qidirish</label>
-          <input className="input" placeholder="Xabar, event, actor..." value={draftQ} onChange={(e) => setDraftQ(e.target.value)} />
+      <div className="filter-bar-integrated">
+        <div className="filter-item search-group">
+          <div className="input-with-icon">
+            <Icons.Search />
+            <input className="input" placeholder="Xabar, hodisa, foydalanuvchi..." value={draftQ} onChange={(e) => setDraftQ(e.target.value)} />
+          </div>
         </div>
-        <div className="form-group">
-          <label>Level</label>
-          <select className="input" value={draftLevel} onChange={(e) => setDraftLevel(e.target.value as ProvisioningAuditQuery["level"])}>
-            <option value="">Barchasi</option>
-            <option value="INFO">INFO</option>
-            <option value="WARN">WARN</option>
-            <option value="ERROR">ERROR</option>
+        <div className="filter-item">
+          <select className="select" value={draftLevel} onChange={(e) => setDraftLevel(e.target.value as ProvisioningAuditQuery["level"])}>
+            <option value="">Barcha darajalar</option>
+            <option value="INFO">Ma'lumot</option>
+            <option value="WARN">Ogohlantirish</option>
+            <option value="ERROR">Xato</option>
           </select>
         </div>
-        <div className="form-group">
-          <label>Event</label>
-          <input className="input" placeholder="AUTH_LOGIN_SUCCESS..." value={draftEventType} onChange={(e) => setDraftEventType(e.target.value)} />
-        </div>
-        <div className="form-group">
-          <label>Stage</label>
-          <input className="input" placeholder="PROVISIONING_START..." value={draftStage} onChange={(e) => setDraftStage(e.target.value)} />
-        </div>
-        <div className="form-group">
-          <label>Status</label>
-          <input className="input" placeholder="SUCCESS/FAILED..." value={draftStatus} onChange={(e) => setDraftStatus(e.target.value)} />
-        </div>
-        <div className="form-group">
-          <label>Actor ID</label>
-          <input className="input" placeholder="user id" value={draftActorId} onChange={(e) => setDraftActorId(e.target.value)} />
-        </div>
-        <div className="form-group" style={{ alignSelf: "flex-end", display: "flex", gap: "0.5rem" }}>
-          <button type="button" className="btn-icon" onClick={resetFilters} title="Filtrlarni tozalash" aria-label="Filtrlarni tozalash">
+        <div className="filter-item actions-group">
+          <button type="button" className="button button-secondary" onClick={resetFilters} title="Filtrlarni tozalash">
             <Icons.X />
           </button>
         </div>
