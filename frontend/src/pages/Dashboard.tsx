@@ -60,7 +60,13 @@ import type { PeriodType, AttendanceScope } from "../types";
 import { schoolsService } from "../services/schools";
 import type { DashboardStats, AttendanceEvent, School, Class } from "../types";
 import { classesService } from "../services/classes";
-import { PageHeader, StatItem, StatGroup, useHeaderMeta } from "../shared/ui";
+import {
+  PageHeader,
+  PeriodDateFilter,
+  StatItem,
+  StatGroup,
+  useHeaderMeta,
+} from "../shared/ui";
 import dayjs from "dayjs";
 import debounce from "lodash/debounce";
 import {
@@ -73,15 +79,6 @@ import {
 
 const { Text } = Typography;
 const { RangePicker } = DatePicker;
-
-// Vaqt filterlari opsiyalari
-const PERIOD_OPTIONS = [
-  { label: "Bugun", value: "today" },
-  { label: "Kecha", value: "yesterday" },
-  { label: "Hafta", value: "week" },
-  { label: "Oy", value: "month" },
-  { label: "Yil", value: "year" },
-];
 
 const PIE_COLORS: Record<string, string> = {
   Kelgan: STATUS_COLORS.PRESENT,
@@ -558,29 +555,15 @@ const Dashboard: React.FC = () => {
           padding: "0 4px",
         }}
       >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            background: "#fff",
-            padding: "4px 8px",
-            borderRadius: 8,
-            border: "1px solid #f0f0f0",
+        <PeriodDateFilter
+          size="middle"
+          style={{ width: 250, borderRadius: 8 }}
+          value={{ period: selectedPeriod, customRange: customDateRange }}
+          onChange={({ period, customRange }) => {
+            setSelectedPeriod(period);
+            setCustomDateRange(customRange);
           }}
-        >
-          <CalendarOutlined style={{ color: "#8c8c8c" }} />
-          <Segmented
-            size="middle"
-            value={selectedPeriod}
-            onChange={(value) => {
-              setSelectedPeriod(value as PeriodType);
-              if (value !== "custom") setCustomDateRange(null);
-            }}
-            options={PERIOD_OPTIONS}
-            style={{ background: "transparent" }}
-          />
-        </div>
+        />
 
         {isToday && (
           <div
@@ -610,25 +593,6 @@ const Dashboard: React.FC = () => {
               style={{ background: "transparent" }}
             />
           </div>
-        )}
-
-        {/* Custom date range picker */}
-        {(selectedPeriod === "custom" || customDateRange) && (
-          <RangePicker
-            size="middle"
-            value={customDateRange}
-            onChange={(dates) => {
-              if (dates && dates[0] && dates[1]) {
-                setCustomDateRange([dates[0], dates[1]]);
-                setSelectedPeriod("custom");
-              } else {
-                setCustomDateRange(null);
-                setSelectedPeriod("today");
-              }
-            }}
-            format="DD.MM.YYYY"
-            style={{ width: 240, borderRadius: 8 }}
-          />
         )}
 
         <div

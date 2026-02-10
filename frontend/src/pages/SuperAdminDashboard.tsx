@@ -10,7 +10,6 @@ import {
   Badge,
   List,
   Segmented,
-  DatePicker,
 } from "antd";
 import {
   TeamOutlined,
@@ -19,7 +18,6 @@ import {
   CloseCircleOutlined,
   FileTextOutlined,
   BankOutlined,
-  CalendarOutlined,
   WarningOutlined,
   RightOutlined,
   WifiOutlined,
@@ -40,7 +38,13 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { dashboardService } from "../services/dashboard";
 import type { PeriodType, AttendanceScope } from "../types";
 import { useAdminSSE } from "../hooks/useAdminSSE";
-import { PageHeader, StatItem, StatGroup, useHeaderMeta } from "../shared/ui";
+import {
+  PageHeader,
+  PeriodDateFilter,
+  StatItem,
+  StatGroup,
+  useHeaderMeta,
+} from "../shared/ui";
 import {
   EFFECTIVE_STATUS_META,
   STATUS_COLORS,
@@ -49,16 +53,6 @@ import {
 import dayjs from "dayjs";
 
 const { Text } = Typography;
-const { RangePicker } = DatePicker;
-
-// Vaqt filterlari opsiyalari
-const PERIOD_OPTIONS = [
-  { label: 'Bugun', value: 'today' },
-  { label: 'Kecha', value: 'yesterday' },
-  { label: 'Hafta', value: 'week' },
-  { label: 'Oy', value: 'month' },
-  { label: 'Yil', value: 'year' },
-];
 const AUTO_REFRESH_MS = 60000;
 
 interface SchoolStats {
@@ -610,29 +604,15 @@ const SuperAdminDashboard: React.FC = () => {
 
       {/* Filterlar satri */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              background: "#fff",
-              padding: "4px 8px",
-              borderRadius: 8,
-              border: "1px solid #f0f0f0",
+          <PeriodDateFilter
+            size="middle"
+            style={{ width: 250, borderRadius: 8 }}
+            value={{ period: selectedPeriod, customRange: customDateRange }}
+            onChange={({ period, customRange }) => {
+              setSelectedPeriod(period);
+              setCustomDateRange(customRange);
             }}
-          >
-            <CalendarOutlined style={{ color: "#8c8c8c" }} />
-            <Segmented
-              size="middle"
-              value={selectedPeriod}
-              onChange={(value) => {
-                setSelectedPeriod(value as PeriodType);
-                if (value !== 'custom') setCustomDateRange(null);
-              }}
-              options={PERIOD_OPTIONS}
-              style={{ background: "transparent" }}
-            />
-          </div>
+          />
 
           {isToday && (
             <div
@@ -664,25 +644,6 @@ const SuperAdminDashboard: React.FC = () => {
             </div>
           )}
           
-          {/* Custom date range picker */}
-          {(selectedPeriod === 'custom' || customDateRange) && (
-            <RangePicker
-              size="middle"
-              value={customDateRange}
-              onChange={(dates) => {
-                if (dates && dates[0] && dates[1]) {
-                  setCustomDateRange([dates[0], dates[1]]);
-                  setSelectedPeriod('custom');
-                } else {
-                  setCustomDateRange(null);
-                  setSelectedPeriod('today');
-                }
-              }}
-              format="DD.MM.YYYY"
-              style={{ width: 240, borderRadius: 8 }}
-            />
-          )}
-
           {problemSchools.length > 0 && (
             <div style={{ marginLeft: "auto" }}>
               <Popover

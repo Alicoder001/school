@@ -11,7 +11,6 @@ import {
   Spin,
   Empty,
   Tooltip,
-  DatePicker,
   Select,
   Space,
   Modal,
@@ -43,7 +42,7 @@ import { useParams } from "react-router-dom";
 import { useAttendanceSSE } from "../hooks/useAttendanceSSE";
 import { studentsService } from "../services/students";
 import { getAssetUrl } from "../config";
-import { useHeaderMeta } from "../shared/ui";
+import { PeriodDateFilter, useHeaderMeta } from "../shared/ui";
 import type {
   Student,
   DailyAttendance,
@@ -53,7 +52,6 @@ import type {
   EffectiveAttendanceStatus,
 } from "../types";
 import dayjs, { Dayjs } from "dayjs";
-import { Segmented } from "antd";
 import {
   ATTENDANCE_STATUS_OPTIONS,
   EFFECTIVE_STATUS_COLORS,
@@ -64,11 +62,9 @@ import {
   getAttendanceStatsForStudentDetail,
   STATUS_COLORS,
 } from "../entities/attendance";
-import { PERIOD_OPTIONS } from "../shared/constants/periodOptions";
 import { isWithinPeriod } from "../shared/utils/dateFilters";
 
 const { Title, Text } = Typography;
-const { RangePicker } = DatePicker;
 
 const StudentDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -491,37 +487,17 @@ const StudentDetail: React.FC = () => {
             border: "1px solid #f0f0f0",
           }}
         >
-          <CalendarOutlined style={{ color: "#8c8c8c" }} />
-          <Segmented
+          <PeriodDateFilter
             size="middle"
-            value={selectedPeriod}
-            onChange={(value) => {
-              setSelectedPeriod(value as PeriodType);
-              if (value !== "custom") setCustomDateRange(null);
+            defaultPeriodOnClear="month"
+            style={{ width: 250, borderRadius: 8 }}
+            value={{ period: selectedPeriod, customRange: customDateRange }}
+            onChange={({ period, customRange }) => {
+              setSelectedPeriod(period);
+              setCustomDateRange(customRange);
             }}
-            options={PERIOD_OPTIONS}
-            style={{ background: "transparent" }}
           />
         </div>
-
-        {/* Custom date range picker */}
-        {(selectedPeriod === "custom" || customDateRange) && (
-          <RangePicker
-            size="middle"
-            value={customDateRange}
-            onChange={(dates) => {
-              if (dates && dates[0] && dates[1]) {
-                setCustomDateRange([dates[0], dates[1]]);
-                setSelectedPeriod("custom");
-              } else {
-                setCustomDateRange(null);
-                setSelectedPeriod("month");
-              }
-            }}
-            format="DD.MM.YYYY"
-            style={{ width: 240, borderRadius: 8 }}
-          />
-        )}
 
         <div
           style={{

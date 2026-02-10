@@ -13,8 +13,6 @@ import {
   Popconfirm,
   App,
   Typography,
-  Segmented,
-  DatePicker,
   Progress,
   Switch,
 } from "antd";
@@ -36,7 +34,13 @@ import { studentsService } from "../services/students";
 import type { StudentsResponse } from "../types";
 import { classesService } from "../services/classes";
 import type { PeriodType, EffectiveAttendanceStatus } from "../types";
-import { PageHeader, Divider, StatItem, useHeaderMeta } from "../shared/ui";
+import {
+  Divider,
+  PageHeader,
+  PeriodDateFilter,
+  StatItem,
+  useHeaderMeta,
+} from "../shared/ui";
 import { getAssetUrl, DEFAULT_PAGE_SIZE } from "../config";
 import type { Student, Class } from "../types";
 import dayjs from "dayjs";
@@ -46,14 +50,9 @@ import {
   EFFECTIVE_STATUS_META,
   STATUS_COLORS,
 } from "../entities/attendance";
-import { PERIOD_OPTIONS as SHARED_PERIOD_OPTIONS } from "../shared/constants/periodOptions";
 
 const { Text } = Typography;
-const { RangePicker } = DatePicker;
 const AUTO_REFRESH_MS = 60000;
-
-// Vaqt filterlari opsiyalari (shared)
-const PERIOD_OPTIONS = SHARED_PERIOD_OPTIONS;
 
 const Students: React.FC = () => {
   const { schoolId } = useSchool();
@@ -494,37 +493,16 @@ const Students: React.FC = () => {
     <div>
       {/* Kompakt Header - Dashboard uslubida */}
       <PageHeader>
-        {/* Vaqt filterlari */}
-        <Segmented
+        <PeriodDateFilter
           size="small"
-          value={selectedPeriod}
-          onChange={(value) => {
-            setSelectedPeriod(value as PeriodType);
-            if (value !== "custom") setCustomDateRange(null);
+          style={{ width: 230 }}
+          value={{ period: selectedPeriod, customRange: customDateRange }}
+          onChange={({ period, customRange }) => {
+            setSelectedPeriod(period);
+            setCustomDateRange(customRange);
             setPage(1);
           }}
-          options={PERIOD_OPTIONS}
         />
-
-        {/* Custom date range picker */}
-        {selectedPeriod === "custom" || customDateRange ? (
-          <RangePicker
-            size="small"
-            value={customDateRange}
-            onChange={(dates) => {
-              if (dates && dates[0] && dates[1]) {
-                setCustomDateRange([dates[0], dates[1]]);
-                setSelectedPeriod("custom");
-              } else {
-                setCustomDateRange(null);
-                setSelectedPeriod("today");
-              }
-              setPage(1);
-            }}
-            format="DD.MM.YYYY"
-            style={{ width: 200 }}
-          />
-        ) : null}
 
         {responseData?.periodLabel && selectedPeriod !== "today" && (
           <Tag color="blue">{responseData.periodLabel}</Tag>

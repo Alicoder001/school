@@ -3,13 +3,11 @@ import {
   Table,
   Button,
   Tag,
-  DatePicker,
   Select,
   App,
   Input,
   Modal,
   Form,
-  Segmented,
 } from "antd";
 import {
   DownloadOutlined,
@@ -33,7 +31,13 @@ import type {
 } from "../types";
 import { getAssetUrl } from "../config";
 import { useAuth } from "../hooks/useAuth";
-import { PageHeader, StatItem, StatGroup, useHeaderMeta } from "../shared/ui";
+import {
+  PageHeader,
+  PeriodDateFilter,
+  StatItem,
+  StatGroup,
+  useHeaderMeta,
+} from "../shared/ui";
 import dayjs from "dayjs";
 import {
   ATTENDANCE_STATUS_TAG,
@@ -43,12 +47,8 @@ import {
   STATUS_COLORS,
   EFFECTIVE_STATUS_OPTIONS,
 } from "../entities/attendance";
-import { PERIOD_OPTIONS_WITH_CUSTOM } from "../shared/constants/periodOptions";
-
-const { RangePicker } = DatePicker;
+import { getRangeForPeriod } from "../shared/utils/periodRanges";
 const AUTO_REFRESH_MS = 60000;
-
-const PERIOD_OPTIONS = PERIOD_OPTIONS_WITH_CUSTOM;
 
 const Attendance: React.FC = () => {
   const { message } = App.useApp();
@@ -57,11 +57,13 @@ const Attendance: React.FC = () => {
   const [records, setRecords] = useState<DailyAttendance[]>([]);
   const [classes, setClasses] = useState<Class[]>([]);
   const [loading, setLoading] = useState(true);
-  const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs]>([
-    dayjs(),
-    dayjs(),
-  ]);
+  const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs]>(() =>
+    getRangeForPeriod("today"),
+  );
   const [selectedPeriod, setSelectedPeriod] = useState<PeriodType>("today");
+  const [customDateRange, setCustomDateRange] = useState<
+    [dayjs.Dayjs, dayjs.Dayjs] | null
+  >(null);
   const [classFilter, setClassFilter] = useState<string | undefined>();
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
   const [searchText, setSearchText] = useState("");
@@ -172,38 +174,6 @@ const Attendance: React.FC = () => {
     }, AUTO_REFRESH_MS);
     return () => clearInterval(timer);
   }, [isTodayRange, fetchData]);
-
-  const handlePeriodChange = (value: PeriodType) => {
-    setSelectedPeriod(value);
-    let start = dayjs();
-    let end = dayjs();
-
-    switch (value) {
-      case "today":
-        start = dayjs();
-        end = dayjs();
-        break;
-      case "yesterday":
-        start = dayjs().subtract(1, "day");
-        end = dayjs().subtract(1, "day");
-        break;
-      case "week":
-        start = dayjs().startOf("week");
-        end = dayjs();
-        break;
-      case "month":
-        start = dayjs().startOf("month");
-        end = dayjs();
-        break;
-      case "year":
-        start = dayjs().startOf("year");
-        end = dayjs();
-        break;
-      case "custom":
-        return; // Don't change dateRange yet, wait for picker
-    }
-    setDateRange([start, end]);
-  };
 
   const handleStatusChange = async (
     record: DailyAttendance,
@@ -462,37 +432,24 @@ const Attendance: React.FC = () => {
           padding: "0 4px",
         }}
       >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            background: "#fff",
-            padding: "4px 8px",
-            borderRadius: 8,
-            border: "1px solid #f0f0f0",
-          }}
-        >
-          <CalendarOutlined style={{ color: "#8c8c8c" }} />
-          <Segmented
-            size="middle"
-            value={selectedPeriod}
-            onChange={(val) => handlePeriodChange(val as PeriodType)}
-            options={PERIOD_OPTIONS}
-            style={{ background: "transparent" }}
-          />
-        </div>
+        <PeriodDateFilter
+          size="middle"
+          style={{ width: 250, borderRadius: 8 }}
+          value={{ period: selectedPeriod, customRange: customDateRange }}
+          onChange={({ period, customRange }) => {
+            setSelectedPeriod(period);
+            setCustomDateRange(customRange);
 
-        {(selectedPeriod === "custom") && (
-          <RangePicker
-            value={dateRange}
-            onChange={(values) =>
-              values && setDateRange([values[0]!, values[1]!])
+            if (period === "custom" && customRange) {
+              setDateRange(customRange);
+              return;
             }
-            format="DD.MM.YYYY"
-            style={{ width: 240, borderRadius: 8 }}
-          />
-        )}
+
+            if (period !== "custom") {
+              setDateRange(getRangeForPeriod(period));
+            }
+          }}
+        />
 
         <div
           style={{
