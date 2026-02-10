@@ -18,6 +18,32 @@ export class NotFoundError extends Error {
   }
 }
 
+function logAccessDenied(params: {
+  user?: any;
+  reason: string;
+  scopeSchoolId?: string;
+}) {
+  const schoolId = params.scopeSchoolId || params.user?.schoolId || null;
+  if (!schoolId) return;
+  prisma.provisioningLog.create({
+    data: {
+      schoolId,
+      level: "WARN",
+      eventType: "ACCESS_DENIED",
+      stage: "AUTHZ",
+      status: "FAILED",
+      message: params.reason,
+      actorId: params.user?.sub || null,
+      actorRole: params.user?.role || null,
+      actorName: params.user?.name || null,
+      source: "BACKEND_API",
+      payload: {
+        requestedSchoolId: params.scopeSchoolId || null,
+      },
+    },
+  }).catch(() => null);
+}
+
 export function isSuperAdmin(user: any): boolean {
   return user?.role === 'SUPER_ADMIN';
 }
@@ -25,6 +51,10 @@ export function isSuperAdmin(user: any): boolean {
 export function requireRoles(user: any, roles: AppRole[]) {
   if (isSuperAdmin(user)) return;
   if (!user?.role || !roles.includes(user.role)) {
+    logAccessDenied({
+      user,
+      reason: `Role not allowed. required=${roles.join(",")}, actual=${user?.role || "none"}`,
+    });
     throw new ForbiddenError('forbidden');
   }
 }
@@ -32,6 +62,11 @@ export function requireRoles(user: any, roles: AppRole[]) {
 export function requireSchoolScope(user: any, schoolId: string) {
   if (isSuperAdmin(user)) return;
   if (!user?.schoolId || user.schoolId !== schoolId) {
+    logAccessDenied({
+      user,
+      reason: "School scope mismatch",
+      scopeSchoolId: schoolId,
+    });
     throw new ForbiddenError('forbidden');
   }
 }

@@ -1,4 +1,4 @@
-import { useState, createContext } from 'react';
+import { useState, createContext, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { getAuthUser, logout } from './api';
 import { useTheme } from './hooks/useTheme';
@@ -16,9 +16,20 @@ import type { AuthUser } from './types';
 
 // Toast context
 export const ToastContext = createContext<ReturnType<typeof useToast> | null>(null);
+const ALLOWED_DESKTOP_ROLES = new Set(['SCHOOL_ADMIN', 'TEACHER']);
+
+function getAllowedAuthUser(): AuthUser | null {
+  const user = getAuthUser();
+  if (!user) return null;
+  if (!ALLOWED_DESKTOP_ROLES.has(user.role)) {
+    logout();
+    return null;
+  }
+  return user;
+}
 
 function App() {
-  const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => getAuthUser());
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => getAllowedAuthUser());
   const { theme, toggleTheme } = useTheme();
   const toastState = useToast();
 
@@ -26,6 +37,13 @@ function App() {
     logout();
     setCurrentUser(null);
   };
+
+  useEffect(() => {
+    if (!currentUser) return;
+    if (ALLOWED_DESKTOP_ROLES.has(currentUser.role)) return;
+    logout();
+    setCurrentUser(null);
+  }, [currentUser]);
 
   // Show login if not authenticated
   if (!currentUser) {

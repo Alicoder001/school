@@ -378,10 +378,10 @@ export function AddStudentsPage() {
     <div className="page">
       {/* Page Header */}
       <div className="page-header">
-        <div>
+        <div className="header-main">
           <h1 className="page-title">O'quvchilar qo'shish</h1>
           <p className="page-description">
-            Jadvalni to'ldiring yoki Excel yuklang
+            Jadvalni to'ldiring, Excel yuklang yoki qurilmadan import qiling
           </p>
         </div>
 
@@ -392,8 +392,10 @@ export function AddStudentsPage() {
             onClick={() => setIsClassModalOpen(true)}
             title="Yangi sinf qo'shish"
           >
-            <Icons.Plus /> Sinf qo'shish
+            <Icons.Plus />
+            <span>Sinf</span>
           </button>
+          
           <button
             type="button"
             className="button button-secondary"
@@ -401,8 +403,10 @@ export function AddStudentsPage() {
             disabled={backendDevices.length === 0 || isDeviceImporting}
             title="Qurilmadan jadvalga import (device mode)"
           >
-            <Icons.Download /> {isDeviceImporting ? 'Device import...' : 'Device mode import'}
+            <Icons.Download />
+            <span>{isDeviceImporting ? 'Import...' : 'Qurilmadan'}</span>
           </button>
+
           <div className="device-select">
             <button
               type="button"
@@ -411,7 +415,7 @@ export function AddStudentsPage() {
               title="Qurilma tanlovi"
             >
               <Icons.Monitor />
-              <span>Qurilmalar ({selectedDeviceIds.length}/{backendDevices.length})</span>
+              <span>Tanlangan: {selectedDeviceIds.length}</span>
               <Icons.ChevronDown />
             </button>
             {isDeviceDropdownOpen && (
@@ -431,7 +435,6 @@ export function AddStudentsPage() {
                     onClick={() => refreshDeviceStatuses(backendDevices, credentials)}
                     disabled={deviceStatusLoading || backendDevices.length === 0}
                     title="Yangilash"
-                    aria-label="Yangilash"
                   >
                     <Icons.Refresh />
                   </button>
@@ -451,17 +454,7 @@ export function AddStudentsPage() {
                           onChange={() => handleToggleDevice(device.id)}
                         />
                         <span className="device-select-name">{device.name}</span>
-                        <span
-                          className={`badge ${
-                            status === 'online'
-                              ? 'badge-success'
-                              : status === 'offline'
-                              ? 'badge-danger'
-                              : ''
-                          }`}
-                        >
-                          {status === 'online' ? 'Online' : status === 'offline' ? 'Offline' : "Sozlanmagan"}
-                        </span>
+                        <div className={`status-dot ${status}`} title={status}></div>
                       </label>
                     );
                   })}
@@ -469,21 +462,33 @@ export function AddStudentsPage() {
               </div>
             )}
           </div>
+
           <ExcelImportButton 
             onImport={handleExcelImport} 
             disabled={loading}
           />
+
           <button
             type="button"
-            className="device-select-trigger"
+            className="button button-secondary"
             onClick={() => setIsTemplateModalOpen(true)}
             disabled={loading}
             title="Shablon yuklash"
-            aria-label="Shablon yuklash"
           >
-            <Icons.Download />
-            <span>Shablon yuklash</span>
+            <Icons.FileText />
+            <span>Shablon</span>
           </button>
+
+          {lastProvisioningId && (
+            <button
+              type="button"
+              className="button button-icon"
+              onClick={() => setIsProvModalOpen(true)}
+              title="Provisioning holati"
+            >
+              <Icons.Refresh />
+            </button>
+          )}
 
           {pendingCount > 0 && (
             <button 
@@ -491,18 +496,8 @@ export function AddStudentsPage() {
               onClick={handleSaveAll}
               disabled={isSaving}
             >
-              <Icons.Save /> Barchasini Saqlash ({pendingCount})
-            </button>
-          )}
-
-          {lastProvisioningId && (
-            <button
-              type="button"
-              className="btn-icon"
-              onClick={() => setIsProvModalOpen(true)}
-              title="Provisioning holatini ko'rish"
-            >
-              <Icons.Refresh />
+              <Icons.Save />
+              <span>Saqlash ({pendingCount})</span>
             </button>
           )}
         </div>
@@ -512,20 +507,20 @@ export function AddStudentsPage() {
       {students.length > 0 && (
         <div className="stats-bar">
           <div className="stat-item">
-            <span className="stat-label">Jami:</span>
+            <span className="stat-label">Jami o'quvchilar</span>
             <span className="stat-value">{students.length}</span>
           </div>
           <div className="stat-item stat-warning">
-            <span className="stat-label">Kutilmoqda:</span>
+            <span className="stat-label">Saqlash kutilmoqda</span>
             <span className="stat-value">{pendingCount}</span>
           </div>
           <div className="stat-item stat-success">
-            <span className="stat-label">Saqlandi:</span>
+            <span className="stat-label">Muvaffaqiyatli</span>
             <span className="stat-value">{successCount}</span>
           </div>
           {errorCount > 0 && (
             <div className="stat-item stat-danger">
-              <span className="stat-label">Xato:</span>
+              <span className="stat-label">Xatoliklar</span>
               <span className="stat-value">{errorCount}</span>
             </div>
           )}
@@ -534,7 +529,10 @@ export function AddStudentsPage() {
 
       {errorRows.length > 0 && (
         <div className="notice notice-error">
-          <strong>Xatolar tafsiloti:</strong>
+          <div className="notice-header">
+            <Icons.AlertCircle />
+            <strong>Saqlashda yuzaga kelgan xatoliklar:</strong>
+          </div>
           <div className="error-summary-list">
             {errorRows.map(({ student, index }) => {
               const name = `${student.lastName || ''} ${student.firstName || ''}`.trim() || `Qator ${index}`;
@@ -544,7 +542,7 @@ export function AddStudentsPage() {
                     #{index} {name}
                   </span>
                   <span className="error-summary-message">
-                    {student.error || "Noma'lum xato"}
+                    {student.error || "Noma'lum xato yuz berdi"}
                   </span>
                 </div>
               );

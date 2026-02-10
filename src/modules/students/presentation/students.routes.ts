@@ -138,9 +138,16 @@ async function logProvisioningEvent(params: {
   provisioningId?: string | null;
   deviceId?: string | null;
   level?: "INFO" | "WARN" | "ERROR";
+  eventType?: string | null;
   stage: string;
   status?: string | null;
   message?: string | null;
+  actorId?: string | null;
+  actorRole?: string | null;
+  actorName?: string | null;
+  actorIp?: string | null;
+  userAgent?: string | null;
+  source?: string | null;
   payload?: Record<string, any> | null;
 }) {
   try {
@@ -151,9 +158,16 @@ async function logProvisioningEvent(params: {
         provisioningId: params.provisioningId || null,
         deviceId: params.deviceId || null,
         level: params.level || "INFO",
+        eventType: params.eventType || params.stage,
         stage: params.stage,
         status: params.status || null,
         message: params.message || null,
+        actorId: params.actorId || null,
+        actorRole: params.actorRole || null,
+        actorName: params.actorName || null,
+        actorIp: params.actorIp || null,
+        userAgent: params.userAgent || null,
+        source: params.source || "BACKEND_API",
         payload: params.payload || undefined,
       },
     });
@@ -203,6 +217,7 @@ async function ensureProvisioningAuth(
   request: any,
   reply: any,
   schoolId: string,
+  studentId?: string,
 ): Promise<ProvisioningAuth | null> {
   const tokenFromHeader =
     request.headers?.["x-provisioning-token"] ||
@@ -223,10 +238,29 @@ async function ensureProvisioningAuth(
   try {
     await request.jwtVerify();
     const user = request.user;
-    requireRoles(user, ["SCHOOL_ADMIN"]);
+    if (!user?.role || !["SCHOOL_ADMIN", "TEACHER"].includes(user.role)) {
+      reply.status(403).send({ error: "forbidden" });
+      return null;
+    }
     requireSchoolScope(user, schoolId);
+    if (studentId && user.role === "TEACHER") {
+      const student = await requireStudentSchoolScope(user, studentId);
+      if (!student.classId) {
+        reply.status(403).send({ error: "forbidden" });
+        return null;
+      }
+      await requireTeacherClassScope(user, student.classId);
+    }
     return { user, tokenAuth: false };
-  } catch {
+  } catch (err: any) {
+    if (err?.statusCode === 403) {
+      reply.status(403).send({ error: "forbidden" });
+      return null;
+    }
+    if (err?.statusCode === 404) {
+      reply.status(404).send({ error: "not found" });
+      return null;
+    }
     reply.status(401).send({ error: "Unauthorized" });
     return null;
   }
@@ -733,7 +767,9 @@ export default async function (fastify: FastifyInstance) {
         const body = request.body;
         const user = request.user;
 
-        requireRoles(user, ["SCHOOL_ADMIN"]);
+        if (!user?.role || !["SCHOOL_ADMIN", "TEACHER"].includes(user.role)) {
+          return reply.status(403).send({ error: "forbidden" });
+        }
         requireSchoolScope(user, schoolId);
 
         // ✅ classId majburiy
@@ -747,6 +783,9 @@ export default async function (fastify: FastifyInstance) {
         });
         if (!classExists) {
           return reply.status(400).send({ error: "Bunday sinf topilmadi" });
+        }
+        if (user.role === "TEACHER") {
+          await requireTeacherClassScope(user, body.classId);
         }
 
         const firstName = normalizeNamePart(body.firstName || "");
@@ -1705,6 +1744,9 @@ export default async function (fastify: FastifyInstance) {
           });
           return reply.status(400).send({ error: "Sinf tanlanishi shart" });
         }
+        if (auth.user?.role === "TEACHER") {
+          await requireTeacherClassScope(auth.user, classId);
+        }
 
         const result = await prisma.$transaction(async (tx) => {
           if (requestId) {
@@ -1981,6 +2023,7 @@ export default async function (fastify: FastifyInstance) {
         request,
         reply,
         provisioning.schoolId,
+        provisioning.studentId,
       );
       if (!auth) return;
 
@@ -2025,6 +2068,7 @@ export default async function (fastify: FastifyInstance) {
         request,
         reply,
         provisioning.schoolId,
+        provisioning.studentId,
       );
       if (!auth) return;
 
@@ -2231,6 +2275,12 @@ export default async function (fastify: FastifyInstance) {
             mode: "insensitive",
           };
         }
+        if (query.eventType) {
+          where.eventType = {
+            contains: String(query.eventType),
+            mode: "insensitive",
+          };
+        }
         if (query.status) {
           where.status = {
             contains: String(query.status),
@@ -2245,6 +2295,9 @@ export default async function (fastify: FastifyInstance) {
         }
         if (query.deviceId) {
           where.deviceId = String(query.deviceId);
+        }
+        if (query.actorId) {
+          where.actorId = String(query.actorId);
         }
 
         const from = query.from ? new Date(String(query.from)) : null;
@@ -2265,10 +2318,13 @@ export default async function (fastify: FastifyInstance) {
             where.OR = [
               { message: { contains: q, mode: "insensitive" } },
               { stage: { contains: q, mode: "insensitive" } },
+              { eventType: { contains: q, mode: "insensitive" } },
               { status: { contains: q, mode: "insensitive" } },
               { provisioningId: { contains: q, mode: "insensitive" } },
               { studentId: { contains: q, mode: "insensitive" } },
               { deviceId: { contains: q, mode: "insensitive" } },
+              { actorId: { contains: q, mode: "insensitive" } },
+              { actorName: { contains: q, mode: "insensitive" } },
               { student: { is: { name: { contains: q, mode: "insensitive" } } } },
               { device: { is: { name: { contains: q, mode: "insensitive" } } } },
             ];
@@ -2815,19 +2871,32 @@ export default async function (fastify: FastifyInstance) {
                 ...(body.payload as Record<string, unknown>),
                 actorId: user?.sub || null,
                 actorRole: user?.role || null,
+                actorName: user?.name || null,
+                actorIp: request.ip || null,
+                userAgent: request.headers?.["user-agent"] || null,
               }
             : {
                 actorId: user?.sub || null,
                 actorRole: user?.role || null,
+                actorName: user?.name || null,
+                actorIp: request.ip || null,
+                userAgent: request.headers?.["user-agent"] || null,
               };
 
         const log = await prisma.provisioningLog.create({
           data: {
             schoolId,
             level: "INFO",
+            eventType: stage,
             stage,
             status,
             message,
+            actorId: user?.sub || null,
+            actorRole: user?.role || null,
+            actorName: user?.name || null,
+            actorIp: request.ip || null,
+            userAgent: request.headers?.["user-agent"] || null,
+            source: "FRONTEND_UI",
             payload: payload || undefined,
           },
         });
@@ -2853,6 +2922,7 @@ export default async function (fastify: FastifyInstance) {
         request,
         reply,
         provisioning.schoolId,
+        provisioning.studentId,
       );
       if (!auth) return;
 
@@ -2884,6 +2954,7 @@ export default async function (fastify: FastifyInstance) {
         request,
         reply,
         provisioning.schoolId,
+        provisioning.studentId,
       );
       if (!auth) return;
 
@@ -2962,6 +3033,87 @@ export default async function (fastify: FastifyInstance) {
       });
 
       return { ok: true, ...result };
+    } catch (err) {
+      return sendHttpError(reply, err);
+    }
+  });
+
+  // Force finalize provisioning as FAILED after rollback (all-or-nothing consistency).
+  fastify.post("/provisioning/:id/finalize-failure", async (request: any, reply) => {
+    try {
+      const { id } = request.params as { id: string };
+      const body = request.body || {};
+
+      const provisioning = await prisma.studentProvisioning.findUnique({
+        where: { id },
+      });
+      if (!provisioning) {
+        return reply.status(404).send({ error: "Provisioning not found" });
+      }
+
+      const auth = await ensureProvisioningAuth(
+        request,
+        reply,
+        provisioning.schoolId,
+        provisioning.studentId,
+      );
+      if (!auth) return;
+
+      const reasonRaw = String(body.reason || "").trim();
+      const reason = reasonRaw || "Forced rollback finalize";
+      const now = new Date();
+
+      const result = await prisma.$transaction(async (tx) => {
+        const forcedLinks = await tx.studentDeviceLink.updateMany({
+          where: {
+            provisioningId: id,
+            status: { not: "FAILED" },
+          },
+          data: {
+            status: "FAILED",
+            lastError: reason,
+            lastAttemptAt: now,
+          },
+        });
+
+        await tx.studentProvisioning.update({
+          where: { id },
+          data: {
+            status: "FAILED",
+            lastError: reason,
+          },
+        });
+
+        await tx.student.update({
+          where: { id: provisioning.studentId },
+          data: {
+            deviceSyncStatus: "FAILED",
+            deviceSyncUpdatedAt: now,
+          },
+        });
+
+        return { forcedLinks: forcedLinks.count };
+      });
+
+      await logProvisioningEvent({
+        schoolId: provisioning.schoolId,
+        studentId: provisioning.studentId,
+        provisioningId: id,
+        level: "ERROR",
+        stage: "ROLLBACK_FINALIZE",
+        status: "FAILED",
+        message: reason,
+        payload: {
+          forcedLinks: result.forcedLinks,
+          tokenAuth: auth.tokenAuth,
+        },
+      });
+
+      return {
+        ok: true,
+        status: "FAILED",
+        forcedLinks: result.forcedLinks,
+      };
     } catch (err) {
       return sendHttpError(reply, err);
     }

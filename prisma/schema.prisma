@@ -206,10 +206,17 @@ model ProvisioningLog {
   provisioningId String?
   deviceId       String?
   level          ProvisioningLogLevel @default(INFO)
+  eventType      String?
   stage          String
   status         String?
   message        String?
   payload        Json?
+  actorId        String?
+  actorRole      String?
+  actorName      String?
+  actorIp        String?
+  userAgent      String?
+  source         String?
   createdAt      DateTime @default(now())
 
   school         School   @relation(fields: [schoolId], references: [id])
@@ -222,6 +229,8 @@ model ProvisioningLog {
   @@index([studentId])
   @@index([deviceId])
   @@index([level])
+  @@index([eventType])
+  @@index([actorId])
   @@index([createdAt])
 }
 

@@ -6,7 +6,7 @@ import {
   requireDeviceSchoolScope,
 } from "../../../utils/authz";
 import { sendHttpError } from "../../../utils/httpErrors";
-import { logAudit } from "../../../utils/audit";
+import { buildUserContext, logAudit } from "../../../utils/audit";
 import {
   getDeviceOperationMetrics,
   recordDeviceOperation,
@@ -21,7 +21,7 @@ export default async function (fastify: FastifyInstance) {
         const { schoolId } = request.params;
         const user = request.user;
 
-        requireRoles(user, ['SCHOOL_ADMIN', 'GUARD']);
+        requireRoles(user, ['SCHOOL_ADMIN', 'TEACHER', 'GUARD']);
         requireSchoolScope(user, schoolId);
 
         return prisma.device.findMany({ where: { schoolId } });
@@ -66,12 +66,12 @@ export default async function (fastify: FastifyInstance) {
         });
         logAudit(fastify, {
           action: "device.create",
+          eventType: "DEVICE_CREATE",
           level: "info",
+          status: "SUCCESS",
           message: "Device created",
-          userId: user.sub,
-          userRole: user.role,
-          requestId: request.id,
           schoolId,
+          ...buildUserContext(request),
           extra: { deviceId: normalizedDeviceId, name },
         });
         recordDeviceOperation("device.create", true, Date.now() - startedAt);
@@ -117,12 +117,12 @@ export default async function (fastify: FastifyInstance) {
         });
         logAudit(fastify, {
           action: "device.update",
+          eventType: "DEVICE_UPDATE",
           level: "info",
+          status: "SUCCESS",
           message: "Device updated",
-          userId: user.sub,
-          userRole: user.role,
-          requestId: request.id,
           schoolId: updated.schoolId,
+          ...buildUserContext(request),
           extra: { deviceId: updated.deviceId, id: updated.id },
         });
         recordDeviceOperation("device.update", true, Date.now() - startedAt);
@@ -161,6 +161,16 @@ export default async function (fastify: FastifyInstance) {
           });
 
           return tx.device.delete({ where: { id } });
+        });
+        logAudit(fastify, {
+          action: "device.delete",
+          eventType: "DEVICE_DELETE",
+          level: "warn",
+          status: "SUCCESS",
+          message: "Device deleted",
+          schoolId: deleted.schoolId,
+          ...buildUserContext(request),
+          extra: { deviceId: deleted.deviceId, id: deleted.id, name: deleted.name },
         });
         recordDeviceOperation("device.delete", true, Date.now() - startedAt);
         return deleted;

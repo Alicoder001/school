@@ -87,10 +87,17 @@ export interface ProvisioningLogEntry {
   provisioningId?: string | null;
   deviceId?: string | null;
   level: "INFO" | "WARN" | "ERROR";
+  eventType?: string | null;
   stage: string;
   status?: string | null;
   message?: string | null;
   payload?: Record<string, any> | null;
+  actorId?: string | null;
+  actorRole?: string | null;
+  actorName?: string | null;
+  actorIp?: string | null;
+  userAgent?: string | null;
+  source?: string | null;
   createdAt: string;
   student?: {
     id: string;
@@ -112,11 +119,13 @@ export interface ProvisioningAuditQuery {
   limit?: number;
   q?: string;
   level?: 'INFO' | 'WARN' | 'ERROR' | '';
+  eventType?: string;
   stage?: string;
   status?: string;
   provisioningId?: string;
   studentId?: string;
   deviceId?: string;
+  actorId?: string;
   from?: string;
   to?: string;
 }
@@ -155,6 +164,159 @@ export interface UserInfoSearchResponse {
 
 // Backend URL - can be configured via environment
 export const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
+const API_DEBUG_STORAGE_KEY = 'registrator_api_debug_entries';
+const API_DEBUG_LIMIT = 150;
+const DEFAULT_FETCH_TIMEOUT_MS = 20_000;
+const parsedFetchTimeout = Number(import.meta.env.VITE_FETCH_TIMEOUT_MS || DEFAULT_FETCH_TIMEOUT_MS);
+const FETCH_TIMEOUT_MS = Number.isFinite(parsedFetchTimeout) && parsedFetchTimeout > 0
+  ? parsedFetchTimeout
+  : DEFAULT_FETCH_TIMEOUT_MS;
+const VERBOSE_NETWORK_DEBUG =
+  import.meta.env.DEV || import.meta.env.VITE_ENABLE_NETWORK_DEBUG === 'true';
+
+type ApiDebugLevel = 'info' | 'warn' | 'error';
+type ApiRequestContext = 'auth' | 'api';
+export type ApiErrorCode = 'NETWORK_ERROR' | 'REQUEST_TIMEOUT' | 'HTTP_ERROR' | 'INVALID_RESPONSE';
+
+export interface ApiDebugEntry {
+  id: string;
+  at: string;
+  level: ApiDebugLevel;
+  context: ApiRequestContext;
+  method: string;
+  url: string;
+  message: string;
+  backendUrl: string;
+  status?: number;
+  durationMs?: number;
+  online: boolean | null;
+}
+
+export class ApiRequestError extends Error {
+  readonly code: ApiErrorCode;
+  readonly method: string;
+  readonly url: string;
+  readonly debugId: string;
+  readonly status?: number;
+
+  constructor(params: {
+    message: string;
+    code: ApiErrorCode;
+    method: string;
+    url: string;
+    debugId: string;
+    status?: number;
+  }) {
+    super(params.message);
+    this.name = 'ApiRequestError';
+    this.code = params.code;
+    this.method = params.method;
+    this.url = params.url;
+    this.debugId = params.debugId;
+    this.status = params.status;
+  }
+}
+
+function normalizeHeaders(input?: HeadersInit): Record<string, string> {
+  if (!input) return {};
+  if (input instanceof Headers) {
+    const fromHeaders: Record<string, string> = {};
+    input.forEach((value, key) => {
+      fromHeaders[key] = value;
+    });
+    return fromHeaders;
+  }
+  if (Array.isArray(input)) {
+    return Object.fromEntries(input);
+  }
+  return { ...input };
+}
+
+function hasHeader(headers: Record<string, string>, name: string): boolean {
+  const lower = name.toLowerCase();
+  return Object.keys(headers).some((key) => key.toLowerCase() === lower);
+}
+
+function toErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) return error.message.trim();
+  if (typeof error === 'string' && error.trim()) return error.trim();
+  return 'Unknown error';
+}
+
+function getOnlineState(): boolean | null {
+  if (typeof navigator === 'undefined') return null;
+  return navigator.onLine;
+}
+
+function createDebugId(): string {
+  return `dbg-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function readStoredApiDebugEntries(): ApiDebugEntry[] {
+  if (typeof localStorage === 'undefined') return [];
+  const raw = localStorage.getItem(API_DEBUG_STORAGE_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as ApiDebugEntry[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeStoredApiDebugEntries(entries: ApiDebugEntry[]): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(API_DEBUG_STORAGE_KEY, JSON.stringify(entries));
+  } catch {
+    // Ignore storage failures on locked-down environments.
+  }
+}
+
+function pushApiDebugEntry(input: Omit<ApiDebugEntry, 'id' | 'at' | 'backendUrl' | 'online'>): string {
+  const entry: ApiDebugEntry = {
+    ...input,
+    id: createDebugId(),
+    at: new Date().toISOString(),
+    backendUrl: BACKEND_URL,
+    online: getOnlineState(),
+  };
+  const current = readStoredApiDebugEntries();
+  const next = [...current, entry].slice(-API_DEBUG_LIMIT);
+  writeStoredApiDebugEntries(next);
+  return entry.id;
+}
+
+export function getApiDebugEntries(limit = 40): ApiDebugEntry[] {
+  const entries = readStoredApiDebugEntries();
+  if (limit <= 0) return [];
+  return entries.slice(-limit);
+}
+
+export function getApiDebugReport(limit = 40): string {
+  return JSON.stringify(
+    {
+      generatedAt: new Date().toISOString(),
+      backendUrl: BACKEND_URL,
+      timeoutMs: FETCH_TIMEOUT_MS,
+      entries: getApiDebugEntries(limit),
+    },
+    null,
+    2,
+  );
+}
+
+export function clearApiDebugEntries(): void {
+  if (typeof localStorage === 'undefined') return;
+  localStorage.removeItem(API_DEBUG_STORAGE_KEY);
+}
+
+export function formatApiErrorMessage(error: unknown, fallback = 'Xatolik yuz berdi'): string {
+  if (error instanceof ApiRequestError) return error.message;
+  if (error instanceof Error && error.message.trim()) return error.message.trim();
+  if (typeof error === 'string' && error.trim()) return error.trim();
+  return fallback;
+}
 
 // ============ Auth Management ============
 
@@ -194,20 +356,36 @@ export function logout(): void {
 }
 
 export async function login(email: string, password: string): Promise<{ token: string; user: AuthUser }> {
+  const url = `${BACKEND_URL}/auth/login`;
   console.debug('[Auth] login attempt', { email, backendUrl: BACKEND_URL });
-  const res = await fetch(`${BACKEND_URL}/auth/login`, {
+  const res = await request(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password }),
-  });
-  
+  }, 'auth', false);
+
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: 'Login failed' }));
-    console.warn('[Auth] login failed', { status: res.status, error: err.error || 'Login failed' });
-    throw new Error(err.error || 'Login failed');
+    throw await buildHttpApiError(res, 'Login failed', 'POST', 'auth');
   }
-  
-  const data = await res.json();
+
+  const data = await res.json().catch((error: unknown) => {
+    const debugId = pushApiDebugEntry({
+      level: 'error',
+      context: 'auth',
+      method: 'POST',
+      url,
+      status: res.status,
+      message: `Invalid login response JSON: ${toErrorMessage(error)}`,
+    });
+    throw new ApiRequestError({
+      message: `Serverdan noto'g'ri login javobi keldi. [debug:${debugId}]`,
+      code: 'INVALID_RESPONSE',
+      method: 'POST',
+      url,
+      status: res.status,
+      debugId,
+    });
+  });
   setAuth(data.token, data.user);
   return data;
 }
@@ -215,19 +393,75 @@ export async function login(email: string, password: string): Promise<{ token: s
 // ============ Backend API with Auth ============
 
 async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Response> {
+  return request(url, options, 'api', true);
+}
+
+async function request(
+  url: string,
+  options: RequestInit,
+  context: ApiRequestContext,
+  withAuth: boolean,
+): Promise<Response> {
   const token = getAuthToken();
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...(options.headers as Record<string, string> || {}),
-  };
-  if (token) {
+  const headers = normalizeHeaders(options.headers);
+  if (options.body && !(options.body instanceof FormData) && !hasHeader(headers, 'Content-Type')) {
+    headers['Content-Type'] = 'application/json';
+  }
+  if (withAuth && token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
-  const method = options.method || 'GET';
-  console.debug('[API] fetchWithAuth', { method, url });
-  const res = await fetch(url, { ...options, headers });
-  console.debug('[API] response', { method, url, status: res.status, ok: res.ok });
-  return res;
+  const method = (options.method || 'GET').toUpperCase();
+  const startedAt = Date.now();
+  const controller = options.signal ? null : new AbortController();
+  const timeoutId = controller
+    ? window.setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+    : null;
+
+  console.debug('[API] request', { method, url, context });
+  try {
+    const res = await fetch(url, {
+      ...options,
+      headers,
+      signal: options.signal || controller?.signal,
+    });
+    const durationMs = Date.now() - startedAt;
+    console.debug('[API] response', { method, url, status: res.status, ok: res.ok, durationMs });
+
+    if (!res.ok || VERBOSE_NETWORK_DEBUG) {
+      pushApiDebugEntry({
+        level: res.ok ? 'info' : 'warn',
+        context,
+        method,
+        url,
+        status: res.status,
+        durationMs,
+        message: res.ok ? 'Request OK' : `HTTP ${res.status}`,
+      });
+    }
+    return res;
+  } catch (error: unknown) {
+    const durationMs = Date.now() - startedAt;
+    const timedOut = error instanceof DOMException && error.name === 'AbortError';
+    const debugId = pushApiDebugEntry({
+      level: 'error',
+      context,
+      method,
+      url,
+      durationMs,
+      message: `${timedOut ? 'Timeout' : 'Network error'}: ${toErrorMessage(error)}`,
+    });
+    throw new ApiRequestError({
+      message: timedOut
+        ? `Server javobi kechikdi (${FETCH_TIMEOUT_MS}ms). [debug:${debugId}]`
+        : `Server bilan bog'lanib bo'lmadi. URL va internetni tekshiring. [debug:${debugId}]`,
+      code: timedOut ? 'REQUEST_TIMEOUT' : 'NETWORK_ERROR',
+      method,
+      url,
+      debugId,
+    });
+  } finally {
+    if (timeoutId !== null) window.clearTimeout(timeoutId);
+  }
 }
 
 async function readErrorMessage(res: Response, fallback: string): Promise<string> {
@@ -235,21 +469,66 @@ async function readErrorMessage(res: Response, fallback: string): Promise<string
   if (!text) return fallback;
   try {
     const parsed = JSON.parse(text);
+    if (Array.isArray(parsed?.message)) {
+      const arrMessage = parsed.message.filter((item: unknown) => typeof item === 'string').join(', ').trim();
+      if (arrMessage) return arrMessage;
+    }
     if (typeof parsed?.error === "string" && parsed.error.trim()) return parsed.error.trim();
     if (typeof parsed?.message === "string" && parsed.message.trim()) return parsed.message.trim();
+    if (typeof parsed === 'string' && parsed.trim()) return parsed.trim();
   } catch {
     // keep raw text
   }
   return text;
 }
 
+async function buildHttpApiError(
+  res: Response,
+  fallback: string,
+  method = 'GET',
+  context: ApiRequestContext = 'api',
+): Promise<ApiRequestError> {
+  const message = await readErrorMessage(res, fallback);
+  const debugId = pushApiDebugEntry({
+    level: 'warn',
+    context,
+    method,
+    url: res.url || `${BACKEND_URL}/unknown`,
+    status: res.status,
+    message,
+  });
+  return new ApiRequestError({
+    message: `${message} (status ${res.status}) [debug:${debugId}]`,
+    code: 'HTTP_ERROR',
+    method,
+    url: res.url || `${BACKEND_URL}/unknown`,
+    status: res.status,
+    debugId,
+  });
+}
+
 async function assertSchoolScopedResponse(res: Response, fallback: string): Promise<void> {
   if (res.ok) return;
   if (res.status === 404) {
     logout();
-    throw new Error("Sessiya eskirgan: maktab topilmadi. Qayta login qiling.");
+    const debugId = pushApiDebugEntry({
+      level: 'warn',
+      context: 'api',
+      method: 'GET',
+      url: res.url || `${BACKEND_URL}/unknown`,
+      status: res.status,
+      message: 'School not found for current session',
+    });
+    throw new ApiRequestError({
+      message: `Sessiya eskirgan: maktab topilmadi. Qayta login qiling. [debug:${debugId}]`,
+      code: 'HTTP_ERROR',
+      method: 'GET',
+      url: res.url || `${BACKEND_URL}/unknown`,
+      status: 404,
+      debugId,
+    });
   }
-  throw new Error(await readErrorMessage(res, fallback));
+  throw await buildHttpApiError(res, fallback);
 }
 
 export interface SchoolInfo {
@@ -361,7 +640,7 @@ export async function fetchSchools(): Promise<SchoolInfo[]> {
   
   // SUPER_ADMIN can see all schools
   const res = await fetchWithAuth(`${BACKEND_URL}/schools`);
-  if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to fetch schools'));
+  if (!res.ok) throw await buildHttpApiError(res, 'Failed to fetch schools');
   return res.json();
 }
 
@@ -381,7 +660,7 @@ export async function fetchSchoolStudents(
   if (params.page) query.set('page', String(params.page));
   const suffix = query.toString() ? `?${query.toString()}` : '';
   const res = await fetchWithAuth(`${BACKEND_URL}/schools/${schoolId}/students${suffix}`);
-  if (!res.ok) throw new Error('Failed to fetch students');
+  if (!res.ok) throw await buildHttpApiError(res, 'Failed to fetch students');
   return res.json();
 }
 
@@ -401,10 +680,7 @@ export async function createSchoolStudent(
     method: 'POST',
     body: JSON.stringify(payload),
   });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(text || 'Failed to create student');
-  }
+  if (!res.ok) throw await buildHttpApiError(res, 'Failed to create student', 'POST');
   return res.json();
 }
 
@@ -429,7 +705,7 @@ export async function fetchStudentDiagnostics(
   if (params.page) query.set('page', String(params.page));
   const suffix = query.toString() ? `?${query.toString()}` : '';
   const res = await fetchWithAuth(`${BACKEND_URL}/schools/${schoolId}/students/device-diagnostics${suffix}`);
-  if (!res.ok) throw new Error('Failed to fetch student diagnostics');
+  if (!res.ok) throw await buildHttpApiError(res, 'Failed to fetch student diagnostics');
   return res.json();
 }
 
@@ -450,10 +726,7 @@ export async function updateStudentProfile(
     method: 'PUT',
     body: JSON.stringify(payload),
   });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(text || 'Failed to update student');
-  }
+  if (!res.ok) throw await buildHttpApiError(res, 'Failed to update student', 'PUT');
   return res.json();
 }
 
@@ -501,10 +774,7 @@ export async function createSchoolDevice(
     method: 'POST',
     body: JSON.stringify(payload),
   });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(text || 'Failed to create backend device');
-  }
+  if (!res.ok) throw await buildHttpApiError(res, 'Failed to create backend device', 'POST');
   return res.json();
 }
 
@@ -516,10 +786,7 @@ export async function updateSchoolDevice(
     method: 'PUT',
     body: JSON.stringify(payload),
   });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(text || 'Failed to update backend device');
-  }
+  if (!res.ok) throw await buildHttpApiError(res, 'Failed to update backend device', 'PUT');
   return res.json();
 }
 
@@ -527,10 +794,7 @@ export async function getDeviceWebhookHealth(
   id: string,
 ): Promise<{ ok: boolean; deviceId: string; lastWebhookEventAt: string | null; lastSeenAt: string | null }> {
   const res = await fetchWithAuth(`${BACKEND_URL}/devices/${id}/webhook-health`);
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(text || 'Failed to fetch webhook health');
-  }
+  if (!res.ok) throw await buildHttpApiError(res, 'Failed to fetch webhook health');
   return res.json();
 }
 
@@ -584,10 +848,7 @@ export async function deleteSchoolDevice(id: string): Promise<boolean> {
   const res = await fetchWithAuth(`${BACKEND_URL}/devices/${id}`, {
     method: 'DELETE',
   });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(text || 'Failed to delete backend device');
-  }
+  if (!res.ok) throw await buildHttpApiError(res, 'Failed to delete backend device', 'DELETE');
   return true;
 }
 
@@ -597,17 +858,7 @@ export async function createClass(schoolId: string, name: string, gradeLevel: nu
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, gradeLevel }),
   });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    let message = 'Failed to create class';
-    try {
-      const err = text ? JSON.parse(text) : {};
-      message = err.message || err.error || message;
-    } catch {
-      if (text) message = text;
-    }
-    throw new Error(`${message} (status ${res.status})`);
-  }
+  if (!res.ok) throw await buildHttpApiError(res, 'Failed to create class', 'POST');
   return res.json();
 }
 
@@ -878,7 +1129,7 @@ export async function getProvisioningLogs(
   provisioningId: string,
 ): Promise<ProvisioningLogEntry[]> {
   const res = await fetchWithAuth(`${BACKEND_URL}/provisioning/${provisioningId}/logs`);
-  if (!res.ok) throw new Error('Failed to fetch provisioning logs');
+  if (!res.ok) throw await buildHttpApiError(res, 'Failed to fetch provisioning logs');
   return res.json();
 }
 
@@ -891,19 +1142,18 @@ export async function getSchoolProvisioningLogs(
   if (query.limit) params.set('limit', String(query.limit));
   if (query.q) params.set('q', query.q);
   if (query.level) params.set('level', query.level);
+  if (query.eventType) params.set('eventType', query.eventType);
   if (query.stage) params.set('stage', query.stage);
   if (query.status) params.set('status', query.status);
   if (query.provisioningId) params.set('provisioningId', query.provisioningId);
   if (query.studentId) params.set('studentId', query.studentId);
   if (query.deviceId) params.set('deviceId', query.deviceId);
+  if (query.actorId) params.set('actorId', query.actorId);
   if (query.from) params.set('from', query.from);
   if (query.to) params.set('to', query.to);
   const suffix = params.toString() ? `?${params.toString()}` : '';
   const res = await fetchWithAuth(`${BACKEND_URL}/schools/${schoolId}/provisioning-logs${suffix}`);
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(text || 'Failed to fetch audit logs');
-  }
+  if (!res.ok) throw await buildHttpApiError(res, 'Failed to fetch audit logs');
   return res.json();
 }
 
@@ -920,10 +1170,7 @@ export async function createImportAuditLog(
     method: 'POST',
     body: JSON.stringify(payload),
   });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(text || 'Failed to create import audit log');
-  }
+  if (!res.ok) throw await buildHttpApiError(res, 'Failed to create import audit log', 'POST');
   return res.json();
 }
 
@@ -962,10 +1209,7 @@ export async function previewDeviceImport(
     method: 'POST',
     body: JSON.stringify({ rows }),
   });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(text || 'Failed to preview import');
-  }
+  if (!res.ok) throw await buildHttpApiError(res, 'Failed to preview import', 'POST');
   return res.json();
 }
 
@@ -998,10 +1242,7 @@ export async function commitDeviceImport(
     method: 'POST',
     body: JSON.stringify(payload),
   });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(text || 'Failed to commit import');
-  }
+  if (!res.ok) throw await buildHttpApiError(res, 'Failed to commit import', 'POST');
   return res.json();
 }
 
@@ -1023,10 +1264,7 @@ export async function getImportJob(
   synced: number;
 }> {
   const res = await fetchWithAuth(`${BACKEND_URL}/schools/${schoolId}/import-jobs/${jobId}`);
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(text || 'Failed to fetch import job');
-  }
+  if (!res.ok) throw await buildHttpApiError(res, 'Failed to fetch import job');
   return res.json();
 }
 
@@ -1037,10 +1275,7 @@ export async function retryImportJob(
   const res = await fetchWithAuth(`${BACKEND_URL}/schools/${schoolId}/import-jobs/${jobId}/retry`, {
     method: 'POST',
   });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(text || 'Failed to retry import job');
-  }
+  if (!res.ok) throw await buildHttpApiError(res, 'Failed to retry import job', 'POST');
   return res.json();
 }
 
@@ -1056,10 +1291,7 @@ export async function getImportMetrics(
   meanLatencyMs: number;
 }> {
   const res = await fetchWithAuth(`${BACKEND_URL}/schools/${schoolId}/import-metrics`);
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(text || 'Failed to fetch import metrics');
-  }
+  if (!res.ok) throw await buildHttpApiError(res, 'Failed to fetch import metrics');
   return res.json();
 }
 

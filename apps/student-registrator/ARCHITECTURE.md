@@ -191,7 +191,7 @@ VITE_BACKEND_URL=http://localhost:3000  # Main backend URL for sync
 1. **No separate server needed** - Tauri Rust backend handles everything
 2. **Hikvision devices must be on LAN** - No internet access needed for devices
 3. **Face image limit** - Max 200KB per image
-4. **Max 6 devices** - Hardcoded limit in the app
+4. **Device limit** - Configurable via `DEVICE_CREDENTIALS_LIMIT` (default: 10)
 5. **Auth (Basic/Digest)** - Hikvision qurilmasiga qarab Basic yoki Digest talab qilishi mumkin; client Basic → Digest fallback qiladi
 6. **Optional backend-first provisioning** - If `VITE_BACKEND_URL` + `VITE_SCHOOL_ID` are set, the app creates the student on the Fastify backend first and reports per-device results back (supports rollback logic via status).
 7. **Provisioning token** - Set `VITE_BACKEND_TOKEN` in desktop and `PROVISIONING_TOKEN` in backend to allow service-to-service calls without JWT.

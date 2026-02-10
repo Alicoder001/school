@@ -27,6 +27,13 @@ import {
   resolveLocalDeviceForBackend,
 } from '../utils/deviceResolver';
 
+const DEFAULT_DEVICE_CREDENTIALS_LIMIT = 10;
+const parsedDeviceLimit = Number(import.meta.env.VITE_DEVICE_CREDENTIALS_LIMIT);
+const DEVICE_CREDENTIALS_LIMIT =
+  Number.isFinite(parsedDeviceLimit) && parsedDeviceLimit > 0
+    ? Math.floor(parsedDeviceLimit)
+    : DEFAULT_DEVICE_CREDENTIALS_LIMIT;
+
 export function DevicesPage() {
   const navigate = useNavigate();
   const [credentials, setCredentials] = useState<DeviceConfig[]>([]);
@@ -277,8 +284,8 @@ export function DevicesPage() {
 
       if (credentialsProvided && backendDevice) {
         let savedLocal: DeviceConfig | null = null;
-        if (!existingLocal && credentials.length >= 6) {
-          addToast('Ulanish sozlamalari limiti (6 ta) to\'ldi', 'error');
+        if (!existingLocal && credentials.length >= DEVICE_CREDENTIALS_LIMIT) {
+          addToast(`Ulanish sozlamalari limiti (${DEVICE_CREDENTIALS_LIMIT} ta) to'ldi`, 'error');
         } else {
           const payload: Omit<DeviceConfig, 'id'> = {
             backendId: backendDevice.id,
@@ -513,7 +520,7 @@ export function DevicesPage() {
     }
   };
 
-  const deviceLimitReached = credentials.length >= 6;
+  const deviceLimitReached = credentials.length >= DEVICE_CREDENTIALS_LIMIT;
   const openCreateModal = () => {
     setEditingBackendId(null);
     setEditingLocalId(null);
@@ -1083,7 +1090,7 @@ export function DevicesPage() {
 
                 {deviceLimitReached && !editingLocalId && (
                   <p className="notice notice-warning">
-                    Ulanish sozlamalari limiti 6 ta. Yangi login/parol qo'shishda limit tekshiriladi.
+                    Ulanish sozlamalari limiti {DEVICE_CREDENTIALS_LIMIT} ta. Yangi login/parol qo'shishda limit tekshiriladi.
                   </p>
                 )}
               </form>

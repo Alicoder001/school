@@ -660,7 +660,7 @@ export function StudentsPage() {
   return (
     <div className="page">
       <div className="page-header">
-        <div>
+        <div className="header-main">
           <h1 className="page-title">O'quvchilar</h1>
           <p className="page-description">Diagnostika va tahrirlash</p>
         </div>

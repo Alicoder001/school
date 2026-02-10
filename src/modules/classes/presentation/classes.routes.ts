@@ -1,34 +1,34 @@
-import { FastifyInstance } from 'fastify';
+import { FastifyInstance } from "fastify";
 import prisma from "../../../prisma";
-import { addDaysUtc, getDateKeyInZone, dateKeyToUtcDate } from "../../../utils/date";
+import { addDaysUtc, dateKeyToUtcDate, getDateKeyInZone } from "../../../utils/date";
 import {
+  requireClassSchoolScope,
   requireRoles,
   requireSchoolScope,
-  requireClassSchoolScope,
 } from "../../../utils/authz";
 import { sendHttpError } from "../../../utils/httpErrors";
-import { logAudit } from "../../../utils/audit";
+import { buildUserContext, logAudit } from "../../../utils/audit";
 
 export default async function (fastify: FastifyInstance) {
   fastify.get(
-    '/schools/:schoolId/classes',
+    "/schools/:schoolId/classes",
     { preHandler: [(fastify as any).authenticate] } as any,
     async (request: any, reply) => {
       try {
         const { schoolId } = request.params;
         const user = request.user;
 
-        requireRoles(user, ['SCHOOL_ADMIN', 'TEACHER', 'GUARD']);
+        requireRoles(user, ["SCHOOL_ADMIN", "TEACHER", "GUARD"]);
         requireSchoolScope(user, schoolId);
 
         let where: any = { schoolId };
-        if (user.role === 'TEACHER') {
+        if (user.role === "TEACHER") {
           const rows = await prisma.teacherClass.findMany({
             where: { teacherId: user.sub },
             select: { classId: true },
           });
           const classIds = rows.map((r) => r.classId);
-          where = { ...where, id: { in: classIds.length ? classIds : ['__none__'] } };
+          where = { ...where, id: { in: classIds.length ? classIds : ["__none__"] } };
         }
 
         const [school, classes] = await Promise.all([
@@ -38,30 +38,27 @@ export default async function (fastify: FastifyInstance) {
             include: {
               _count: { select: { students: true } },
             },
-            orderBy: [
-              { gradeLevel: 'asc' },
-              { name: 'asc' },
-            ],
+            orderBy: [{ gradeLevel: "asc" }, { name: "asc" }],
           }),
         ]);
 
-        const tz = school?.timezone || 'Asia/Tashkent';
+        const tz = school?.timezone || "Asia/Tashkent";
         const now = new Date();
         const todayKey = getDateKeyInZone(now, tz);
         const today = dateKeyToUtcDate(todayKey);
         const tomorrow = addDaysUtc(today, 1);
-        
+
         const classesWithAttendance = await Promise.all(
           classes.map(async (cls) => {
             const [presentCount, lateCount, absentCount] = await Promise.all([
               prisma.dailyAttendance.count({
-                where: { date: { gte: today, lt: tomorrow }, status: 'PRESENT', student: { classId: cls.id } },
+                where: { date: { gte: today, lt: tomorrow }, status: "PRESENT", student: { classId: cls.id } },
               }),
               prisma.dailyAttendance.count({
-                where: { date: { gte: today, lt: tomorrow }, status: 'LATE', student: { classId: cls.id } },
+                where: { date: { gte: today, lt: tomorrow }, status: "LATE", student: { classId: cls.id } },
               }),
               prisma.dailyAttendance.count({
-                where: { date: { gte: today, lt: tomorrow }, status: 'ABSENT', student: { classId: cls.id } },
+                where: { date: { gte: today, lt: tomorrow }, status: "ABSENT", student: { classId: cls.id } },
               }),
             ]);
             return {
@@ -82,7 +79,7 @@ export default async function (fastify: FastifyInstance) {
   );
 
   fastify.post(
-    '/schools/:schoolId/classes',
+    "/schools/:schoolId/classes",
     { preHandler: [(fastify as any).authenticate] } as any,
     async (request: any, reply) => {
       try {
@@ -90,7 +87,7 @@ export default async function (fastify: FastifyInstance) {
         const { name, gradeLevel, startTime, endTime } = request.body;
         const user = request.user;
 
-        requireRoles(user, ['SCHOOL_ADMIN']);
+        requireRoles(user, ["SCHOOL_ADMIN"]);
         requireSchoolScope(user, schoolId);
 
         const resolvedStartTime = startTime || "08:00";
@@ -103,6 +100,22 @@ export default async function (fastify: FastifyInstance) {
             endTime,
           },
         });
+        logAudit(fastify, {
+          action: "class.create",
+          eventType: "CLASS_CREATE",
+          level: "info",
+          status: "SUCCESS",
+          message: "Class created",
+          schoolId,
+          ...buildUserContext(request),
+          extra: {
+            classId: cls.id,
+            name: cls.name,
+            gradeLevel: cls.gradeLevel,
+            startTime: cls.startTime,
+            endTime: cls.endTime,
+          },
+        });
         return cls;
       } catch (err) {
         return sendHttpError(reply, err);
@@ -111,7 +124,7 @@ export default async function (fastify: FastifyInstance) {
   );
 
   fastify.put(
-    '/classes/:id',
+    "/classes/:id",
     { preHandler: [(fastify as any).authenticate] } as any,
     async (request: any, reply) => {
       try {
@@ -119,23 +132,23 @@ export default async function (fastify: FastifyInstance) {
         const data = request.body;
         const user = request.user;
 
-        requireRoles(user, ['SCHOOL_ADMIN']);
+        requireRoles(user, ["SCHOOL_ADMIN"]);
         await requireClassSchoolScope(user, id);
 
         const existing = await prisma.class.findUnique({ where: { id } });
         if (!existing) {
-          return reply.status(404).send({ error: 'not found' });
+          return reply.status(404).send({ error: "not found" });
         }
 
         const cls = await prisma.class.update({ where: { id }, data });
         logAudit(fastify, {
-          action: 'class.update',
-          level: 'info',
-          message: 'Sinf vaqtini o‘zgartirish',
-          userId: user.sub,
-          userRole: user.role,
-          requestId: request.id,
+          action: "class.update",
+          eventType: "CLASS_UPDATE",
+          level: "info",
+          status: "SUCCESS",
+          message: "Class updated",
           schoolId: existing.schoolId,
+          ...buildUserContext(request),
           extra: {
             classId: id,
             oldStartTime: existing.startTime,
@@ -152,17 +165,34 @@ export default async function (fastify: FastifyInstance) {
   );
 
   fastify.delete(
-    '/classes/:id',
+    "/classes/:id",
     { preHandler: [(fastify as any).authenticate] } as any,
     async (request: any, reply) => {
       try {
         const { id } = request.params;
         const user = request.user;
 
-        requireRoles(user, ['SCHOOL_ADMIN']);
+        requireRoles(user, ["SCHOOL_ADMIN"]);
         await requireClassSchoolScope(user, id);
 
+        const existing = await prisma.class.findUnique({ where: { id } });
         await prisma.class.delete({ where: { id } });
+        if (existing) {
+          logAudit(fastify, {
+            action: "class.delete",
+            eventType: "CLASS_DELETE",
+            level: "warn",
+            status: "SUCCESS",
+            message: "Class deleted",
+            schoolId: existing.schoolId,
+            ...buildUserContext(request),
+            extra: {
+              classId: existing.id,
+              name: existing.name,
+              gradeLevel: existing.gradeLevel,
+            },
+          });
+        }
         return { ok: true };
       } catch (err) {
         return sendHttpError(reply, err);
@@ -170,4 +200,3 @@ export default async function (fastify: FastifyInstance) {
     },
   );
 }
-

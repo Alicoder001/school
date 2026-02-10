@@ -12,7 +12,7 @@ import {
   getNowMinutesInZone,
   getStartedClassIds,
 } from "../../../utils/attendanceStatus";
-import { logAudit } from "../../../utils/audit";
+import { buildUserContext, logAudit } from "../../../utils/audit";
 import {
   ClassCountRow,
   computeNoScanSplit,
@@ -299,12 +299,12 @@ export default async function (fastify: FastifyInstance) {
         });
         logAudit(fastify, {
           action: "school.settings.update",
+          eventType: "SCHOOL_SETTINGS_UPDATE",
           level: "info",
+          status: "SUCCESS",
           message: "Maktab sozlamalari o'zgartirildi",
-          userId: user.sub,
-          userRole: user.role,
-          requestId: request.id,
           schoolId: school.id,
+          ...buildUserContext(request),
           extra: {
             oldLateThreshold: existingSchool.lateThresholdMinutes,
             newLateThreshold: lateThresholdMinutes,
@@ -388,12 +388,12 @@ export default async function (fastify: FastifyInstance) {
 
         logAudit(fastify, {
           action: "school.webhook.rotate",
+          eventType: "SCHOOL_WEBHOOK_ROTATE",
           level: "warn",
+          status: "SUCCESS",
           message: `Webhook secret rotated (${direction})`,
-          userId: user.sub,
-          userRole: user.role,
-          requestId: request.id,
           schoolId: id,
+          ...buildUserContext(request),
           extra: { direction },
         });
 
@@ -448,12 +448,12 @@ export default async function (fastify: FastifyInstance) {
 
         logAudit(fastify, {
           action: "school.webhook.test",
+          eventType: "SCHOOL_WEBHOOK_TEST",
           level: "info",
+          status: "SUCCESS",
           message: `Webhook test requested (${direction})`,
-          userId: user.sub,
-          userRole: user.role,
-          requestId: request.id,
           schoolId: id,
+          ...buildUserContext(request),
           extra: { direction },
         });
 

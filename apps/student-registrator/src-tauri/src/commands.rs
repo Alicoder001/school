@@ -22,6 +22,15 @@ const WEBHOOK_RAW_CANDIDATE_PATHS: [&str; 2] = [
     "ISAPI/Event/notification/httpHosts/1",
 ];
 
+fn get_max_local_devices() -> usize {
+    let raw = std::env::var("DEVICE_CREDENTIALS_LIMIT")
+        .ok()
+        .or_else(|| std::env::var("VITE_DEVICE_CREDENTIALS_LIMIT").ok());
+    raw.and_then(|value| value.trim().parse::<usize>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(10)
+}
+
 fn generate_employee_no() -> String {
     let mut result = String::new();
     for _ in 0..10 {
@@ -124,8 +133,9 @@ pub async fn create_device(
         return Ok(saved);
     }
 
-    if devices.len() >= 6 {
-        return Err("Maximum 6 devices allowed".to_string());
+    let max_local_devices = get_max_local_devices();
+    if devices.len() >= max_local_devices {
+        return Err(format!("Maximum {} devices allowed", max_local_devices));
     }
 
     let now = Utc::now();
@@ -1043,7 +1053,13 @@ pub async fn register_student(
     );
 
     let mut results = Vec::new();
-    let mut successful_devices: Vec<DeviceConfig> = Vec::new();
+    let mut successful_devices: Vec<(
+        DeviceConfig,
+        Option<String>,
+        Option<String>,
+        String,
+        String,
+    )> = Vec::new();
     let mut abort_error: Option<String> = None;
 
     let mut devices_changed = false;
@@ -1149,12 +1165,16 @@ pub async fn register_student(
         }
         let external_device_id = connection
             .device_id
-            .as_deref()
-            .or(device.device_id.as_deref());
+            .clone()
+            .or(device.device_id.clone());
         let backend_device_id = device
             .backend_id
-            .as_deref()
-            .or_else(|| external_device_id.and_then(|id| backend_device_map.get(id).map(|s| s.as_str())));
+            .clone()
+            .or_else(|| {
+                external_device_id
+                    .as_ref()
+                    .and_then(|id| backend_device_map.get(id).cloned())
+            });
         let device_display_name = device_label(device);
         let device_name = Some(device_display_name.as_str());
         let device_location = Some(device.host.as_str());
@@ -1165,8 +1185,8 @@ pub async fn register_student(
                 if let Err(err) = api
                     .report_device_result(
                         pid,
-                        backend_device_id,
-                        external_device_id,
+                        backend_device_id.as_deref(),
+                        external_device_id.as_deref(),
                         device_name,
                         None,
                         device_location,
@@ -1207,8 +1227,8 @@ pub async fn register_student(
                 if let Err(err) = api
                     .report_device_result(
                         pid,
-                        backend_device_id,
-                        external_device_id,
+                        backend_device_id.as_deref(),
+                        external_device_id.as_deref(),
                         device_name,
                         None,
                         device_location,
@@ -1249,8 +1269,8 @@ pub async fn register_student(
             if let Err(err) = api
                 .report_device_result(
                     pid,
-                    backend_device_id,
-                    external_device_id,
+                    backend_device_id.as_deref(),
+                    external_device_id.as_deref(),
                     device_name,
                     None,
                     device_location,
@@ -1273,7 +1293,13 @@ pub async fn register_student(
         });
 
         if face_upload.ok {
-            successful_devices.push(device.clone());
+            successful_devices.push((
+                device.clone(),
+                backend_device_id,
+                external_device_id,
+                device_display_name.clone(),
+                device.host.clone(),
+            ));
         } else {
             let _ = client.delete_user(&employee_no).await;
             if abort_error.is_none() {
@@ -1290,15 +1316,71 @@ pub async fn register_student(
     }
 
     if let Some(message) = abort_error {
+        let rollback_reason = format!("Rolled back due to failure: {}", message);
         let mut rollback_errors: Vec<String> = Vec::new();
-        for dev in successful_devices.iter() {
+        let mut finalize_error: Option<String> = None;
+        for (dev, backend_device_id, external_device_id, device_name, device_location) in successful_devices.iter() {
             let client = HikvisionClient::new(dev.clone());
             let result = client.delete_user(&employee_no).await;
             if !result.ok {
                 let label = device_label(dev);
-                let err = result.error_msg.unwrap_or_else(|| "Delete failed".to_string());
+                let err = result
+                    .error_msg
+                    .clone()
+                    .unwrap_or_else(|| "Delete failed".to_string());
                 rollback_errors.push(format!("{}: {}", label, err));
             }
+            if let (Some(api), Some(pid)) = (api_client.as_ref(), provisioning_id.as_ref()) {
+                let status_error = if result.ok {
+                    rollback_reason.clone()
+                } else {
+                    let err = result
+                        .error_msg
+                        .clone()
+                        .unwrap_or_else(|| "Rollback delete failed".to_string());
+                    format!("{}. Rollback delete failed: {}", rollback_reason, err)
+                };
+                let _ = api
+                    .report_device_result(
+                        pid,
+                        backend_device_id.as_deref(),
+                        external_device_id.as_deref(),
+                        Some(device_name.as_str()),
+                        None,
+                        Some(device_location.as_str()),
+                        "FAILED",
+                        &employee_no,
+                        Some(status_error.as_str()),
+                    )
+                    .await;
+            }
+        }
+        if let (Some(api), Some(pid)) = (api_client.as_ref(), provisioning_id.as_ref()) {
+            let finalize_reason = if rollback_errors.is_empty() {
+                rollback_reason.clone()
+            } else {
+                format!("{}. Rollback errors: {}", rollback_reason, rollback_errors.join("; "))
+            };
+            if let Err(err) = api
+                .finalize_provisioning_failure(pid, finalize_reason.as_str())
+                .await
+            {
+                finalize_error = Some(err);
+            }
+        }
+        if let Some(err) = finalize_error {
+            if rollback_errors.is_empty() {
+                return Err(format!(
+                    "{}. Finalize failure xatosi: {}",
+                    message, err
+                ));
+            }
+            return Err(format!(
+                "{}. Rollback errors: {}. Finalize failure xatosi: {}",
+                message,
+                rollback_errors.join("; "),
+                err
+            ));
         }
         if rollback_errors.is_empty() {
             return Err(message);

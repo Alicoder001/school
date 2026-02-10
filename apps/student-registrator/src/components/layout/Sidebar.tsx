@@ -53,31 +53,44 @@ export function Sidebar({
       </nav>
 
       <div className="sidebar-footer">
-        <div className="sidebar-footer-row">
+        <div className="sidebar-user">
+          <div className="user-avatar" title={user.name}>
+            {user.name.charAt(0).toUpperCase()}
+          </div>
+          {!isCollapsed && (
+            <div className="user-details">
+              <span className="user-name">{user.name}</span>
+              <span className="user-role">{user.role}</span>
+            </div>
+          )}
+          {!isCollapsed && (
+            <button className="btn-logout-mini" onClick={onLogout} title="Chiqish">
+              <Icons.LogOut />
+            </button>
+          )}
+        </div>
+        
+        <div className="sidebar-controls">
           <button
-            className="theme-toggle"
+            className="control-btn"
             onClick={onToggleTheme}
-            title={theme === "light" ? "Dark mode" : "Light mode"}
+            title={theme === "light" ? "Tungi rejim" : "Kunduzgi rejim"}
           >
             {theme === "light" ? <Icons.Moon /> : <Icons.Sun />}
           </button>
-          {!isCollapsed && (
-            <div className="user-info-text">
-              <div className="user-info-name">{user.name}</div>
-              <div className="user-info-role">{user.role}</div>
-            </div>
+          
+          {isCollapsed && (
+            <button className="control-btn logout-collapsed" onClick={onLogout} title="Chiqish">
+              <Icons.LogOut />
+            </button>
           )}
+
           <button
-            className="sidebar-toggle"
+            className="control-btn"
             onClick={onToggle}
             title={isCollapsed ? "Ochish" : "Yopish"}
           >
             {isCollapsed ? <Icons.Menu /> : <Icons.PanelLeft />}
-          </button>
-        </div>
-        <div className="sidebar-footer-row">
-          <button className={`btn-logout ${isCollapsed ? '' : 'btn-logout-full'}`} onClick={onLogout} title="Chiqish">
-            <Icons.LogOut /> {!isCollapsed && <span>Chiqish</span>}
           </button>
         </div>
       </div>

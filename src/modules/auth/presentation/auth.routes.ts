@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import prisma from "../../../prisma";
 import bcrypt from 'bcryptjs';
 import { IS_PROD, SSE_TOKEN_TTL_SECONDS } from "../../../config";
+import { logAudit } from "../../../utils/audit";
 
 export default async function (fastify: FastifyInstance) {
   fastify.post('/login', async (request: any, reply) => {
@@ -18,16 +19,58 @@ export default async function (fastify: FastifyInstance) {
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
       fastify.log.warn({ email }, 'auth.login user not found');
+      logAudit(fastify, {
+        action: "auth.login",
+        eventType: "AUTH_LOGIN_FAILED",
+        level: "warn",
+        status: "FAILED",
+        message: "Login failed: user not found",
+        actorIp: request.ip,
+        userAgent: request.headers?.["user-agent"],
+        source: "BACKEND_API",
+        extra: { email },
+      });
       return reply.status(401).send({ error: 'Invalid credentials' });
     }
     const ok = await bcrypt.compare(password, user.password);
     if (!ok) {
       fastify.log.warn({ email, userId: user.id }, 'auth.login invalid password');
+      logAudit(fastify, {
+        action: "auth.login",
+        eventType: "AUTH_LOGIN_FAILED",
+        level: "warn",
+        status: "FAILED",
+        message: "Login failed: invalid password",
+        userId: user.id,
+        userRole: user.role,
+        actorName: user.name,
+        actorIp: request.ip,
+        userAgent: request.headers?.["user-agent"],
+        schoolId: user.schoolId || undefined,
+        source: "BACKEND_API",
+        extra: { email },
+      });
       return reply.status(401).send({ error: 'Invalid credentials' });
     }
 
     const token = fastify.jwt.sign({ sub: user.id, role: user.role, schoolId: user.schoolId });
     fastify.log.info({ email, userId: user.id }, 'auth.login success');
+    logAudit(fastify, {
+      action: "auth.login",
+      eventType: "AUTH_LOGIN_SUCCESS",
+      level: "info",
+      status: "SUCCESS",
+      message: "Login success",
+      userId: user.id,
+      userRole: user.role,
+      actorName: user.name,
+      actorIp: request.ip,
+      userAgent: request.headers?.["user-agent"],
+      requestId: request.id,
+      schoolId: user.schoolId || undefined,
+      source: "BACKEND_API",
+      extra: { email },
+    });
     const safeUser = {
       id: user.id,
       email: user.email,
@@ -52,12 +95,68 @@ export default async function (fastify: FastifyInstance) {
       await request.jwtVerify();
       const userId = request.user.sub;
       const u = await prisma.user.findUnique({ where: { id: userId } });
-      if (!u) return { error: 'User not found' };
+      if (!u) {
+        logAudit(fastify, {
+          action: "auth.refresh",
+          eventType: "AUTH_REFRESH_FAILED",
+          level: "warn",
+          status: "FAILED",
+          message: "Token refresh failed: user not found",
+          actorIp: request.ip,
+          userAgent: request.headers?.["user-agent"],
+          source: "BACKEND_API",
+        });
+        return { error: 'User not found' };
+      }
       const token = fastify.jwt.sign({ sub: u.id, role: u.role, schoolId: u.schoolId });
+      logAudit(fastify, {
+        action: "auth.refresh",
+        eventType: "AUTH_REFRESH_SUCCESS",
+        level: "info",
+        status: "SUCCESS",
+        message: "Token refreshed",
+        userId: u.id,
+        userRole: u.role,
+        actorName: u.name,
+        actorIp: request.ip,
+        userAgent: request.headers?.["user-agent"],
+        schoolId: u.schoolId || undefined,
+        source: "BACKEND_API",
+      });
       return { token };
     } catch (err) {
+      logAudit(fastify, {
+        action: "auth.refresh",
+        eventType: "AUTH_REFRESH_FAILED",
+        level: "warn",
+        status: "FAILED",
+        message: "Token refresh failed: invalid token",
+        actorIp: request.ip,
+        userAgent: request.headers?.["user-agent"],
+        source: "BACKEND_API",
+      });
       return { error: 'Invalid token' };
     }
+  });
+
+  fastify.post('/logout', { preHandler: [(fastify as any).authenticate] } as any, async (request: any) => {
+    const user = request.user as any;
+    logAudit(fastify, {
+      action: "auth.logout",
+      eventType: "AUTH_LOGOUT",
+      level: "info",
+      status: "SUCCESS",
+      message: "Logout",
+      userId: user?.sub,
+      userRole: user?.role,
+      actorName: user?.name,
+      actorIp: request.ip,
+      userAgent: request.headers?.["user-agent"],
+      schoolId: user?.schoolId || undefined,
+      requestId: request.id,
+      source: "BACKEND_API",
+    });
+    return { ok: true };
   });
 
   // Short-lived token for SSE usage (prod-friendly)

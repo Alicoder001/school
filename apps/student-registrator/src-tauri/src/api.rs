@@ -171,4 +171,34 @@ impl ApiClient {
         serde_json::from_str(&text).map_err(|e| e.to_string())
     }
 
+    pub async fn finalize_provisioning_failure(
+        &self,
+        provisioning_id: &str,
+        reason: &str,
+    ) -> Result<serde_json::Value, String> {
+        let url = format!(
+            "{}/provisioning/{}/finalize-failure",
+            self.base_url, provisioning_id
+        );
+        let payload = json!({
+            "reason": reason
+        });
+        let res = self
+            .apply_auth(
+                self.client
+                    .post(&url)
+                    .header("Content-Type", "application/json")
+                    .body(payload.to_string()),
+            )
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        let status = res.status();
+        let text = res.text().await.unwrap_or_default();
+        if !status.is_success() {
+            return Err(text);
+        }
+        serde_json::from_str(&text).map_err(|e| e.to_string())
+    }
+
 }
