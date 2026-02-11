@@ -150,26 +150,6 @@
   line-height: 1.6;
 }
 
-.notice {
-  padding: 1rem 1.25rem;
-  border-radius: 12px;
-  border: 1px solid transparent;
-  margin-bottom: 1.5rem;
-  font-size: 0.875rem;
-}
-
-.notice-error {
-  background-color: var(--error-50);
-  border-color: var(--error-100);
-  color: var(--error-700);
-}
-
-[data-theme="dark"] .notice-error {
-  background-color: rgba(127, 29, 29, 0.2);
-  border-color: rgba(127, 29, 29, 0.4);
-  color: var(--error-color);
-}
-
 .error-summary-list {
   display: flex;
   flex-direction: column;

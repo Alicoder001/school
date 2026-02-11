@@ -28,6 +28,7 @@ import type {
 import { buildBackendPhotoUrl } from '../utils/photo';
 import { resolveLocalDeviceForBackend } from '../utils/deviceResolver';
 import { appLogger } from '../utils/logger';
+import { splitPersonNameWithFather } from '../utils/name';
 
 type LiveStatus =
   | 'PRESENT'
@@ -143,17 +144,6 @@ function summarizeStatuses(statuses: LiveDeviceResult[], running: boolean): stri
   if (issues === 0 && ok === statuses.length) return `OK ${ok}/${statuses.length}`;
   if (issues === 0) return `Jarayonda ${ok}/${statuses.length}`;
   return `Muammo ${issues}`;
-}
-
-function extractNameComponents(fullName: string) {
-  const parts = fullName.trim().split(/\s+/);
-  if (parts.length === 1) return { lastName: parts[0], firstName: '', fatherName: '' };
-  if (parts.length === 2) return { lastName: parts[0], firstName: parts[1], fatherName: '' };
-  return {
-    lastName: parts[0],
-    firstName: parts[1],
-    fatherName: parts.slice(2).join(' ')
-  };
 }
 
 export function StudentsPage() {
@@ -306,7 +296,7 @@ export function StudentsPage() {
                 const existing = byEmployeeNo.get(employeeNo);
                 if (!existing) {
                   const fullName = (user.name || employeeNo).trim();
-                  const nameParts = extractNameComponents(fullName);
+                  const nameParts = splitPersonNameWithFather(fullName);
                   nextMetaByEmployeeNo[employeeNo] = {
                     localDeviceId: localDevice.id,
                     hasFace,
@@ -485,7 +475,7 @@ export function StudentsPage() {
     addToast,
     loadDiagnostics,
     buildPhotoUrl,
-    extractNameComponents,
+    extractNameComponents: splitPersonNameWithFather,
   });
 
   const runLiveCheck = async (row: StudentDiagnosticsRow) => {

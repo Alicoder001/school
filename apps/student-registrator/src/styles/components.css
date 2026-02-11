@@ -207,10 +207,11 @@
 
 /* Notice */
 .notice {
-  padding: 0.75rem 1rem;
-  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  border-radius: 12px;
+  border: 1px solid transparent;
   font-size: 0.875rem;
-  margin: 1rem 0;
+  margin: 1rem 0 1.5rem;
 }
 
 .notice-warning {
@@ -220,15 +221,21 @@
 }
 
 .notice-error {
-  background: var(--error-bg);
-  color: var(--error-color);
-  border: 1px solid var(--error-color);
+  background-color: var(--error-50);
+  border-color: var(--error-100);
+  color: var(--error-700);
 }
 
 .notice-success {
   background: var(--success-bg);
   color: var(--success-color);
   border: 1px solid var(--success-color);
+}
+
+[data-theme="dark"] .notice-error {
+  background-color: rgba(127, 29, 29, 0.2);
+  border-color: rgba(127, 29, 29, 0.4);
+  color: var(--error-color);
 }
 
 /* Class Rows (Template Modal) */

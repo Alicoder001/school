@@ -126,6 +126,12 @@ body {
   color: var(--error-500);
 }
 
+.status-dot.unknown,
+.status-dot.no_credentials {
+  background: var(--neutral-400);
+  color: var(--neutral-400);
+}
+
 .status-dot.checking {
   background: var(--warning-500);
   color: var(--warning-500);
