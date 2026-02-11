@@ -137,6 +137,7 @@ export function ProvisioningPanel({
             onClick={fetchDetails}
             disabled={loading}
             title="Yangilash"
+            aria-label="Yangilash"
           >
             <Icons.Refresh />
           </button>

@@ -1,6 +1,7 @@
 import { Icons } from '../../components/ui/Icons';
 import type { ClassInfo, SchoolDeviceInfo } from '../../api';
 import type { ImportJob, ImportPreview, ImportRow } from './types';
+import { useModalA11y } from '../../hooks/useModalA11y';
 
 type ImportSyncMode = 'none' | 'current' | 'all' | 'selected';
 
@@ -71,17 +72,27 @@ export function DeviceImportModal({
   importJob,
   importAuditTrail,
 }: DeviceImportModalProps) {
+  const { dialogRef, onDialogKeyDown } = useModalA11y(isOpen, onClose, importLoading);
   if (!isOpen) return null;
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal modal-provisioning" onClick={(e) => e.stopPropagation()}>
+      <div
+        ref={dialogRef}
+        className="modal modal-provisioning"
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={onDialogKeyDown}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Device users import"
+        tabIndex={-1}
+      >
         <div className="modal-header">
           <div>
             <h3>Device Users Import (DB)</h3>
             <p className="text-secondary text-xs">Qolgan maydonlarni to'ldirib, batch saqlang.</p>
           </div>
-          <button className="modal-close" onClick={onClose}>
+          <button className="modal-close" onClick={onClose} aria-label="Yopish">
             <Icons.X />
           </button>
         </div>

@@ -270,3 +270,26 @@ Mitigation: benchmark before/after + targeted tests.
 3. Test suite va CI gate updates.
 4. Security + QA sign-off pack.
 5. Release notes + rollback paket.
+
+## Progress Update (2026-02-11)
+1. Phase 0 completed:
+- Baseline gates successfully re-run (`lint`, `typecheck`, `build`, `cargo check`, `cargo clippy`).
+- Smoke checklist va risk register yaratildi.
+
+2. Phase 1 completed (major items):
+- ESLint scope fix (`src-tauri/target/**` ignore).
+- CSS corruption va duplicate blocks tozalandi.
+- Mojibake issue tozalandi (Excel parse filter line).
+
+3. Phase 3 partially completed:
+- Frontend `any`/unsafe casts cleaned.
+- Rust clippy warnings fully closed.
+
+4. Phase 6 partially completed:
+- `alert/confirm` -> app toast/modal flow.
+- Modal accessibility hook (`ESC` + tab trap) bir nechta modalga qo'llandi.
+- Toast semantics (`aria-live`, `role`) qo'shildi.
+
+5. Phase 7 completed (targeted):
+- `exceljs` lazy chunk strategy standardlashtirildi.
+- Vite bundle warning policy qo'shildi (`manualChunks`, `chunkSizeWarningLimit`).

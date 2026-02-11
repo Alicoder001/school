@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Icons } from '../ui/Icons';
 import type { ClassInfo } from '../../types';
+import { useModalA11y } from '../../hooks/useModalA11y';
 
 interface TemplateDownloadModalProps {
   isOpen: boolean;
@@ -83,12 +84,22 @@ export function TemplateDownloadModal({
   const validCount = rows.filter(
     (row) => row.value.trim() && row.value !== '__custom__'
   ).length;
+  const { dialogRef, onDialogKeyDown } = useModalA11y(isOpen, onClose, downloading);
 
   if (!isOpen) return null;
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div
+        ref={dialogRef}
+        className="modal"
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={onDialogKeyDown}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Shablon yuklash"
+        tabIndex={-1}
+      >
         <div className="modal-header">
           <h2>Shablon Yuklash</h2>
           <button className="btn-icon" onClick={onClose} aria-label="Yopish">

@@ -1,8 +1,11 @@
 import { useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Icons } from '../ui/Icons';
 import { fileToFaceBase64 } from '../../api';
 import { useGlobalToast } from '../../hooks/useToast';
 import type { StudentRow, ClassInfo } from '../../types';
+import { useModalA11y } from '../../hooks/useModalA11y';
+import { appLogger } from '../../utils/logger';
 
 interface StudentTableRowProps {
   index: number;
@@ -28,6 +31,7 @@ export function StudentTableRow({
   const { addToast } = useGlobalToast();
   const [isSaving, setIsSaving] = useState(false);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const { dialogRef, onDialogKeyDown } = useModalA11y(isPreviewOpen, () => setIsPreviewOpen(false));
   const fileInputRef = useRef<HTMLInputElement>(null);
   const fullName = `${student.lastName || ''} ${student.firstName || ''}`.trim();
   const validateImageFile = (file: File) => {
@@ -46,7 +50,7 @@ export function StudentTableRow({
   };
 
   const handleChange = <K extends keyof StudentRow>(field: K, value: StudentRow[K]) => {
-    console.log(`[Table Row] Editing ${field}:`, value);
+    appLogger.debug(`[Table Row] Editing ${field}:`, value);
     onEdit(student.id, { [field]: value });
   };
 
@@ -59,7 +63,7 @@ export function StudentTableRow({
       const imageBase64 = await fileToFaceBase64(file);
       onEdit(student.id, { imageBase64 });
     } catch (err) {
-      console.error('Image upload error:', err);
+      appLogger.error('Image upload error:', err);
       addToast(`Rasm yuklashda xato: ${getErrorMessage(err)}`, 'error');
       e.currentTarget.value = '';
     }
@@ -70,7 +74,7 @@ export function StudentTableRow({
     try {
       await onSave(student.id);
     } catch (err) {
-      console.error('Save failed:', err);
+      appLogger.error('Save failed:', err);
     } finally {
       setIsSaving(false);
     }
@@ -79,7 +83,41 @@ export function StudentTableRow({
   const rowClass = student.status === 'success' ? 'status-success' : 
                    student.status === 'error' ? 'status-error' : '';
 
+  const previewModal =
+    isPreviewOpen && student.imageBase64
+      ? createPortal(
+          <div className="modal-overlay" onClick={() => setIsPreviewOpen(false)}>
+            <div
+              ref={dialogRef}
+              className="modal image-modal"
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={onDialogKeyDown}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Rasm ko'rish"
+              tabIndex={-1}
+            >
+              <div className="modal-header">
+                <h3>{fullName || 'Rasm'}</h3>
+                <button className="modal-close" onClick={() => setIsPreviewOpen(false)} aria-label="Yopish">
+                  <Icons.X />
+                </button>
+              </div>
+              <div className="modal-body image-modal-body">
+                <img
+                  src={`data:image/jpeg;base64,${student.imageBase64}`}
+                  alt={fullName || 'Student'}
+                  className="image-modal-preview"
+                />
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )
+      : null;
+
   return (
+    <>
     <tr className={rowClass}>
       <td>{index}</td>
       <td>
@@ -163,6 +201,7 @@ export function StudentTableRow({
                   className="btn-change-image"
                   onClick={() => fileInputRef.current?.click()}
                   title="Rasmni o'zgartirish"
+                  aria-label="Rasmni o'zgartirish"
                 >
                   <Icons.Edit />
                 </button>
@@ -175,6 +214,7 @@ export function StudentTableRow({
                 onClick={() => fileInputRef.current?.click()}
                 disabled={student.status === 'success'}
                 title="Rasm yuklash"
+                aria-label="Rasm yuklash"
               >
                 <Icons.Upload />
               </button>
@@ -184,6 +224,7 @@ export function StudentTableRow({
                   onClick={() => void onRefreshFace(student.id)}
                   disabled={isFaceRefreshing}
                   title="Qurilmadan rasmni qayta olish"
+                  aria-label="Qurilmadan rasmni qayta olish"
                 >
                   {isFaceRefreshing ? <span className="spinner" /> : <Icons.Refresh />}
                 </button>
@@ -229,6 +270,7 @@ export function StudentTableRow({
               onClick={handleSaveClick}
               disabled={isSaving}
               title="Saqlash"
+              aria-label="Saqlash"
             >
               {isSaving ? <span className="spinner" /> : <Icons.Save />}
             </button>
@@ -237,31 +279,15 @@ export function StudentTableRow({
             className="btn-icon btn-danger"
             onClick={() => onDelete(student.id)}
             title="O'chirish"
+            aria-label="O'chirish"
           >
             <Icons.Trash />
           </button>
         </div>
       </td>
-      {isPreviewOpen && student.imageBase64 && (
-        <div className="modal-overlay" onClick={() => setIsPreviewOpen(false)}>
-          <div className="modal image-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>{fullName || 'Rasm'}</h3>
-              <button className="modal-close" onClick={() => setIsPreviewOpen(false)}>
-                <Icons.X />
-              </button>
-            </div>
-            <div className="modal-body image-modal-body">
-              <img
-                src={`data:image/jpeg;base64,${student.imageBase64}`}
-                alt={fullName || 'Student'}
-                className="image-modal-preview"
-              />
-            </div>
-          </div>
-        </div>
-      )}
     </tr>
+    {previewModal}
+    </>
   );
 }
 

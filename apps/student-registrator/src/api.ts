@@ -1,6 +1,8 @@
 ﻿// API Client using Tauri invoke
 
 import { invoke } from '@tauri-apps/api';
+import { redactSensitiveData, redactSensitiveString } from './utils/redact';
+import { appLogger } from './utils/logger';
 
 export interface DeviceConfig {
   id: string;
@@ -286,6 +288,8 @@ function writeStoredApiDebugEntries(entries: ApiDebugEntry[]): void {
 function pushApiDebugEntry(input: Omit<ApiDebugEntry, 'id' | 'at' | 'backendUrl' | 'online' | 'clientOrigin'>): string {
   const entry: ApiDebugEntry = {
     ...input,
+    url: redactSensitiveString(input.url),
+    message: redactSensitiveString(input.message),
     id: createDebugId(),
     at: new Date().toISOString(),
     backendUrl: BACKEND_URL,
@@ -305,12 +309,13 @@ export function getApiDebugEntries(limit = 40): ApiDebugEntry[] {
 }
 
 export function getApiDebugReport(limit = 40): string {
+  const entries = redactSensitiveData(getApiDebugEntries(limit));
   return JSON.stringify(
     {
       generatedAt: new Date().toISOString(),
       backendUrl: BACKEND_URL,
       timeoutMs: FETCH_TIMEOUT_MS,
-      entries: getApiDebugEntries(limit),
+      entries,
     },
     null,
     2,
@@ -368,7 +373,7 @@ export function logout(): void {
 
 export async function login(email: string, password: string): Promise<{ token: string; user: AuthUser }> {
   const url = `${BACKEND_URL}/auth/login`;
-  console.debug('[Auth] login attempt', { email, backendUrl: BACKEND_URL });
+  appLogger.debug('[Auth] login attempt', { email, backendUrl: BACKEND_URL });
   const res = await request(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -428,7 +433,7 @@ async function request(
     ? window.setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
     : null;
 
-  console.debug('[API] request', { method, url, context });
+  appLogger.debug('[API] request', { method, url, context });
   try {
     const res = await fetch(url, {
       ...options,
@@ -436,7 +441,7 @@ async function request(
       signal: options.signal || controller?.signal,
     });
     const durationMs = Date.now() - startedAt;
-    console.debug('[API] response', { method, url, status: res.status, ok: res.ok, durationMs });
+    appLogger.debug('[API] response', { method, url, status: res.status, ok: res.ok, durationMs });
 
     if (!res.ok || VERBOSE_NETWORK_DEBUG) {
       pushApiDebugEntry({
@@ -1015,7 +1020,7 @@ export async function registerStudent(
 ): Promise<RegisterResult> {
   const token = getAuthToken();
   const user = getAuthUser();
-  console.debug('[Register] register_student', {
+  appLogger.debug('[Register] register_student', {
     backendUrl: BACKEND_URL,
     hasToken: Boolean(token),
     schoolId: user?.schoolId || '',
@@ -1378,7 +1383,7 @@ export async function syncStudentToDevices(
   }
 
   try {
-    console.debug('[Sync] start', { studentId, schoolId: user.schoolId, backendUrl: BACKEND_URL });
+    appLogger.debug('[Sync] start', { studentId, schoolId: user.schoolId, backendUrl: BACKEND_URL });
     // 1. Find the last provisioning ID for this student from audit logs
     const response = await getSchoolProvisioningLogs(user.schoolId, {
       studentId,
@@ -1389,20 +1394,20 @@ export async function syncStudentToDevices(
 
     const lastLog = response.data[0];
     if (!lastLog || !lastLog.provisioningId) {
-      console.warn(`[Sync] No provisioning found for student ${studentId}`);
+      appLogger.warn(`[Sync] No provisioning found for student ${studentId}`);
       return { ok: false, reason: 'No provisioning', perDeviceResults: [] };
     }
 
     // 2. Retry the provisioning
-    console.debug('[Sync] retry provisioning', { provisioningId: lastLog.provisioningId });
+    appLogger.debug('[Sync] retry provisioning', { provisioningId: lastLog.provisioningId });
     const result = await retryProvisioning(lastLog.provisioningId, deviceIds);
-    console.debug('[Sync] retry result', result);
+    appLogger.debug('[Sync] retry result', result);
     return {
       ok: Boolean(result.ok),
       perDeviceResults: result.perDeviceResults || [],
     };
   } catch (err) {
-    console.error(`[Sync] Failed to sync student ${studentId}:`, err);
+    appLogger.error(`[Sync] Failed to sync student ${studentId}:`, err);
     return { ok: false, reason: 'Sync failed', perDeviceResults: [] };
   }
 }
@@ -1568,7 +1573,7 @@ export async function base64ToResizedBase64(
     return base64;
   }
 
-  console.log(`[Resize] Image too large: ${Math.round(currentBytes / 1024)}KB, resizing to max ${Math.round(maxBytes / 1024)}KB`);
+  appLogger.debug(`[Resize] Image too large: ${Math.round(currentBytes / 1024)}KB, resizing to max ${Math.round(maxBytes / 1024)}KB`);
 
   // Create image from base64
   const img = await new Promise<HTMLImageElement>((resolve, reject) => {
@@ -1598,7 +1603,7 @@ export async function base64ToResizedBase64(
   for (let attempt = 0; attempt < 8; attempt++) {
     const blob = await canvasToJpegBlob(canvas, quality);
     if (blob.size <= maxBytes) {
-      console.log(`[Resize] Success at quality ${quality.toFixed(2)}: ${Math.round(blob.size / 1024)}KB`);
+      appLogger.debug(`[Resize] Success at quality ${quality.toFixed(2)}: ${Math.round(blob.size / 1024)}KB`);
       return blobToBase64(blob);
     }
     quality -= 0.08;
@@ -1619,7 +1624,7 @@ export async function base64ToResizedBase64(
 
     const blob = await canvasToJpegBlob(next, 0.8);
     if (blob.size <= maxBytes) {
-      console.log(`[Resize] Success after downscale: ${Math.round(blob.size / 1024)}KB`);
+      appLogger.debug(`[Resize] Success after downscale: ${Math.round(blob.size / 1024)}KB`);
       return blobToBase64(blob);
     }
     canvas.width = w;

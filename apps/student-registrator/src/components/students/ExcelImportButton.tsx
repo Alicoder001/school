@@ -1,5 +1,6 @@
 import { useRef } from 'react';
 import { Icons } from '../ui/Icons';
+import { useGlobalToast } from '../../hooks/useToast';
 
 interface ExcelImportButtonProps {
   onImport: (file: File) => void;
@@ -8,6 +9,7 @@ interface ExcelImportButtonProps {
 
 export function ExcelImportButton({ onImport, disabled }: ExcelImportButtonProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const { addToast } = useGlobalToast();
 
   const handleClick = () => {
     inputRef.current?.click();
@@ -22,7 +24,7 @@ export function ExcelImportButton({ onImport, disabled }: ExcelImportButtonProps
         inputRef.current.value = '';
       }
     } else if (file) {
-      alert('Iltimos, Excel fayl (.xlsx yoki .xls) tanlang');
+      addToast('Iltimos, Excel fayl (.xlsx yoki .xls) tanlang', 'error');
     }
   };
 

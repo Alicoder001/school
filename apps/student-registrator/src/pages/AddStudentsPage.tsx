@@ -11,6 +11,7 @@ import {
 import { useStudentTable } from '../hooks/useStudentTable';
 import { useExcelImport } from '../hooks/useExcelImport';
 import { useGlobalToast } from '../hooks/useToast';
+import { useModalA11y } from '../hooks/useModalA11y';
 import { StudentTable } from '../components/students/StudentTable';
 import { ExcelImportButton } from '../components/students/ExcelImportButton';
 import { ImportMappingPanel } from '../components/students/ImportMappingPanel';
@@ -25,6 +26,7 @@ import {
   isDeviceCredentialsExpired,
   resolveLocalDeviceForBackend,
 } from '../utils/deviceResolver';
+import { appLogger } from '../utils/logger';
 
 type DeviceStatus = 'online' | 'offline' | 'unknown';
 
@@ -45,6 +47,15 @@ export function AddStudentsPage() {
   const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
   const [isProvModalOpen, setIsProvModalOpen] = useState(false);
   const [isTargetSaveModalOpen, setIsTargetSaveModalOpen] = useState(false);
+  const { dialogRef: provDialogRef, onDialogKeyDown: onProvDialogKeyDown } = useModalA11y(
+    isProvModalOpen,
+    () => setIsProvModalOpen(false),
+  );
+  const { dialogRef: classDialogRef, onDialogKeyDown: onClassDialogKeyDown } = useModalA11y(
+    isClassModalOpen,
+    () => setIsClassModalOpen(false),
+    isCreatingClass,
+  );
 
   const resolveDeviceLabel = useCallback((input: string) => {
     if (!backendDevices.length) return input;
@@ -180,7 +191,7 @@ export function AddStudentsPage() {
             fetchSchoolDevices(schoolId),
             fetchDevices(),
           ]);
-          console.log('[AddStudents] Loaded classes from backend:', classes);
+          appLogger.debug('[AddStudents] Loaded classes from backend:', classes);
           setAvailableClasses(classes);
           setBackendDevices(devices);
           setCredentials(local);
@@ -204,7 +215,7 @@ export function AddStudentsPage() {
 
   // Handle Excel import
   const handleExcelImport = async (file: File) => {
-    console.log('[Excel Import] Starting with availableClasses:', availableClasses);
+    appLogger.debug('[Excel Import] Starting with availableClasses:', availableClasses);
     
     if (availableClasses.length === 0) {
       addToast('Sinflar yuklanmagan! Sahifani yangilang.', 'error');
@@ -220,7 +231,7 @@ export function AddStudentsPage() {
       const withoutClass = resized.filter(r => !r.classId);
       if (withoutClass.length > 0) {
         const missingNames = withoutClass.map((r) => `${r.lastName || ''} ${r.firstName || ''}`.trim());
-        console.warn('[Excel Import] Rows without classId:', missingNames);
+        appLogger.warn('[Excel Import] Rows without classId:', missingNames);
         addToast(`${withoutClass.length} ta o'quvchining sinfi topilmadi!`, 'error');
       }
       
@@ -401,7 +412,7 @@ export function AddStudentsPage() {
             className="button button-secondary"
             onClick={openDeviceModeImportModal}
             disabled={backendDevices.length === 0 || isDeviceImporting}
-            title="Qurilmadan jadvalga import (device mode)"
+            title="Qurilmadan jadvalga import (device mode)" aria-label="Qurilmadan jadvalga import (device mode)"
           >
             <Icons.Download />
             <span>{isDeviceImporting ? 'Import...' : 'Qurilmadan'}</span>
@@ -435,6 +446,7 @@ export function AddStudentsPage() {
                     onClick={() => refreshDeviceStatuses(backendDevices, credentials)}
                     disabled={deviceStatusLoading || backendDevices.length === 0}
                     title="Yangilash"
+                    aria-label="Qurilmalarni yangilash"
                   >
                     <Icons.Refresh />
                   </button>
@@ -485,6 +497,7 @@ export function AddStudentsPage() {
               className="button button-icon"
               onClick={() => setIsProvModalOpen(true)}
               title="Provisioning holati"
+              aria-label="Provisioning holatini ochish"
             >
               <Icons.Refresh />
             </button>
@@ -560,7 +573,16 @@ export function AddStudentsPage() {
       {/* Provisioning Modal */}
       {isProvModalOpen && (
         <div className="modal-overlay" onClick={() => setIsProvModalOpen(false)}>
-          <div className="modal modal-provisioning" onClick={(e) => e.stopPropagation()}>
+          <div
+            ref={provDialogRef}
+            className="modal modal-provisioning"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={onProvDialogKeyDown}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Provisioning holati"
+            tabIndex={-1}
+          >
             <div className="modal-header">
               <div>
                 <h3>Provisioning Holati</h3>
@@ -568,7 +590,7 @@ export function AddStudentsPage() {
                   <p className="text-secondary text-xs">ID: {lastProvisioningId}</p>
                 )}
               </div>
-              <button className="modal-close" onClick={() => setIsProvModalOpen(false)}>
+              <button className="modal-close" onClick={() => setIsProvModalOpen(false)} aria-label="Yopish">
                 <Icons.X />
               </button>
             </div>
@@ -639,13 +661,23 @@ export function AddStudentsPage() {
 
       {isClassModalOpen && (
         <div className="modal-overlay" onClick={() => setIsClassModalOpen(false)}>
-          <div className="modal" onClick={(event) => event.stopPropagation()}>
+          <div
+            ref={classDialogRef}
+            className="modal"
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={onClassDialogKeyDown}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Yangi sinf qo'shish"
+            tabIndex={-1}
+          >
             <div className="modal-header">
               <h3>Yangi sinf qo'shish</h3>
               <button
                 className="modal-close"
                 onClick={() => setIsClassModalOpen(false)}
                 title="Yopish"
+                aria-label="Yopish"
               >
                 <Icons.X />
               </button>

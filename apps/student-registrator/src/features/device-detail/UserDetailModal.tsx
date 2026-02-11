@@ -1,5 +1,6 @@
 import { Icons } from '../../components/ui/Icons';
 import type { StudentProfileDetail, UserInfoEntry } from '../../api';
+import { useModalA11y } from '../../hooks/useModalA11y';
 
 type UserDetailModalProps = {
   selectedUser: UserInfoEntry | null;
@@ -54,17 +55,27 @@ export function UserDetailModal({
   onEditClassIdChange,
   onEditGenderChange,
 }: UserDetailModalProps) {
+  const { dialogRef, onDialogKeyDown } = useModalA11y(Boolean(selectedUser), onClose);
   if (!selectedUser) return null;
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal modal-provisioning user-detail-modal" onClick={(e) => e.stopPropagation()}>
+      <div
+        ref={dialogRef}
+        className="modal modal-provisioning user-detail-modal"
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={onDialogKeyDown}
+        role="dialog"
+        aria-modal="true"
+        aria-label="User detail"
+        tabIndex={-1}
+      >
         <div className="modal-header">
           <div>
             <h3>User detail</h3>
             <p className="text-secondary text-xs">{selectedUser.employeeNo}</p>
           </div>
-          <button className="modal-close" onClick={onClose}>
+          <button className="modal-close" onClick={onClose} aria-label="Yopish">
             <Icons.X />
           </button>
         </div>

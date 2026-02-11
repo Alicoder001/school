@@ -18,23 +18,23 @@ Out of scope:
 ## Workstreams
 
 ### WS0 - Baseline and Program Setup
-- [ ] Current baseline ni freeze qilish: typecheck, lint, build, cargo check, cargo clippy
-- [ ] Critical flow smoke checklist yaratish: Login, Devices, Add Students, Students, Device Detail, Audit Logs
-- [ ] Risk register va ownership (frontend/tauri/security/qa) aniqlash
-- [ ] Branching va release cut strategy belgilash (incremental hardening)
+- [x] Current baseline ni freeze qilish: typecheck, lint, build, cargo check, cargo clippy
+- [x] Critical flow smoke checklist yaratish: Login, Devices, Add Students, Students, Device Detail, Audit Logs
+- [x] Risk register va ownership (frontend/tauri/security/qa) aniqlash
+- [x] Branching va release cut strategy belgilash (incremental hardening)
 
 ### WS1 - Critical Blockers (P0)
-- [ ] Lint configni to'g'rilash: `src-tauri/target/**` va generated fayllarni ignore qilish
+- [x] Lint configni to'g'rilash: `src-tauri/target/**` va generated fayllarni ignore qilish
 - [ ] Rust panic risklarini yopish: `expect/unwrap` o'rniga safe error path
-- [ ] Invalid table markupni tuzatish (`<tr>` ichidagi modal `<div>` anti-pattern)
-- [ ] `src/index.css` dublikat/corrupt bloklarni tozalash
-- [ ] Production flowdagi ortiqcha `console.*` ni debug gate bilan boshqarish
-- [ ] Mojibake/encoding xatolarini to'liq tuzatish
+- [x] Invalid table markupni tuzatish (`<tr>` ichidagi modal `<div>` anti-pattern)
+- [x] `src/index.css` dublikat/corrupt bloklarni tozalash
+- [x] Production flowdagi ortiqcha `console.*` ni debug gate bilan boshqarish
+- [x] Mojibake/encoding xatolarini to'liq tuzatish
 
 ### WS2 - Security and Privacy Hardening
 - [ ] Auth token storage strategiyasini qayta ko'rib chiqish (XSS-risk kamaytirish)
 - [ ] Local device credentials saqlashni himoyalash (at-rest protection/encryption policy)
-- [ ] Sensitive data redaction qatlamini joriy qilish (password/token/secret/biometric)
+- [x] Sensitive data redaction qatlamini joriy qilish (password/token/secret/biometric)
 - [ ] Log va error payloadlarda maxfiy ma'lumot sizib chiqmasligini test bilan kafolatlash
 - [ ] Security checklist va sign-off hujjatlarini yangilash
 
@@ -53,23 +53,23 @@ Out of scope:
 ### WS5 - Error Handling and Contract Quality
 - [ ] `catch {}` bloklarini explicit typed error handling bilan almashtirish
 - [ ] Unified error code taxonomy joriy qilish (frontend + tauri)
-- [ ] `any` va unsafe castlarni yo'qotish
+- [x] `any` va unsafe castlarni yo'qotish
 - [ ] User-facing error message policy: aniq, xavfsiz, action-oriented
-- [ ] Rust clippy warninglarini to'liq yopish
+- [x] Rust clippy warninglarini to'liq yopish
 
 ### WS6 - UX and Accessibility
-- [ ] `alert/confirm` ni app-modal/toast pattern bilan almashtirish
-- [ ] Icon-only buttonlar uchun `aria-label` coverage 100% qilish
-- [ ] Modal focus trap + ESC + keyboard navigationni joriy qilish
-- [ ] Toastga `aria-live` va semantic role qo'shish
+- [x] `alert/confirm` ni app-modal/toast pattern bilan almashtirish
+- [x] Icon-only buttonlar uchun `aria-label` coverage 100% qilish
+- [x] Modal focus trap + ESC + keyboard navigationni joriy qilish
+- [x] Toastga `aria-live` va semantic role qo'shish
 - [ ] Forma validatsiya feedbackini bir xil patternga o'tkazish
 - [ ] Desktop + small screen responsive regressionni qayta tekshirish
 
 ### WS7 - Performance and Bundle Optimization
-- [ ] `exceljs` import strategiyasini optimallashtirish (single strategy, chunk control)
+- [x] `exceljs` import strategiyasini optimallashtirish (single strategy, chunk control)
 - [ ] Heavy table/lists uchun render va sort complexity optimizatsiyasi
 - [ ] Image conversion pipeline memory/CPU optimizatsiyasi
-- [ ] Bundle budget va warning threshold policy belgilash
+- [x] Bundle budget va warning threshold policy belgilash
 - [ ] Long-running import/sync uchun progress va concurrency tuning
 
 ### WS8 - Testing and Quality Gates
@@ -77,7 +77,7 @@ Out of scope:
 - [ ] Integration tests: register flow, device sync, import flow, rollback path
 - [ ] Tauri command tests/smoke: create/test/register/retry/clone
 - [ ] E2E smoke tests (critical business flows)
-- [ ] CI gates: `npm run typecheck`, `npm run lint`, `npm run build`, `cargo check`, `cargo clippy`
+- [x] CI gates: `npm run typecheck`, `npm run lint`, `npm run build`, `cargo check`, `cargo clippy`
 
 ### WS9 - Documentation, Rollout, and Operations
 - [ ] `ARCHITECTURE.md` ni real holatga moslab yangilash
@@ -87,7 +87,7 @@ Out of scope:
 
 ## Definition of Done
 - [ ] P0/P1 topilmalar yopilgan
-- [ ] Lint, typecheck, build, cargo check va cargo clippy yashil
+- [x] Lint, typecheck, build, cargo check va cargo clippy yashil
 - [ ] Critical flowlarda regression yo'q (manual + automated)
 - [ ] Security checklist sign-off olingan
 - [ ] UX/a11y acceptance checklist bajarilgan
@@ -112,3 +112,16 @@ Out of scope:
 8. WS7
 9. WS8
 10. WS9
+
+## Progress Notes (2026-02-11)
+1. New docs created:
+- `docs/work-items/student-registrator-full-audit-remediation/SMOKE_CHECKLIST.md`
+- `docs/work-items/student-registrator-full-audit-remediation/RISK_REGISTER.md`
+
+2. New shared utilities:
+- `apps/student-registrator/src/hooks/useModalA11y.ts`
+- `apps/student-registrator/src/utils/redact.ts`
+- `apps/student-registrator/src/utils/logger.ts`
+
+3. Focused redaction tests added and executed:
+- `src/__tests__/student-registrator-redact.test.ts`

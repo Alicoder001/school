@@ -125,7 +125,7 @@ export function ClassesPage() {
             type="button"
             className="button button-secondary"
             onClick={handleRefresh}
-            title="Yangilash"
+            title="Yangilash" aria-label="Yangilash"
           >
             <Icons.Refresh />
           </button>
@@ -181,6 +181,7 @@ export function ClassesPage() {
               type="button"
               className="btn-icon"
               onClick={() => setIsFormExpanded(false)}
+              aria-label="Yopish"
             >
               <Icons.X />
             </button>

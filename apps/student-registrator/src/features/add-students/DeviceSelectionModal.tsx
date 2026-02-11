@@ -1,5 +1,6 @@
 import { Icons } from '../../components/ui/Icons';
 import type { SchoolDeviceInfo } from '../../types';
+import { useModalA11y } from '../../hooks/useModalA11y';
 
 type DeviceStatus = 'online' | 'offline' | 'unknown';
 
@@ -38,11 +39,21 @@ export function DeviceSelectionModal({
   statuses,
   disableConfirm = false,
 }: DeviceSelectionModalProps) {
+  const { dialogRef, onDialogKeyDown } = useModalA11y(isOpen, onClose, busy);
   if (!isOpen) return null;
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+      <div
+        ref={dialogRef}
+        className="modal"
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={onDialogKeyDown}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        tabIndex={-1}
+      >
         <div className="modal-header">
           <h3>{title}</h3>
           <button className="modal-close" onClick={onClose} disabled={busy} aria-label="Yopish">

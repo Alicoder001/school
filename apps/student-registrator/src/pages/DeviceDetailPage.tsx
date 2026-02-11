@@ -20,6 +20,7 @@ import {
 } from '../api';
 import { Icons } from '../components/ui/Icons';
 import { useGlobalToast } from '../hooks/useToast';
+import { useModalA11y } from '../hooks/useModalA11y';
 import { resolveLocalDeviceForBackend } from '../utils/deviceResolver';
 import { buildBackendPhotoUrl } from '../utils/photo';
 import { ConfigurationTab } from '../features/device-detail/ConfigurationTab';
@@ -57,6 +58,12 @@ export function DeviceDetailPage() {
   const [timeConfigText, setTimeConfigText] = useState('');
   const [ntpConfigText, setNtpConfigText] = useState('');
   const [networkConfigText, setNetworkConfigText] = useState('');
+  const [pendingDeleteEmployeeNo, setPendingDeleteEmployeeNo] = useState<string | null>(null);
+  const { dialogRef: deleteDialogRef, onDialogKeyDown: onDeleteDialogKeyDown } = useModalA11y(
+    Boolean(pendingDeleteEmployeeNo),
+    () => setPendingDeleteEmployeeNo(null),
+    busyAction?.startsWith('delete-') ?? false,
+  );
 
   const isOnline = useMemo(() => {
     if (!schoolDevice?.lastSeenAt) return false;
@@ -188,8 +195,13 @@ export function DeviceDetailPage() {
   };
 
   const handleDeleteUser = async (employeeNo: string) => {
-    if (!localDevice?.id) return;
-    if (!confirm(`Foydalanuvchini o'chirasizmi? EmployeeNo: ${employeeNo}`)) return;
+    setPendingDeleteEmployeeNo(employeeNo);
+  };
+
+  const confirmDeleteUser = async () => {
+    if (!localDevice?.id || !pendingDeleteEmployeeNo) return;
+    const employeeNo = pendingDeleteEmployeeNo;
+    setPendingDeleteEmployeeNo(null);
     await withBusy(`delete-${employeeNo}`, async () => {
       try {
         await deleteUser(localDevice.id, employeeNo);
@@ -571,6 +583,45 @@ export function DeviceDetailPage() {
         importJob={importJob}
         importAuditTrail={importAuditTrail}
       />
+
+      {pendingDeleteEmployeeNo && (
+        <div className="modal-overlay" onClick={() => setPendingDeleteEmployeeNo(null)}>
+          <div
+            ref={deleteDialogRef}
+            className="modal"
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={onDeleteDialogKeyDown}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Foydalanuvchini o'chirish"
+            tabIndex={-1}
+          >
+            <div className="modal-header">
+              <h3>Foydalanuvchini o'chirish</h3>
+              <button
+                className="modal-close"
+                onClick={() => setPendingDeleteEmployeeNo(null)}
+                aria-label="Yopish"
+              >
+                <Icons.X />
+              </button>
+            </div>
+            <div className="modal-body">
+              <p className="notice notice-warning">
+                EmployeeNo <strong>{pendingDeleteEmployeeNo}</strong> foydalanuvchisini o'chirasizmi?
+              </p>
+              <div className="form-actions">
+                <button type="button" className="button button-danger" onClick={() => void confirmDeleteUser()}>
+                  <Icons.Trash /> O'chirish
+                </button>
+                <button type="button" className="button button-secondary" onClick={() => setPendingDeleteEmployeeNo(null)}>
+                  <Icons.X /> Bekor qilish
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import boySampleImg from "../assets/boy_sample.png";
 import girlSampleImg from "../assets/girl_sample.png";
 import type { StudentRow } from '../types';
+import { appLogger } from '../utils/logger';
 
 type ExcelJsModule = typeof import("exceljs");
 
@@ -41,38 +42,38 @@ export async function parseExcelFile(file: File): Promise<Omit<StudentRow, 'id' 
   
   // Get images from workbook
   const media = (workbook.model as { media?: Array<{ type: string; name: string; buffer: ArrayBuffer }> }).media || [];
-  console.log(`[Parse] Workbook media count: ${media.length}`);
+  appLogger.debug(`[Parse] Workbook media count: ${media.length}`);
   
   const allRows: Omit<StudentRow, 'id' | 'source' | 'status'>[] = [];
   
   // Process each worksheet (each represents a class)
   for (const worksheet of workbook.worksheets) {
     const sheetName = worksheet.name;
-    console.log(`[Parse] Processing sheet: "${sheetName}"`);
+    appLogger.debug(`[Parse] Processing sheet: "${sheetName}"`);
     
     // Create image map by row for this worksheet
     const worksheetImages = worksheet.getImages();
-    console.log(`[Parse] Sheet "${sheetName}" has ${worksheetImages.length} images`);
+    appLogger.debug(`[Parse] Sheet "${sheetName}" has ${worksheetImages.length} images`);
     const imageByRow: Record<number, string> = {};
     
     for (const img of worksheetImages) {
       const rowNum = img.range.tl.nativeRow + 1; // 1-indexed
       const mediaIndex = typeof img.imageId === 'number' ? img.imageId : parseInt(img.imageId, 10);
-      console.log(`[Parse] Image at row ${rowNum}, mediaIndex: ${mediaIndex}`);
+      appLogger.debug(`[Parse] Image at row ${rowNum}, mediaIndex: ${mediaIndex}`);
       
       const mediaItem = media[mediaIndex];
       if (mediaItem && mediaItem.buffer) {
         const uint8Array = new Uint8Array(mediaItem.buffer);
-        console.log(`[Parse] Image buffer size: ${uint8Array.length} bytes`);
+        appLogger.debug(`[Parse] Image buffer size: ${uint8Array.length} bytes`);
         let binary = '';
         for (let i = 0; i < uint8Array.length; i++) {
           binary += String.fromCharCode(uint8Array[i]);
         }
         const base64 = btoa(binary);
         imageByRow[rowNum] = base64;
-        console.log(`[Parse] Image added to row ${rowNum}, base64 length: ${base64.length}`);
+        appLogger.debug(`[Parse] Image added to row ${rowNum}, base64 length: ${base64.length}`);
       } else {
-        console.log(`[Parse] No media found for index ${mediaIndex}`);
+        appLogger.debug(`[Parse] No media found for index ${mediaIndex}`);
       }
     }
     
@@ -154,7 +155,7 @@ export async function parseExcelFile(file: File): Promise<Omit<StudentRow, 'id' 
       
       const fullName = `${lastName} ${firstName}`.trim();
       if (fullName) {
-        console.log(`[Parse] Row ${rowNumber}: name="${fullName}", gender="${gender}", class="${sheetName}"`);
+        appLogger.debug(`[Parse] Row ${rowNumber}: name="${fullName}", gender="${gender}", class="${sheetName}"`);
         allRows.push({
           firstName,
           lastName,
@@ -168,7 +169,7 @@ export async function parseExcelFile(file: File): Promise<Omit<StudentRow, 'id' 
     });
   }
   
-  console.log(`[Parse] Total rows parsed: ${allRows.length}`);
+  appLogger.debug(`[Parse] Total rows parsed: ${allRows.length}`);
   return allRows;
 }
 
@@ -207,7 +208,7 @@ export async function downloadStudentsTemplate(classNames: string[]): Promise<vo
     const girlArrayBuffer = await girlResponse.arrayBuffer();
     girlImageId = workbook.addImage({ buffer: girlArrayBuffer, extension: "png" });
   } catch (err) {
-    console.error("Template images could not be loaded:", err);
+    appLogger.error("Template images could not be loaded:", err);
   }
 
   for (const className of cleanedNames) {

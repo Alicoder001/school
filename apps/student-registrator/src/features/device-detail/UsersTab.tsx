@@ -76,6 +76,7 @@ export function UsersTab({
                 <button
                   className="btn-icon"
                   title="Rasmni olish"
+                  aria-label="Rasmni olish"
                   onClick={() => void onLoadDeviceFace(user)}
                   disabled={(user.numOfFace || 0) === 0 || Boolean(deviceFaceLoading[user.employeeNo])}
                 >
@@ -84,6 +85,7 @@ export function UsersTab({
                 <button
                   className="btn-icon"
                   title="Detail"
+                  aria-label="Detail"
                   onClick={() => void onSelectUser(user)}
                 >
                   <Icons.Eye />
@@ -91,6 +93,7 @@ export function UsersTab({
                 <button
                   className="btn-icon"
                   title="Recreate"
+                  aria-label="Recreate"
                   onClick={() => void onRecreateUser(user)}
                   disabled={busyAction === `recreate-${user.employeeNo}`}
                 >
@@ -99,6 +102,7 @@ export function UsersTab({
                 <button
                   className="btn-icon btn-danger"
                   title="Delete"
+                  aria-label="Delete"
                   onClick={() => void onDeleteUser(user.employeeNo)}
                   disabled={busyAction === `delete-${user.employeeNo}`}
                 >

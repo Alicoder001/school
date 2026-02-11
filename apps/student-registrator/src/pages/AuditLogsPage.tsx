@@ -3,6 +3,8 @@ import { getAuthUser, getSchoolProvisioningLogs, retryProvisioning } from "../ap
 import type { ProvisioningAuditQuery, ProvisioningLogEntry } from "../api";
 import { Icons } from "../components/ui/Icons";
 import { useGlobalToast } from "../hooks/useToast";
+import { useModalA11y } from "../hooks/useModalA11y";
+import { redactSensitiveData } from "../utils/redact";
 
 const PAGE_SIZE = 50;
 
@@ -105,6 +107,7 @@ export function AuditLogsPage() {
   const [retryingId, setRetryingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedPayload, setSelectedPayload] = useState<ProvisioningLogEntry | null>(null);
+  const { dialogRef, onDialogKeyDown } = useModalA11y(Boolean(selectedPayload), () => setSelectedPayload(null));
 
   const [draftQ, setDraftQ] = useState("");
   const [draftLevel, setDraftLevel] = useState<ProvisioningAuditQuery["level"]>("");
@@ -208,7 +211,7 @@ export function AuditLogsPage() {
           </select>
         </div>
         <div className="filter-item actions-group">
-          <button type="button" className="button button-secondary" onClick={resetFilters} title="Filtrlarni tozalash">
+          <button type="button" className="button button-secondary" onClick={resetFilters} title="Filtrlarni tozalash" aria-label="Filtrlarni tozalash">
             <Icons.X />
           </button>
         </div>
@@ -286,13 +289,23 @@ export function AuditLogsPage() {
 
       {selectedPayload && (
         <div className="modal-overlay" onClick={() => setSelectedPayload(null)}>
-          <div className="modal-content" style={{ maxWidth: "900px" }} onClick={(e) => e.stopPropagation()}>
+          <div
+            ref={dialogRef}
+            className="modal-content"
+            style={{ maxWidth: "900px" }}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={onDialogKeyDown}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Audit payload"
+            tabIndex={-1}
+          >
             <div className="modal-header">
               <h2>Audit Payload</h2>
-              <button type="button" className="btn-icon" onClick={() => setSelectedPayload(null)}><Icons.X /></button>
+              <button type="button" className="btn-icon" onClick={() => setSelectedPayload(null)} aria-label="Yopish"><Icons.X /></button>
             </div>
             <pre style={{ maxHeight: "480px", overflow: "auto", margin: 0 }}>
-              {JSON.stringify(selectedPayload.payload || {}, null, 2)}
+              {JSON.stringify(redactSensitiveData(selectedPayload.payload || {}), null, 2)}
             </pre>
           </div>
         </div>

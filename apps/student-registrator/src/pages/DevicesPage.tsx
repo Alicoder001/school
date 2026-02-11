@@ -18,6 +18,7 @@ import {
   cloneDeviceToDevice,
 } from '../api';
 import { useGlobalToast } from '../hooks/useToast';
+import { useModalA11y } from '../hooks/useModalA11y';
 import { Icons } from '../components/ui/Icons';
 import type { DeviceConfig, SchoolDeviceInfo } from '../types';
 import type { WebhookInfo } from '../api';
@@ -26,6 +27,7 @@ import {
   normalizeDeviceId,
   resolveLocalDeviceForBackend,
 } from '../utils/deviceResolver';
+import { appLogger } from '../utils/logger';
 
 const DEFAULT_DEVICE_CREDENTIALS_LIMIT = 10;
 const parsedDeviceLimit = Number(import.meta.env.VITE_DEVICE_CREDENTIALS_LIMIT);
@@ -80,6 +82,31 @@ export function DevicesPage() {
     errors: Array<{ employeeNo?: string; name?: string; reason?: string }>;
   } | null>(null);
   const { addToast } = useGlobalToast();
+  const { dialogRef: modalDialogRef, onDialogKeyDown: onModalDialogKeyDown } = useModalA11y(
+    isModalOpen,
+    () => setIsModalOpen(false),
+    loading,
+  );
+  const { dialogRef: credentialsDialogRef, onDialogKeyDown: onCredentialsDialogKeyDown } = useModalA11y(
+    isCredentialsModalOpen,
+    () => setIsCredentialsModalOpen(false),
+    loading,
+  );
+  const { dialogRef: deleteDialogRef, onDialogKeyDown: onDeleteDialogKeyDown } = useModalA11y(
+    Boolean(pendingDelete),
+    () => setPendingDelete(null),
+    loading,
+  );
+  const { dialogRef: cloneDialogRef, onDialogKeyDown: onCloneDialogKeyDown } = useModalA11y(
+    Boolean(pendingClone),
+    () => setPendingClone(null),
+    cloneStatus?.running ?? false,
+  );
+  const { dialogRef: deviceCloneDialogRef, onDialogKeyDown: onDeviceCloneDialogKeyDown } = useModalA11y(
+    Boolean(pendingDeviceClone),
+    () => setPendingDeviceClone(null),
+    deviceCloneStatus?.running ?? false,
+  );
 
   useEffect(() => {
     loadCredentials();
@@ -308,7 +335,7 @@ export function DevicesPage() {
           if (savedLocal) {
             try {
               const test = await testDeviceConnection(savedLocal.id);
-              console.log('[Device Test] auto test result', {
+              appLogger.debug('[Device Test] auto test result', {
                 localId: savedLocal.id,
                 backendId: backendDevice.id,
                 deviceIdFromTest: test.deviceId,
@@ -330,7 +357,7 @@ export function DevicesPage() {
                 }
                 await Promise.all([loadBackendDevices(), loadCredentials()]);
               } else {
-                console.warn('[Device Test] deviceId missing after test', {
+                appLogger.warn('[Device Test] deviceId missing after test', {
                   ok: test.ok,
                   deviceId: test.deviceId,
                 });
@@ -765,8 +792,7 @@ export function DevicesPage() {
                   className="btn-icon"
                   onClick={loadBackendDevices}
                   disabled={backendLoading}
-                  title="Yangilash"
-                  aria-label="Yangilash"
+                  title="Yangilash" aria-label="Yangilash"
                 >
                   <Icons.Refresh />
                 </button>
@@ -832,6 +858,7 @@ export function DevicesPage() {
                           className="btn-icon"
                           onClick={() => navigate(`/devices/${backend.id}`)}
                           title="Detail"
+                          aria-label="Detail"
                         >
                           <Icons.Eye />
                         </button>
@@ -839,6 +866,7 @@ export function DevicesPage() {
                           className="btn-icon"
                           onClick={() => handleTestConnection(backend)}
                           title="Ulanishni tekshirish"
+                          aria-label="Ulanishni tekshirish"
                           disabled={testingId === backend.id}
                         >
                           {testingId === backend.id ? <span className="spinner" /> : <Icons.Refresh />}
@@ -847,6 +875,7 @@ export function DevicesPage() {
                           className="btn-icon"
                           onClick={() => openCredentialsModal(backend)}
                           title="Ulanish sozlamalari"
+                          aria-label="Ulanish sozlamalari"
                         >
                           <Icons.Link />
                         </button>
@@ -854,6 +883,7 @@ export function DevicesPage() {
                           className="btn-icon btn-primary"
                           onClick={() => openEditModal(backend)}
                           title="Tahrirlash"
+                          aria-label="Tahrirlash"
                         >
                           <Icons.Edit />
                         </button>
@@ -861,6 +891,7 @@ export function DevicesPage() {
                           className="btn-icon"
                           onClick={() => setPendingClone(backend)}
                           title="Clone (barcha o'quvchilarni yuklash)"
+                          aria-label="Clone (barcha o'quvchilarni yuklash)"
                         >
                           <Icons.Download />
                         </button>
@@ -872,6 +903,7 @@ export function DevicesPage() {
                             setDeviceCloneStatus(null);
                           }}
                           title="Clone (qurilmadan qurilmaga)"
+                          aria-label="Clone (qurilmadan qurilmaga)"
                         >
                           <Icons.Copy />
                         </button>
@@ -879,6 +911,7 @@ export function DevicesPage() {
                           className="btn-icon btn-danger"
                           onClick={() => setPendingDelete(backend)}
                           title="O'chirish"
+                          aria-label="O'chirish"
                         >
                           <Icons.Trash />
                         </button>
@@ -895,10 +928,19 @@ export function DevicesPage() {
 
       {isModalOpen && (
         <div className="modal-overlay" onClick={() => setIsModalOpen(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <div
+            ref={modalDialogRef}
+            className="modal"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={onModalDialogKeyDown}
+            role="dialog"
+            aria-modal="true"
+            aria-label={editingBackendId ? "Qurilmani tahrirlash" : "Yangi qurilma"}
+            tabIndex={-1}
+          >
             <div className="modal-header">
               <h3>{editingBackendId ? 'Qurilmani tahrirlash' : 'Yangi qurilma'}</h3>
-              <button className="modal-close" onClick={() => setIsModalOpen(false)}>
+              <button className="modal-close" onClick={() => setIsModalOpen(false)} aria-label="Yopish">
                 <Icons.X />
               </button>
             </div>
@@ -1016,10 +1058,19 @@ export function DevicesPage() {
 
       {isCredentialsModalOpen && (
         <div className="modal-overlay" onClick={() => setIsCredentialsModalOpen(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <div
+            ref={credentialsDialogRef}
+            className="modal"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={onCredentialsDialogKeyDown}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Ulanish sozlamalari"
+            tabIndex={-1}
+          >
             <div className="modal-header">
               <h3>Ulanish sozlamalari</h3>
-              <button className="modal-close" onClick={() => setIsCredentialsModalOpen(false)}>
+              <button className="modal-close" onClick={() => setIsCredentialsModalOpen(false)} aria-label="Yopish">
                 <Icons.X />
               </button>
             </div>
@@ -1101,10 +1152,19 @@ export function DevicesPage() {
 
       {pendingDelete && (
         <div className="modal-overlay" onClick={() => setPendingDelete(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <div
+            ref={deleteDialogRef}
+            className="modal"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={onDeleteDialogKeyDown}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Qurilmani o'chirish"
+            tabIndex={-1}
+          >
             <div className="modal-header">
               <h3>Qurilmani o'chirish</h3>
-              <button className="modal-close" onClick={() => setPendingDelete(null)}>
+              <button className="modal-close" onClick={() => setPendingDelete(null)} aria-label="Yopish">
                 <Icons.X />
               </button>
             </div>
@@ -1137,13 +1197,23 @@ export function DevicesPage() {
 
       {pendingClone && (
         <div className="modal-overlay" onClick={() => !cloneStatus?.running && setPendingClone(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <div
+            ref={cloneDialogRef}
+            className="modal"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={onCloneDialogKeyDown}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Clone mode"
+            tabIndex={-1}
+          >
             <div className="modal-header">
               <h3>Clone mode</h3>
               <button
                 className="modal-close"
                 onClick={() => !cloneStatus?.running && setPendingClone(null)}
                 disabled={cloneStatus?.running}
+                aria-label="Yopish"
               >
                 <Icons.X />
               </button>
@@ -1197,13 +1267,23 @@ export function DevicesPage() {
 
       {pendingDeviceClone && (
         <div className="modal-overlay" onClick={() => !deviceCloneStatus?.running && setPendingDeviceClone(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <div
+            ref={deviceCloneDialogRef}
+            className="modal"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={onDeviceCloneDialogKeyDown}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Qurilmadan qurilmaga clone"
+            tabIndex={-1}
+          >
             <div className="modal-header">
               <h3>Qurilmadan qurilmaga clone</h3>
               <button
                 className="modal-close"
                 onClick={() => !deviceCloneStatus?.running && setPendingDeviceClone(null)}
                 disabled={deviceCloneStatus?.running}
+                aria-label="Yopish"
               >
                 <Icons.X />
               </button>

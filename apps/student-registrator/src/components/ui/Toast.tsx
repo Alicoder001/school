@@ -7,9 +7,9 @@ interface ToastContainerProps {
 
 export function ToastContainer({ toasts }: ToastContainerProps) {
   return (
-    <div className="toast-container">
+    <div className="toast-container" role="status" aria-live="polite" aria-atomic="true">
       {toasts.map((toast) => (
-        <div key={toast.id} className={`toast ${toast.type}`}>
+        <div key={toast.id} className={`toast ${toast.type}`} role="alert">
           {toast.type === "success" ? <Icons.Check /> : <Icons.AlertCircle />}
           {toast.message}
         </div>
