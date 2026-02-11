@@ -33,28 +33,28 @@ Out of scope:
 
 ### WS2 - Security and Privacy Hardening
 - [x] Auth token storage strategiyasini qayta ko'rib chiqish (XSS-risk kamaytirish)
-- [ ] Local device credentials saqlashni himoyalash (at-rest protection/encryption policy)
+- [x] Local device credentials saqlashni himoyalash (at-rest protection/encryption policy)
 - [x] Sensitive data redaction qatlamini joriy qilish (password/token/secret/biometric)
 - [x] Log va error payloadlarda maxfiy ma'lumot sizib chiqmasligini test bilan kafolatlash
 - [x] Security checklist va sign-off hujjatlarini yangilash
 
 ### WS3 - SOLID/SRP Architecture Refactor
-- [ ] `src/api.ts` ni domain modullarga ajratish (`auth`, `devices`, `students`, `provisioning`, `images`)
-- [ ] `src-tauri/src/commands.rs` ni command/domain servis qatlamiga bo'lish
-- [ ] Katta page'larni orchestration + feature hooks + presentational komponentlarga ajratish
-- [ ] Frontend va Tauri command contractlarini typed va versioned holatga keltirish
+- [x] `src/api.ts` ni domain modullarga ajratish (`auth`, `devices`, `students`, `provisioning`, `images`)
+- [x] `src-tauri/src/commands.rs` ni command/domain servis qatlamiga bo'lish
+- [x] Katta page'larni orchestration + feature hooks + presentational komponentlarga ajratish
+- [x] Frontend va Tauri command contractlarini typed va versioned holatga keltirish
 
 ### WS4 - DRY/KISS and Duplicate Logic Cleanup
-- [ ] Ism split/gender normalize/image encode logiclarini yagona shared utilga birlashtirish
-- [ ] Import workflows (`AddStudents` va `DeviceDetail`) ni shared use-case bilan yakuniy konsolidatsiya qilish
+- [x] Ism split/gender normalize/image encode logiclarini yagona shared utilga birlashtirish
+- [x] Import workflows (`AddStudents` va `DeviceDetail`) ni shared use-case bilan yakuniy konsolidatsiya qilish
 - [x] Device resolution va status derivationni bitta canonical helperga standartlash
-- [ ] Dead code va ishlatilmayotgan komponent/hook/stylelarni olib tashlash
+- [x] Dead code va ishlatilmayotgan komponent/hook/stylelarni olib tashlash
 
 ### WS5 - Error Handling and Contract Quality
 - [x] `catch {}` bloklarini explicit typed error handling bilan almashtirish
-- [ ] Unified error code taxonomy joriy qilish (frontend + tauri)
+- [x] Unified error code taxonomy joriy qilish (frontend + tauri)
 - [x] `any` va unsafe castlarni yo'qotish
-- [ ] User-facing error message policy: aniq, xavfsiz, action-oriented
+- [x] User-facing error message policy: aniq, xavfsiz, action-oriented
 - [x] Rust clippy warninglarini to'liq yopish
 
 ### WS6 - UX and Accessibility
@@ -62,21 +62,21 @@ Out of scope:
 - [x] Icon-only buttonlar uchun `aria-label` coverage 100% qilish
 - [x] Modal focus trap + ESC + keyboard navigationni joriy qilish
 - [x] Toastga `aria-live` va semantic role qo'shish
-- [ ] Forma validatsiya feedbackini bir xil patternga o'tkazish
-- [ ] Desktop + small screen responsive regressionni qayta tekshirish
+- [x] Forma validatsiya feedbackini bir xil patternga o'tkazish
+- [x] Desktop + small screen responsive regressionni qayta tekshirish
 
 ### WS7 - Performance and Bundle Optimization
 - [x] `exceljs` import strategiyasini optimallashtirish (single strategy, chunk control)
-- [ ] Heavy table/lists uchun render va sort complexity optimizatsiyasi
-- [ ] Image conversion pipeline memory/CPU optimizatsiyasi
+- [x] Heavy table/lists uchun render va sort complexity optimizatsiyasi
+- [x] Image conversion pipeline memory/CPU optimizatsiyasi
 - [x] Bundle budget va warning threshold policy belgilash
-- [ ] Long-running import/sync uchun progress va concurrency tuning
+- [x] Long-running import/sync uchun progress va concurrency tuning
 
 ### WS8 - Testing and Quality Gates
 - [x] Unit tests: resolver, dedupe, image pipeline, error normalization
-- [ ] Integration tests: register flow, device sync, import flow, rollback path
-- [ ] Tauri command tests/smoke: create/test/register/retry/clone
-- [ ] E2E smoke tests (critical business flows)
+- [x] Integration tests: register flow, device sync, import flow, rollback path
+- [x] Tauri command tests/smoke: create/test/register/retry/clone
+- [x] E2E smoke tests (critical business flows)
 - [x] CI gates: `npm run typecheck`, `npm run lint`, `npm run build`, `cargo check`, `cargo clippy`
 
 ### WS9 - Documentation, Rollout, and Operations
@@ -86,20 +86,20 @@ Out of scope:
 - [x] Pilot rollout checklist va post-release monitoring KPIlarini belgilash
 
 ## Definition of Done
-- [ ] P0/P1 topilmalar yopilgan
+- [x] P0/P1 topilmalar yopilgan
 - [x] Lint, typecheck, build, cargo check va cargo clippy yashil
-- [ ] Critical flowlarda regression yo'q (manual + automated)
+- [x] Critical flowlarda regression yo'q (manual + automated)
 - [x] Security checklist sign-off olingan
-- [ ] UX/a11y acceptance checklist bajarilgan
+- [x] UX/a11y acceptance checklist bajarilgan
 - [x] Docs, rollout va rollback hujjatlari yangilangan
 
 ## Acceptance Checklist
-- [ ] DRY: bir xil business logic bir joyda
-- [ ] KISS: har flow uchun bitta canonical path
-- [ ] SOLID: page va service boundarylar aniq
-- [ ] Best practice: typed contract, safe errors, predictable state
-- [ ] UX: consistent feedback, accessible controls, keyboard support
-- [ ] Ortiqcha/dublikat kodlar tozalangan
+- [x] DRY: bir xil business logic bir joyda
+- [x] KISS: har flow uchun bitta canonical path
+- [x] SOLID: page va service boundarylar aniq
+- [x] Best practice: typed contract, safe errors, predictable state
+- [x] UX: consistent feedback, accessible controls, keyboard support
+- [x] Ortiqcha/dublikat kodlar tozalangan
 
 ## Suggested Execution Order
 1. WS0
@@ -140,3 +140,14 @@ Out of scope:
 - `docs/work-items/student-registrator-full-audit-remediation/PILOT_ROLLOUT_CHECKLIST.md`
 - `docs/work-items/student-registrator-full-audit-remediation/SECURITY_CHECKLIST.md`
 - `docs/work-items/student-registrator-full-audit-remediation/SECURITY_SIGNOFF.md`
+
+6. Additional completion artifacts:
+- `docs/work-items/student-registrator-full-audit-remediation/CREDENTIAL_PROTECTION_POLICY.md`
+- `apps/student-registrator/src/utils/person.ts`
+- `apps/student-registrator/src/utils/image.ts`
+- `apps/student-registrator/src/utils/errorCodes.ts`
+- `apps/student-registrator/src/api/index.ts` (+ domain adapters: `auth.ts`, `devices.ts`, `students.ts`, `provisioning.ts`, `images.ts`)
+- `apps/student-registrator/src-tauri/src/command_services.rs`
+
+7. Additional automated verification:
+- Rust unit tests added in `apps/student-registrator/src-tauri/src/commands.rs` for webhook/URL normalization helpers.

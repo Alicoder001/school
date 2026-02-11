@@ -4,7 +4,11 @@ use crate::hikvision::HikvisionClient;
 use crate::storage::{get_device_by_id, load_devices, save_devices};
 use crate::types::{DeviceConfig, DeviceConnectionResult, RegisterDeviceResult, RegisterResult, UserInfoSearchResponse};
 use crate::api::ApiClient;
-use chrono::{Datelike, Local, Timelike, Utc, Duration};
+use crate::command_services::{
+    device_label, device_match_label, find_local_device_index, generate_employee_no,
+    get_max_local_devices, is_credentials_expired, to_device_time,
+};
+use chrono::{Datelike, Duration, Local, Utc};
 use uuid::Uuid;
 use std::collections::{HashMap, HashSet};
 use serde_json::Value;
@@ -22,80 +26,6 @@ const WEBHOOK_RAW_CANDIDATE_PATHS: [&str; 2] = [
     "ISAPI/Event/notification/httpHosts/1",
 ];
 
-fn get_max_local_devices() -> usize {
-    let raw = std::env::var("DEVICE_CREDENTIALS_LIMIT")
-        .ok()
-        .or_else(|| std::env::var("VITE_DEVICE_CREDENTIALS_LIMIT").ok());
-    raw.and_then(|value| value.trim().parse::<usize>().ok())
-        .filter(|value| *value > 0)
-        .unwrap_or(10)
-}
-
-fn generate_employee_no() -> String {
-    let mut result = String::new();
-    for _ in 0..10 {
-        result.push_str(&(rand::random::<u8>() % 10).to_string());
-    }
-    result
-}
-
-fn to_device_time(dt: chrono::DateTime<Local>) -> String {
-    format!(
-        "{}-{:02}-{:02}T{:02}:{:02}:{:02}",
-        dt.year(), dt.month(), dt.day(),
-        dt.hour(), dt.minute(), dt.second()
-    )
-}
-
-fn is_credentials_expired(device: &DeviceConfig) -> bool {
-    if let Some(expires_at) = device.credentials_expires_at.as_ref() {
-        if let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(expires_at) {
-            return parsed.with_timezone(&Utc) < Utc::now();
-        }
-    }
-    false
-}
-
-fn device_label(device: &DeviceConfig) -> String {
-    if let Some(backend_id) = device.backend_id.as_ref() {
-        if !backend_id.trim().is_empty() {
-            return format!("Backend {}", backend_id);
-        }
-    }
-    format!("{}:{}", device.host, device.port)
-}
-
-fn find_local_device_index(
-    devices: &[DeviceConfig],
-    backend_device_id: &str,
-    external_device_id: Option<&str>,
-) -> Option<usize> {
-    devices
-        .iter()
-        .position(|d| d.backend_id.as_deref() == Some(backend_device_id))
-        .or_else(|| {
-            external_device_id.and_then(|external| {
-                devices
-                    .iter()
-                    .position(|d| d.device_id.as_deref() == Some(external))
-            })
-        })
-}
-
-fn device_match_label(device: &DeviceConfig) -> String {
-    if let Some(name) = device.backend_id.as_ref() {
-        if !name.trim().is_empty() {
-            return name.to_string();
-        }
-    }
-    if let Some(device_id) = device.device_id.as_ref() {
-        if !device_id.trim().is_empty() {
-            return device_id.to_string();
-        }
-    }
-    format!("{}:{}", device.host, device.port)
-}
-
 type SuccessfulDeviceEntry = (
     DeviceConfig,
     Option<String>,
@@ -105,6 +35,11 @@ type SuccessfulDeviceEntry = (
 );
 
 // ============ Device Management Commands ============
+
+#[tauri::command]
+pub fn get_contract_version() -> String {
+    "sr-tauri-v1".to_string()
+}
 
 #[tauri::command]
 pub async fn get_devices() -> Result<Vec<DeviceConfig>, String> {
@@ -2118,5 +2053,61 @@ pub async fn clone_device_to_device(
         "skipped": skipped,
         "errors": errors
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        extract_urls_from_text, normalize_http_hosts_put_path, normalize_target_url_for_device,
+        replace_xml_url_tags, sanitize_webhook_candidate,
+    };
+
+    #[test]
+    fn sanitize_webhook_candidate_rejects_non_http() {
+        assert!(sanitize_webhook_candidate("ftp://example.com").is_none());
+        assert!(sanitize_webhook_candidate("").is_none());
+    }
+
+    #[test]
+    fn sanitize_webhook_candidate_accepts_http_and_trims() {
+        let value = sanitize_webhook_candidate("  https://example.com/hook  ");
+        assert_eq!(value.as_deref(), Some("https://example.com/hook"));
+    }
+
+    #[test]
+    fn replace_xml_url_tags_updates_all_matching_nodes() {
+        let xml = "<root><url>a</url><Address>b</Address></root>";
+        let (next, replaced) = replace_xml_url_tags(xml, "https://new.test/hook");
+        assert_eq!(replaced, 2);
+        assert!(next.contains("<url>https://new.test/hook</url>"));
+        assert!(next.contains("<Address>https://new.test/hook</Address>"));
+    }
+
+    #[test]
+    fn normalize_put_path_is_stable() {
+        assert_eq!(
+            normalize_http_hosts_put_path("/ISAPI/Event/notification/httpHosts/1"),
+            "/ISAPI/Event/notification/httpHosts"
+        );
+        assert_eq!(
+            normalize_http_hosts_put_path("/ISAPI/Event/notification/httpHosts"),
+            "/ISAPI/Event/notification/httpHosts"
+        );
+    }
+
+    #[test]
+    fn normalize_target_url_removes_fragment_and_whitespace() {
+        assert_eq!(
+            normalize_target_url_for_device("  https://x.test/hook?x=1#fragment "),
+            "/hook?x=1"
+        );
+    }
+
+    #[test]
+    fn extract_urls_from_text_finds_http_candidates() {
+        let urls = extract_urls_from_text("prefix https://a.test/hook?x=1 and http://b.test/p");
+        assert!(urls.iter().any(|value| value == "https://a.test/hook?x=1"));
+        assert!(urls.iter().any(|value| value == "http://b.test/p"));
+    }
 }
 

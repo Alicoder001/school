@@ -118,8 +118,8 @@ export function DevicesPage() {
     try {
       const data = await fetchDevices();
       setCredentials(data);
-    } catch (err) {
-      console.error('Failed to load devices:', err);
+    } catch (err: unknown) {
+      appLogger.error('Failed to load local device credentials', err);
       addToast('Ulanish sozlamalarini yuklashda xato', 'error');
     }
   };
@@ -132,8 +132,8 @@ export function DevicesPage() {
     try {
       const info = await getWebhookInfo(schoolId);
       setWebhookInfo(info);
-    } catch (err) {
-      console.error('Failed to load webhook info:', err);
+    } catch (err: unknown) {
+      appLogger.error('Failed to load webhook info', err);
       const message = err instanceof Error ? err.message : 'Webhook ma\'lumotlarini yuklashda xato';
       addToast(message, 'error');
     } finally {
@@ -185,8 +185,8 @@ export function DevicesPage() {
           await loadCredentials();
         }
       }
-    } catch (err) {
-      console.error('Failed to load backend devices:', err);
+    } catch (err: unknown) {
+      appLogger.error('Failed to load backend devices', err);
       const message = err instanceof Error ? err.message : 'Qurilmalarni yuklashda xato';
       addToast(message, 'error');
     } finally {

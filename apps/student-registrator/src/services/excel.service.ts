@@ -2,6 +2,8 @@ import boySampleImg from "../assets/boy_sample.png";
 import girlSampleImg from "../assets/girl_sample.png";
 import type { StudentRow } from '../types';
 import { appLogger } from '../utils/logger';
+import { splitPersonName } from '../utils/name';
+import { normalizeGenderValue } from '../utils/person';
 
 type ExcelJsModule = typeof import("exceljs");
 
@@ -15,22 +17,6 @@ function normalizeHeader(value: string): string {
     .replace(/^\*/, "")
     .trim()
     .toLowerCase();
-}
-
-function splitFullName(fullName: string): { firstName: string; lastName: string } {
-  const cleaned = String(fullName || "").trim();
-  if (!cleaned) return { firstName: "", lastName: "" };
-  const parts = cleaned.split(/\s+/);
-  if (parts.length === 1) return { firstName: parts[0], lastName: "" };
-  return { lastName: parts[0], firstName: parts.slice(1).join(" ") };
-}
-
-function normalizeGenderValue(value: string): "male" | "female" | "unknown" {
-  const v = String(value || "").trim().toLowerCase();
-  if (!v) return "unknown";
-  if (["male", "erkak", "m", "1"].includes(v)) return "male";
-  if (["female", "ayol", "f", "2"].includes(v)) return "female";
-  return "unknown";
 }
 
 // Excel parse qilish (App.tsx dan ko'chirilgan)
@@ -127,7 +113,7 @@ export async function parseExcelFile(file: File): Promise<Omit<StudentRow, 'id' 
 
       if (colLastName || colFirstName || colFullName) {
         const fullName = colFullName ? String(row.getCell(colFullName).value || "").trim() : "";
-        const parts = splitFullName(fullName);
+        const parts = splitPersonName(fullName);
         lastName = String(colLastName ? row.getCell(colLastName).value || "" : parts.lastName).trim();
         firstName = String(colFirstName ? row.getCell(colFirstName).value || "" : parts.firstName).trim();
         fatherName = String(colFatherName ? row.getCell(colFatherName).value || "" : "").trim();
@@ -137,7 +123,7 @@ export async function parseExcelFile(file: File): Promise<Omit<StudentRow, 'id' 
         parentPhone = String(colPhone ? row.getCell(colPhone).value || "" : "").trim();
       } else if (hasNumberColumn) {
         const fullName = String(row.getCell(2).value || "").trim();
-        const parts = splitFullName(fullName);
+        const parts = splitPersonName(fullName);
         lastName = parts.lastName;
         firstName = parts.firstName;
         fatherName = String(row.getCell(4).value || "").trim();
@@ -145,7 +131,7 @@ export async function parseExcelFile(file: File): Promise<Omit<StudentRow, 'id' 
         parentPhone = String(row.getCell(5).value || "").trim();
       } else {
         const fullName = String(row.getCell(1).value || "").trim();
-        const parts = splitFullName(fullName);
+        const parts = splitPersonName(fullName);
         lastName = parts.lastName;
         firstName = parts.firstName;
         fatherName = String(row.getCell(4).value || "").trim();

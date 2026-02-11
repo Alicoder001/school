@@ -200,8 +200,8 @@ export function AddStudentsPage() {
           setCredentials(local);
           await refreshDeviceStatuses(devices, local);
         }
-      } catch (err) {
-        console.error('Failed to load data:', err);
+      } catch (err: unknown) {
+        appLogger.error('Failed to load AddStudents data', err);
         const message = err instanceof Error ? err.message : 'Ma\'lumotlarni yuklashda xato';
         addToast(message, 'error');
       }
@@ -240,8 +240,8 @@ export function AddStudentsPage() {
       
       importStudents(resized);
       addToast(`${resized.length} ta o'quvchi yuklandi`, 'success');
-    } catch (err) {
-      console.error('Excel import error:', err);
+    } catch (err: unknown) {
+      appLogger.error('Excel import failed', err);
       addToast('Excel yuklashda xato', 'error');
     } finally {
       setLoading(false);
@@ -252,8 +252,8 @@ export function AddStudentsPage() {
     try {
       await downloadStudentsTemplate(classNames);
       addToast('Shablon yuklandi', 'success');
-    } catch (err) {
-      console.error('Template download error:', err);
+    } catch (err: unknown) {
+      appLogger.error('Template download failed', err);
       addToast('Shablon yuklashda xato', 'error');
     }
   };

@@ -27,6 +27,7 @@ import type {
 } from '../types';
 import { buildBackendPhotoUrl } from '../utils/photo';
 import { resolveLocalDeviceForBackend } from '../utils/deviceResolver';
+import { appLogger } from '../utils/logger';
 
 type LiveStatus =
   | 'PRESENT'
@@ -242,8 +243,8 @@ export function StudentsPage() {
         setAvailableClasses(classes);
         setLocalDevices(devices);
         setBackendDevices(backend);
-      } catch (err) {
-        console.error('Failed to load initial data:', err);
+      } catch (err: unknown) {
+        appLogger.error('Failed to load Students initial data', err);
       }
     };
     loadInitial();
@@ -258,8 +259,8 @@ export function StudentsPage() {
         search: debouncedSearchQuery || undefined,
       });
       setDiagnostics(data);
-    } catch (err) {
-      console.error('Failed to load diagnostics:', err);
+    } catch (err: unknown) {
+      appLogger.error('Failed to load diagnostics', err);
     } finally {
       setLoading(false);
     }
@@ -366,8 +367,8 @@ export function StudentsPage() {
         setDeviceOnlyMetaByEmployeeNo(nextMetaByEmployeeNo);
         setDeviceOnlyFaceByEmployeeNo({});
         setDeviceOnlyFaceFetchStateByEmployeeNo({});
-      } catch (err) {
-        console.error('Failed to load device-discovered users:', err);
+      } catch (err: unknown) {
+        appLogger.error('Failed to load device-discovered users', err);
         setDeviceDiscoveredRows([]);
         setDeviceOnlyMetaByEmployeeNo({});
         setDeviceOnlyFaceByEmployeeNo({});
@@ -558,12 +559,19 @@ export function StudentsPage() {
     return sortedData.slice(start, start + PAGE_SIZE);
   }, [sortedData, page]);
 
+  const rowNumberByStudentId = useMemo(() => {
+    const map = new Map<string, number>();
+    sortedData.forEach((item, index) => {
+      map.set(item.studentId, index + 1);
+    });
+    return map;
+  }, [sortedData]);
+
   const columns = useMemo<ColumnDef<StudentDiagnosticsRow>[]>(() => [
     {
       header: '#',
       cell: (item) => {
-        const idx = sortedData.findIndex(s => s.studentId === item.studentId);
-        return (page - 1) * PAGE_SIZE + idx + 1;
+        return rowNumberByStudentId.get(item.studentId) || '-';
       },
       width: 50,
     },
@@ -657,7 +665,7 @@ export function StudentsPage() {
       ),
       width: '100px',
     }
-  ], [backendDevices, deviceOnlyFaceByEmployeeNo, liveStateByStudent, page, buildPhotoUrl]);
+  ], [backendDevices, deviceOnlyFaceByEmployeeNo, liveStateByStudent, buildPhotoUrl, rowNumberByStudentId]);
 
   return (
     <div className="page">

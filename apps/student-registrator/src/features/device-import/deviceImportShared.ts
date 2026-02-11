@@ -1,4 +1,5 @@
 import { splitPersonName } from '../../utils/name';
+import { normalizeGenderValue } from '../../utils/person';
 
 export type RawDeviceImportCandidate = {
   employeeNo: string;
@@ -37,11 +38,6 @@ type ImportRunMetricsParams = {
 };
 
 export type ImportRunMetrics = Required<ImportRunMetricsParams>;
-
-function toNormalizedGender(input?: string): 'male' | 'female' {
-  const lower = String(input || '').trim().toLowerCase();
-  return lower.startsWith('f') ? 'female' : 'male';
-}
 
 function choosePreferredCandidate(
   current: RawDeviceImportCandidate,
@@ -88,7 +84,7 @@ export function normalizeAndDedupeDeviceImportCandidates(
       name: String(item.name || '').trim(),
       firstName: parsedName.firstName,
       lastName: parsedName.lastName,
-      gender: toNormalizedGender(item.gender),
+      gender: normalizeGenderValue(item.gender) === 'female' ? 'female' : 'male',
       hasFace: (item.numOfFace || 0) > 0,
       sourceBackendId: item.sourceBackendId,
     };

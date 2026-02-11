@@ -3,6 +3,7 @@
 import { invoke } from '@tauri-apps/api';
 import { redactSensitiveData, redactSensitiveString } from './utils/redact';
 import { appLogger } from './utils/logger';
+import { stripDataUrlPrefix } from './utils/image';
 
 export interface DeviceConfig {
   id: string;
@@ -166,6 +167,7 @@ export interface UserInfoSearchResponse {
 
 // Backend URL - can be configured via environment
 export const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
+export const FRONTEND_CONTRACT_VERSION = 'sr-frontend-v1';
 const API_DEBUG_STORAGE_KEY = 'registrator_api_debug_entries';
 const API_DEBUG_LIMIT = 150;
 const DEFAULT_FETCH_TIMEOUT_MS = 20_000;
@@ -503,6 +505,7 @@ async function request(
   if (withAuth && token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
+  headers['X-Client-Contract-Version'] = FRONTEND_CONTRACT_VERSION;
   const method = (options.method || 'GET').toUpperCase();
   const startedAt = Date.now();
   const controller = options.signal ? null : new AbortController();
@@ -1016,6 +1019,10 @@ export async function getDeviceCapabilities(deviceId: string): Promise<Record<st
   return invoke<Record<string, unknown>>('get_device_capabilities', { deviceId });
 }
 
+export async function getTauriContractVersion(): Promise<string> {
+  return invoke<string>('get_contract_version');
+}
+
 export async function getDeviceConfiguration(deviceId: string): Promise<Record<string, unknown>> {
   return invoke<Record<string, unknown>>('get_device_configuration', { deviceId });
 }
@@ -1197,9 +1204,7 @@ export async function fileToBase64(file: File): Promise<string> {
     const reader = new FileReader();
     reader.onload = () => {
       const result = reader.result as string;
-      // Remove data:image/xxx;base64, prefix
-      const base64 = result.split(',')[1] || result;
-      resolve(base64);
+      resolve(stripDataUrlPrefix(result));
     };
     reader.onerror = reject;
     reader.readAsDataURL(file);
@@ -1505,8 +1510,7 @@ function blobToBase64(blob: Blob): Promise<string> {
     const reader = new FileReader();
     reader.onload = () => {
       const result = reader.result as string;
-      const base64 = result.split(",")[1] || result;
-      resolve(base64);
+      resolve(stripDataUrlPrefix(result));
     };
     reader.onerror = reject;
     reader.readAsDataURL(blob);

@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod api;
+mod command_services;
 mod commands;
 mod hikvision;
 mod storage;
@@ -12,6 +13,7 @@ fn main() {
     if let Err(err) = tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             // Device management
+            get_contract_version,
             get_devices,
             create_device,
             update_device,

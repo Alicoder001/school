@@ -300,3 +300,10 @@ Mitigation: benchmark before/after + targeted tests.
 - Device status derivation shared helperga standartlashtirildi (`utils/deviceStatus.ts`).
 - Unit tests kengaytirildi (`deviceResolver`, import dedupe/metrics, status helpers).
 - Operations docs pack qo'shildi (`ARCHITECTURE`, `INCIDENT_RUNBOOK`, `ROLLBACK_PLAYBOOK`, `RELEASE_NOTES`, `PILOT_ROLLOUT_CHECKLIST`, `SECURITY_CHECKLIST`, `SECURITY_SIGNOFF`).
+
+7. Final completion tranche:
+- Domain adapter layer added for frontend API boundaries (`src/api/{auth,devices,students,provisioning,images}.ts` + barrel).
+- Tauri command helper services extracted to `src-tauri/src/command_services.rs` (command/domain separation start completed in production paths).
+- Shared person/image/error utilities consolidated to reduce duplication and standardize user-safe messaging.
+- Table rendering optimized (row index map memoization) and debug `console` usage centralized to logger.
+- Rust unit tests added for webhook normalization helpers; frontend unit suite re-verified.

@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { registerStudent } from '../api';
 import type { RegisterResult, StudentRow } from '../types';
 import { appLogger } from '../utils/logger';
+import { DEVICE_ERROR_CODES, type DeviceErrorCode, toSafeUserMessage } from '../utils/errorCodes';
 
 const LAST_PROVISIONING_ID_KEY = 'registrator_last_provisioning_id';
 
@@ -30,7 +31,7 @@ function formatStudentName(student: StudentRow): string {
 }
 
 type NormalizedSaveError = {
-  code: string;
+  code: DeviceErrorCode;
   message: string;
   raw: string;
 };
@@ -66,71 +67,71 @@ function normalizeSaveError(
   const lower = message.toLowerCase();
   if (lower.includes('duplicate student in class')) {
     return {
-      code: 'DUPLICATE_STUDENT',
+      code: DEVICE_ERROR_CODES.DUPLICATE_STUDENT,
       message: "Bu sinfda shu ism-familiyali o'quvchi allaqachon mavjud.",
       raw,
     };
   }
   if (lower.includes('class not found')) {
-    return { code: 'CLASS_NOT_FOUND', message: "Tanlangan sinf topilmadi.", raw };
+    return { code: DEVICE_ERROR_CODES.CLASS_NOT_FOUND, message: "Tanlangan sinf topilmadi.", raw };
   }
   if (lower.includes('sinf tanlanishi shart')) {
-    return { code: 'CLASS_REQUIRED', message: 'Sinf tanlanishi shart.', raw };
+    return { code: DEVICE_ERROR_CODES.CLASS_REQUIRED, message: 'Sinf tanlanishi shart.', raw };
   }
   if (lower.includes('ism va familiya majburiy')) {
-    return { code: 'NAME_REQUIRED', message: 'Ism va familiya majburiy.', raw };
+    return { code: DEVICE_ERROR_CODES.NAME_REQUIRED, message: 'Ism va familiya majburiy.', raw };
   }
   if (lower.includes('device id takrorlangan') || lower.includes('qurilma id takrorlangan')) {
-    return { code: 'DEVICE_ID_DUPLICATE', message: "Qurilma identifikatori takrorlangan.", raw };
+    return { code: DEVICE_ERROR_CODES.DEVICE_ID_DUPLICATE, message: "Qurilma identifikatori takrorlangan.", raw };
   }
   if (lower.includes('unauthorized (no digest challenge)')) {
     return {
-      code: 'HIKVISION_AUTH',
+      code: DEVICE_ERROR_CODES.HIKVISION_AUTH,
       message: "Qurilma autentifikatsiyasida xato (login/parol noto'g'ri yoki digest o'chirilgan).",
       raw,
     };
   }
   if (lower.includes('employeeNo') && lower.includes('badjsoncontent')) {
     return {
-      code: 'HIKVISION_EMPLOYEE_NO',
+      code: DEVICE_ERROR_CODES.HIKVISION_EMPLOYEE_NO,
       message: "Qurilma employeeNo formatini qabul qilmadi. Device ID strategiyasini tekshiring.",
       raw,
     };
   }
   if (lower.includes('user yaratish: http 400 bad request')) {
     return {
-      code: 'HIKVISION_USER_CREATE_400',
+      code: DEVICE_ERROR_CODES.HIKVISION_USER_CREATE_400,
       message: 'Qurilmada foydalanuvchini yaratish rad etildi (HTTP 400).',
       raw,
     };
   }
   if (lower.includes('face yuklash')) {
-    return { code: 'HIKVISION_FACE_UPLOAD', message: 'Qurilmaga rasm yuklashda xato.', raw };
+    return { code: DEVICE_ERROR_CODES.HIKVISION_FACE_UPLOAD, message: 'Qurilmaga rasm yuklashda xato.', raw };
   }
   if (lower.includes('unauthorized')) {
     return {
-      code: 'BACKEND_UNAUTHORIZED',
+      code: DEVICE_ERROR_CODES.BACKEND_UNAUTHORIZED,
       message: "Backendga kirish rad etildi. Login yoki tokenni tekshiring.",
       raw,
     };
   }
   if (lower.includes('unknown argument `firstname`') || lower.includes('unknown argument `lastname`')) {
     return {
-      code: 'BACKEND_SCHEMA_OLD',
+      code: DEVICE_ERROR_CODES.BACKEND_SCHEMA_OLD,
       message: 'Server sxemasi eski (firstName/lastName maydonlari yoq). Backendni yangilang.',
       raw,
     };
   }
   if (lower.includes('studentprovisioning') && lower.includes('does not exist')) {
     return {
-      code: 'MIGRATION_MISSING',
+      code: DEVICE_ERROR_CODES.MIGRATION_MISSING,
       message: 'Server migratsiyasi toliq emas (StudentProvisioning jadvali topilmadi).',
       raw,
     };
   }
   if (lower.includes('requestfailed')) {
     return {
-      code: 'REQUEST_FAILED',
+      code: DEVICE_ERROR_CODES.REQUEST_FAILED,
       message: "Qurilmaga so'rov muvaffaqiyatsiz tugadi. Ulanish va qurilma holatini tekshiring.",
       raw,
     };
@@ -146,12 +147,12 @@ function normalizeSaveError(
     const uzbek = deviceName
       ? `Qurilm ${deviceName} bilan bog'liq xatolik, tarmoqni tekshiring.`
       : "Qurilma bilan bog'liq xatolik, tarmoqni tekshiring.";
-    return { code: 'TIMEOUT', message: uzbek, raw };
+    return { code: DEVICE_ERROR_CODES.TIMEOUT, message: uzbek, raw };
   }
 
   return {
-    code: 'UNKNOWN',
-    message: message || "Noma'lum xato",
+    code: DEVICE_ERROR_CODES.UNKNOWN,
+    message: toSafeUserMessage(message),
     raw,
   };
 }
@@ -238,7 +239,7 @@ export function useStudentTable(options?: {
           ...s, 
           status: 'error' as const, 
           error: 'Ism va familiya majburiy',
-          errorCode: 'NAME_REQUIRED',
+          errorCode: DEVICE_ERROR_CODES.NAME_REQUIRED,
         } : s
       ));
       throw new Error('Ism va familiya majburiy');
@@ -250,7 +251,7 @@ export function useStudentTable(options?: {
           ...s, 
           status: 'error' as const, 
           error: 'Sinf tanlanmagan',
-          errorCode: 'CLASS_REQUIRED',
+          errorCode: DEVICE_ERROR_CODES.CLASS_REQUIRED,
         } : s
       ));
       throw new Error('Sinf tanlanmagan');
@@ -262,7 +263,7 @@ export function useStudentTable(options?: {
     ));
 
     const fullName = formatStudentName(student);
-    console.log(`[Save Student] Saving "${fullName}":`, {
+    appLogger.debug(`[Save Student] Saving "${fullName}"`, {
       name: fullName,
       firstName: student.firstName,
       lastName: student.lastName,
@@ -332,8 +333,15 @@ export function useStudentTable(options?: {
 
         const errorMessage = `Hikvision yozilmadi (${failedDevices.length} ta qurilma). Qurilma: ${deviceLabel}. ${reason}`;
 
-        setStudents(prev => prev.map(s => 
-          s.id === id ? { ...s, status: 'error' as const, error: errorMessage, errorCode: 'DEVICE_SYNC_FAILED' } : s
+        setStudents(prev => prev.map(s =>
+          s.id === id
+            ? {
+                ...s,
+                status: 'error' as const,
+                error: errorMessage,
+                errorCode: DEVICE_ERROR_CODES.DEVICE_SYNC_FAILED,
+              }
+            : s
         ));
         throw new Error(errorMessage);
       }

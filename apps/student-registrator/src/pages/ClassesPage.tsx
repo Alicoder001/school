@@ -3,6 +3,7 @@ import { fetchSchools, fetchClasses, createClass, getAuthUser } from '../api';
 import { useGlobalToast } from '../hooks/useToast';
 import { Icons } from '../components/ui/Icons';
 import type { ClassInfo } from '../types';
+import { appLogger } from '../utils/logger';
 
 export function ClassesPage() {
   const [classes, setClasses] = useState<ClassInfo[]>([]);
@@ -24,8 +25,8 @@ export function ClassesPage() {
         if (schoolId) {
           setSelectedSchool(schoolId);
         }
-      } catch (err) {
-        console.error('Failed to load school:', err);
+      } catch (err: unknown) {
+        appLogger.error('Failed to load school', err);
       }
     };
 
@@ -47,8 +48,8 @@ export function ClassesPage() {
           return a.name.localeCompare(b.name);
         });
         setClasses(sorted);
-      } catch (err) {
-        console.error('Failed to load classes:', err);
+      } catch (err: unknown) {
+        appLogger.error('Failed to load classes', err);
         addToast('Sinflarni yuklashda xato', 'error');
       }
     };
@@ -66,8 +67,8 @@ export function ClassesPage() {
       });
       setClasses(sorted);
       addToast('Sinflar yangilandi', 'success');
-    } catch (err) {
-      console.error('Failed to refresh classes:', err);
+    } catch (err: unknown) {
+      appLogger.error('Failed to refresh classes', err);
       addToast('Sinflarni yangilashda xato', 'error');
     }
   };
