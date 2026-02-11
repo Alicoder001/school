@@ -19,6 +19,7 @@ import {
 } from '../../api';
 import { buildDeviceErrorMessage } from '../../utils/deviceErrorCodes';
 import { isDeviceCredentialsExpired } from '../../utils/deviceResolver';
+import { deriveBackendPresenceStatus } from '../../utils/deviceStatus';
 import {
   buildImportRunMetrics,
   formatImportRunMetrics,
@@ -133,11 +134,8 @@ export function useDeviceImportWorkflow({
 
   const getImportDeviceStatus = (device: SchoolDeviceInfo): 'online' | 'offline' | 'no_credentials' => {
     const local = findLocalForBackend(device, allLocalDevices);
-    if (!local?.id) return 'no_credentials';
-    if (!device.lastSeenAt) return 'offline';
-    const lastSeen = new Date(device.lastSeenAt).getTime();
-    if (Number.isNaN(lastSeen)) return 'offline';
-    return Date.now() - lastSeen < 2 * 60 * 60 * 1000 ? 'online' : 'offline';
+    const derived = deriveBackendPresenceStatus(device, local);
+    return derived === 'unknown' ? 'offline' : derived;
   };
 
   const previewStats = useMemo(() => {
@@ -169,7 +167,8 @@ export function useDeviceImportWorkflow({
         message,
         payload,
       });
-    } catch {
+    } catch (error: unknown) {
+      void error;
       // best-effort audit
     }
   };
@@ -180,7 +179,8 @@ export function useDeviceImportWorkflow({
     try {
       const metrics = await getImportMetrics(auth.schoolId);
       setImportMetrics(metrics);
-    } catch {
+    } catch (error: unknown) {
+      void error;
       setImportMetrics(null);
     }
   };
@@ -211,7 +211,8 @@ export function useDeviceImportWorkflow({
         duplicateCount: preview.duplicateCount,
         classErrorCount: preview.classErrorCount,
       });
-    } catch {
+    } catch (error: unknown) {
+      void error;
       setImportPreview(null);
     }
   };

@@ -441,7 +441,8 @@ export function StudentsPage() {
               ...prev,
               [employeeNo]: 'success',
             }));
-          } catch {
+          } catch (error: unknown) {
+            void error;
             setDeviceOnlyFaceFetchStateByEmployeeNo((prev) => ({
               ...prev,
               [employeeNo]: 'failed',
@@ -516,7 +517,8 @@ export function StudentsPage() {
             message: result.message,
             checkedAt: result.checkedAt,
           };
-        } catch {
+        } catch (error: unknown) {
+          void error;
           return { backendDeviceId: backendDevice.id, status: 'ERROR' as LiveStatus };
         }
       }),

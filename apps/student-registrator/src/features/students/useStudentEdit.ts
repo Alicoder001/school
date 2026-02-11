@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { fileToBase64, syncStudentToDevices, updateStudentProfile } from '../../api';
 import type { StudentDiagnosticsRow } from '../../types';
+import { appLogger } from '../../utils/logger';
 
 type UseStudentEditParams = {
   addToast: (message: string, type?: 'success' | 'error' | 'info') => void;
@@ -86,10 +87,11 @@ export function useStudentEdit({
         } else {
           addToast("Qurilmalarga yuborishda xato yoki provisioning topilmadi", 'error');
         }
-      } catch (syncErr) {
-        console.error('Device sync error:', syncErr);
+      } catch (syncErr: unknown) {
+        appLogger.warn('Device sync failed after student edit', syncErr);
       }
-    } catch {
+    } catch (error: unknown) {
+      appLogger.error('Failed to save edited student', error);
       addToast('Yangilashda xato', 'error');
     } finally {
       setSavingEdit(false);

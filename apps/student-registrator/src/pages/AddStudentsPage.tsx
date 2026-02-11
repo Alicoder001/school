@@ -26,16 +26,15 @@ import {
   isDeviceCredentialsExpired,
   resolveLocalDeviceForBackend,
 } from '../utils/deviceResolver';
+import { type DeviceSelectionStatus } from '../utils/deviceStatus';
 import { appLogger } from '../utils/logger';
-
-type DeviceStatus = 'online' | 'offline' | 'unknown';
 
 export function AddStudentsPage() {
   const [availableClasses, setAvailableClasses] = useState<ClassInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [backendDevices, setBackendDevices] = useState<SchoolDeviceInfo[]>([]);
   const [credentials, setCredentials] = useState<DeviceConfig[]>([]);
-  const [deviceStatus, setDeviceStatus] = useState<Record<string, DeviceStatus>>({});
+  const [deviceStatus, setDeviceStatus] = useState<Record<string, DeviceSelectionStatus>>({});
   const [deviceStatusLoading, setDeviceStatusLoading] = useState(false);
   const [selectedDeviceIds, setSelectedDeviceIds] = useState<string[]>([]);
   const [deviceSelectionTouched, setDeviceSelectionTouched] = useState(false);
@@ -136,24 +135,28 @@ export function AddStudentsPage() {
           const resolved = resolveLocalDeviceForBackend(device, local);
           const localDevice = resolved.localDevice;
           if (!localDevice || isDeviceCredentialsExpired(localDevice)) {
-            return { backendId: device.id, status: 'unknown' as DeviceStatus };
+            return { backendId: device.id, status: 'no_credentials' as DeviceSelectionStatus };
           }
           try {
             const result = await testDeviceConnection(localDevice.id);
-            return { backendId: device.id, status: (result.ok ? 'online' : 'offline') as DeviceStatus };
-          } catch {
-            return { backendId: device.id, status: 'offline' as DeviceStatus };
+            return {
+              backendId: device.id,
+              status: (result.ok ? 'online' : 'offline') as DeviceSelectionStatus,
+            };
+          } catch (error: unknown) {
+            void error;
+            return { backendId: device.id, status: 'offline' as DeviceSelectionStatus };
           }
         }),
       );
 
-      const nextStatus: Record<string, DeviceStatus> = {};
+      const nextStatus: Record<string, DeviceSelectionStatus> = {};
       results.forEach((item) => {
         nextStatus[item.backendId] = item.status;
       });
       setDeviceStatus(nextStatus);
-    } catch (err) {
-      console.error('Failed to refresh device status:', err);
+    } catch (err: unknown) {
+      appLogger.error('Failed to refresh device status', err);
       addToast('Qurilma holatini tekshirishda xato', 'error');
     } finally {
       setDeviceStatusLoading(false);
@@ -292,7 +295,8 @@ export function AddStudentsPage() {
       }
       addToast(`${successCount} ta o'quvchi saqlandi`, 'success');
       setIsTargetSaveModalOpen(false);
-    } catch {
+    } catch (error: unknown) {
+      appLogger.warn('Failed to save all pending students', error);
       addToast('Ba\'zi o\'quvchilarni saqlashda xato', 'error');
     }
   };
@@ -466,7 +470,7 @@ export function AddStudentsPage() {
                           onChange={() => handleToggleDevice(device.id)}
                         />
                         <span className="device-select-name">{device.name}</span>
-                        <div className={`status-dot ${status}`} title={status}></div>
+                        <div className={`status-dot ${status === 'no_credentials' ? 'unknown' : status}`} title={status}></div>
                       </label>
                     );
                   })}

@@ -362,8 +362,8 @@ export function DevicesPage() {
                   deviceId: test.deviceId,
                 });
               }
-            } catch (err) {
-              console.error('Auto test/sync error:', err);
+            } catch (err: unknown) {
+              appLogger.warn('Auto test/sync failed', err);
             }
           }
         }
@@ -383,7 +383,8 @@ export function DevicesPage() {
       setEditingLocalId(null);
       setIsModalOpen(false);
       setIsCredentialsModalOpen(false);
-    } catch {
+    } catch (error: unknown) {
+      appLogger.error('Device submit failed', error);
       addToast('Xatolik yuz berdi', 'error');
     } finally {
       setLoading(false);
@@ -453,8 +454,8 @@ export function DevicesPage() {
           await updateSchoolDevice(device.id, updates);
           await loadBackendDevices();
           await loadCredentials();
-        } catch (err) {
-          console.error('Backend sync error:', err);
+        } catch (err: unknown) {
+          appLogger.warn('Backend sync after test failed', err);
         }
       }
     } catch (err) {
@@ -568,7 +569,8 @@ export function DevicesPage() {
       try {
         const url = new URL(value);
         return `${url.pathname}${url.search}`;
-      } catch {
+      } catch (error: unknown) {
+        void error;
         return value;
       }
     }
@@ -581,7 +583,8 @@ export function DevicesPage() {
       const url = new URL(BACKEND_URL);
       if (url.port) return url.port;
       return url.protocol === 'https:' ? '443' : '80';
-    } catch {
+    } catch (error: unknown) {
+      void error;
       return '';
     }
   };
@@ -598,7 +601,8 @@ export function DevicesPage() {
     try {
       await navigator.clipboard.writeText(value);
       addToast(`${label} nusxalandi`, 'success');
-    } catch {
+    } catch (error: unknown) {
+      void error;
       addToast('Nusxalashda xato', 'error');
     }
   };

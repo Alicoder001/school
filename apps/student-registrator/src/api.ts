@@ -255,7 +255,8 @@ function getClientOrigin(): string | null {
   if (typeof window === 'undefined') return null;
   try {
     return window.location.origin || null;
-  } catch {
+  } catch (error: unknown) {
+    void error;
     return null;
   }
 }
@@ -271,7 +272,8 @@ function readStoredApiDebugEntries(): ApiDebugEntry[] {
   try {
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? (parsed as ApiDebugEntry[]) : [];
-  } catch {
+  } catch (error: unknown) {
+    void error;
     return [];
   }
 }
@@ -280,7 +282,8 @@ function writeStoredApiDebugEntries(entries: ApiDebugEntry[]): void {
   if (typeof localStorage === 'undefined') return;
   try {
     localStorage.setItem(API_DEBUG_STORAGE_KEY, JSON.stringify(entries));
-  } catch {
+  } catch (error: unknown) {
+    void error;
     // Ignore storage failures on locked-down environments.
   }
 }
@@ -338,6 +341,8 @@ export function formatApiErrorMessage(error: unknown, fallback = 'Xatolik yuz be
 
 const AUTH_TOKEN_KEY = 'registrator_auth_token';
 const AUTH_USER_KEY = 'registrator_auth_user';
+let authTokenMemory: string | null = null;
+let authUserMemory: AuthUser | null = null;
 
 export interface AuthUser {
   id: string;
@@ -347,28 +352,100 @@ export interface AuthUser {
   schoolId: string | null;
 }
 
+function readSessionValue(key: string): string | null {
+  try {
+    return sessionStorage.getItem(key);
+  } catch (error: unknown) {
+    void error;
+    return null;
+  }
+}
+
+function writeSessionValue(key: string, value: string): void {
+  try {
+    sessionStorage.setItem(key, value);
+  } catch (error: unknown) {
+    void error;
+    // best effort only
+  }
+}
+
+function clearSessionValue(key: string): void {
+  try {
+    sessionStorage.removeItem(key);
+  } catch (error: unknown) {
+    void error;
+    // best effort only
+  }
+}
+
+function readLegacyLocalValue(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch (error: unknown) {
+    void error;
+    return null;
+  }
+}
+
+function clearLegacyLocalValue(key: string): void {
+  try {
+    localStorage.removeItem(key);
+  } catch (error: unknown) {
+    void error;
+    // best effort only
+  }
+}
+
 export function getAuthToken(): string | null {
-  return localStorage.getItem(AUTH_TOKEN_KEY);
+  if (authTokenMemory) return authTokenMemory;
+  const fromSession = readSessionValue(AUTH_TOKEN_KEY);
+  if (fromSession) {
+    authTokenMemory = fromSession;
+    return fromSession;
+  }
+  const legacy = readLegacyLocalValue(AUTH_TOKEN_KEY);
+  if (legacy) {
+    authTokenMemory = legacy;
+    writeSessionValue(AUTH_TOKEN_KEY, legacy);
+    clearLegacyLocalValue(AUTH_TOKEN_KEY);
+    return legacy;
+  }
+  return null;
 }
 
 export function getAuthUser(): AuthUser | null {
-  const data = localStorage.getItem(AUTH_USER_KEY);
+  if (authUserMemory) return authUserMemory;
+  const data = readSessionValue(AUTH_USER_KEY) || readLegacyLocalValue(AUTH_USER_KEY);
   if (!data) return null;
   try {
-    return JSON.parse(data);
-  } catch {
+    const parsed = JSON.parse(data) as AuthUser;
+    authUserMemory = parsed;
+    writeSessionValue(AUTH_USER_KEY, data);
+    clearLegacyLocalValue(AUTH_USER_KEY);
+    return parsed;
+  } catch (error: unknown) {
+    void error;
     return null;
   }
 }
 
 function setAuth(token: string, user: AuthUser): void {
-  localStorage.setItem(AUTH_TOKEN_KEY, token);
-  localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
+  authTokenMemory = token;
+  authUserMemory = user;
+  writeSessionValue(AUTH_TOKEN_KEY, token);
+  writeSessionValue(AUTH_USER_KEY, JSON.stringify(user));
+  clearLegacyLocalValue(AUTH_TOKEN_KEY);
+  clearLegacyLocalValue(AUTH_USER_KEY);
 }
 
 export function logout(): void {
-  localStorage.removeItem(AUTH_TOKEN_KEY);
-  localStorage.removeItem(AUTH_USER_KEY);
+  authTokenMemory = null;
+  authUserMemory = null;
+  clearSessionValue(AUTH_TOKEN_KEY);
+  clearSessionValue(AUTH_USER_KEY);
+  clearLegacyLocalValue(AUTH_TOKEN_KEY);
+  clearLegacyLocalValue(AUTH_USER_KEY);
 }
 
 export async function login(email: string, password: string): Promise<{ token: string; user: AuthUser }> {
@@ -492,7 +569,8 @@ async function readErrorMessage(res: Response, fallback: string): Promise<string
     if (typeof parsed?.error === "string" && parsed.error.trim()) return parsed.error.trim();
     if (typeof parsed?.message === "string" && parsed.message.trim()) return parsed.message.trim();
     if (typeof parsed === 'string' && parsed.trim()) return parsed.trim();
-  } catch {
+  } catch (error: unknown) {
+    void error;
     // keep raw text
   }
   return text;

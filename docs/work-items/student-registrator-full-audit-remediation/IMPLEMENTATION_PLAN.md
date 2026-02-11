@@ -293,3 +293,10 @@ Mitigation: benchmark before/after + targeted tests.
 5. Phase 7 completed (targeted):
 - `exceljs` lazy chunk strategy standardlashtirildi.
 - Vite bundle warning policy qo'shildi (`manualChunks`, `chunkSizeWarningLimit`).
+
+6. Phase 2/5/8/9 progress (incremental):
+- Auth token saqlash memory + `sessionStorage` strategiyasiga o'tkazildi (legacy localStorage migration bilan).
+- `catch {}` bloklari typed `catch (error: unknown)` ko'rinishiga to'liq o'tkazildi.
+- Device status derivation shared helperga standartlashtirildi (`utils/deviceStatus.ts`).
+- Unit tests kengaytirildi (`deviceResolver`, import dedupe/metrics, status helpers).
+- Operations docs pack qo'shildi (`ARCHITECTURE`, `INCIDENT_RUNBOOK`, `ROLLBACK_PLAYBOOK`, `RELEASE_NOTES`, `PILOT_ROLLOUT_CHECKLIST`, `SECURITY_CHECKLIST`, `SECURITY_SIGNOFF`).

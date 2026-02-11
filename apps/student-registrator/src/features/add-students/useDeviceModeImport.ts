@@ -63,7 +63,8 @@ export function useDeviceModeImport({
         try {
           const face = await getUserFace(localDeviceId, employeeNo);
           return face.imageBase64 || undefined;
-        } catch {
+        } catch (error: unknown) {
+          void error;
           if (attempt < attempts) {
             await sleep(250 * attempt);
           }

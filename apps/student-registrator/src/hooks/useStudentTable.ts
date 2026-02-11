@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { registerStudent } from '../api';
 import type { RegisterResult, StudentRow } from '../types';
+import { appLogger } from '../utils/logger';
 
 const LAST_PROVISIONING_ID_KEY = 'registrator_last_provisioning_id';
 
@@ -56,7 +57,8 @@ function normalizeSaveError(
       } else if (typeof parsed?.message === 'string' && parsed.message.trim()) {
         message = parsed.message.trim();
       }
-    } catch {
+    } catch (error: unknown) {
+      void error;
       // keep raw message when not valid JSON
     }
   }
@@ -163,7 +165,8 @@ export function useStudentTable(options?: {
   const [lastProvisioningId, setLastProvisioningId] = useState<string | null>(() => {
     try {
       return localStorage.getItem(LAST_PROVISIONING_ID_KEY);
-    } catch {
+    } catch (error: unknown) {
+      void error;
       return null;
     }
   });
@@ -289,7 +292,8 @@ export function useStudentTable(options?: {
         setLastProvisioningId(result.provisioningId);
         try {
           localStorage.setItem(LAST_PROVISIONING_ID_KEY, result.provisioningId);
-        } catch {
+        } catch (error: unknown) {
+          void error;
           // no-op in restricted environments
         }
       }
@@ -338,7 +342,7 @@ export function useStudentTable(options?: {
         s.id === id ? { ...s, status: 'success' as const } : s
       ));
     } catch (err) {
-      console.error("[Save Student] registerStudent failed:", {
+      appLogger.error("[Save Student] registerStudent failed", {
         studentId: student.id,
         name: fullName,
         error: err instanceof Error ? err.message : String(err || "Unknown error"),
@@ -380,13 +384,13 @@ export function useStudentTable(options?: {
         const message = err instanceof Error ? err.message : String(err || "Noma'lum xato");
         errorReasons[message] = (errorReasons[message] || 0) + 1;
         // Error already handled in saveStudent
-        console.error(`Failed to save student ${formatStudentName(student)}:`, err);
+        appLogger.error(`Failed to save student ${formatStudentName(student)}`, err);
       }
     }
     
     setIsSaving(false);
     
-    console.log(`[Save All] Success: ${successCount}, Errors: ${errorCount}`);
+    appLogger.info(`[Save All] Success: ${successCount}, Errors: ${errorCount}`);
     return { successCount, errorCount, errorReasons };
   }, [students, saveStudent]);
 

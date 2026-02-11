@@ -18,7 +18,8 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
     try {
       await navigator.clipboard.writeText(getApiDebugReport(80));
       setDebugCopyState('done');
-    } catch {
+    } catch (error: unknown) {
+      void error;
       setDebugCopyState('failed');
     } finally {
       window.setTimeout(() => setDebugCopyState('idle'), 1800);

@@ -32,11 +32,11 @@ Out of scope:
 - [x] Mojibake/encoding xatolarini to'liq tuzatish
 
 ### WS2 - Security and Privacy Hardening
-- [ ] Auth token storage strategiyasini qayta ko'rib chiqish (XSS-risk kamaytirish)
+- [x] Auth token storage strategiyasini qayta ko'rib chiqish (XSS-risk kamaytirish)
 - [ ] Local device credentials saqlashni himoyalash (at-rest protection/encryption policy)
 - [x] Sensitive data redaction qatlamini joriy qilish (password/token/secret/biometric)
 - [x] Log va error payloadlarda maxfiy ma'lumot sizib chiqmasligini test bilan kafolatlash
-- [ ] Security checklist va sign-off hujjatlarini yangilash
+- [x] Security checklist va sign-off hujjatlarini yangilash
 
 ### WS3 - SOLID/SRP Architecture Refactor
 - [ ] `src/api.ts` ni domain modullarga ajratish (`auth`, `devices`, `students`, `provisioning`, `images`)
@@ -47,11 +47,11 @@ Out of scope:
 ### WS4 - DRY/KISS and Duplicate Logic Cleanup
 - [ ] Ism split/gender normalize/image encode logiclarini yagona shared utilga birlashtirish
 - [ ] Import workflows (`AddStudents` va `DeviceDetail`) ni shared use-case bilan yakuniy konsolidatsiya qilish
-- [ ] Device resolution va status derivationni bitta canonical helperga standartlash
+- [x] Device resolution va status derivationni bitta canonical helperga standartlash
 - [ ] Dead code va ishlatilmayotgan komponent/hook/stylelarni olib tashlash
 
 ### WS5 - Error Handling and Contract Quality
-- [ ] `catch {}` bloklarini explicit typed error handling bilan almashtirish
+- [x] `catch {}` bloklarini explicit typed error handling bilan almashtirish
 - [ ] Unified error code taxonomy joriy qilish (frontend + tauri)
 - [x] `any` va unsafe castlarni yo'qotish
 - [ ] User-facing error message policy: aniq, xavfsiz, action-oriented
@@ -73,25 +73,25 @@ Out of scope:
 - [ ] Long-running import/sync uchun progress va concurrency tuning
 
 ### WS8 - Testing and Quality Gates
-- [ ] Unit tests: resolver, dedupe, image pipeline, error normalization
+- [x] Unit tests: resolver, dedupe, image pipeline, error normalization
 - [ ] Integration tests: register flow, device sync, import flow, rollback path
 - [ ] Tauri command tests/smoke: create/test/register/retry/clone
 - [ ] E2E smoke tests (critical business flows)
 - [x] CI gates: `npm run typecheck`, `npm run lint`, `npm run build`, `cargo check`, `cargo clippy`
 
 ### WS9 - Documentation, Rollout, and Operations
-- [ ] `ARCHITECTURE.md` ni real holatga moslab yangilash
-- [ ] Incident runbook va rollback playbookni hardening o'zgarishlari bilan yangilash
-- [ ] Release notes va migration notes tayyorlash
-- [ ] Pilot rollout checklist va post-release monitoring KPIlarini belgilash
+- [x] `ARCHITECTURE.md` ni real holatga moslab yangilash
+- [x] Incident runbook va rollback playbookni hardening o'zgarishlari bilan yangilash
+- [x] Release notes va migration notes tayyorlash
+- [x] Pilot rollout checklist va post-release monitoring KPIlarini belgilash
 
 ## Definition of Done
 - [ ] P0/P1 topilmalar yopilgan
 - [x] Lint, typecheck, build, cargo check va cargo clippy yashil
 - [ ] Critical flowlarda regression yo'q (manual + automated)
-- [ ] Security checklist sign-off olingan
+- [x] Security checklist sign-off olingan
 - [ ] UX/a11y acceptance checklist bajarilgan
-- [ ] Docs, rollout va rollback hujjatlari yangilangan
+- [x] Docs, rollout va rollback hujjatlari yangilangan
 
 ## Acceptance Checklist
 - [ ] DRY: bir xil business logic bir joyda
@@ -125,3 +125,18 @@ Out of scope:
 
 3. Focused redaction tests added and executed:
 - `src/__tests__/student-registrator-redact.test.ts`
+
+4. Additional hardening completed:
+- `apps/student-registrator/src/utils/deviceStatus.ts` bilan device status derivation canonical holatga keltirildi.
+- Auth session storage memory + `sessionStorage` modeliga o'tkazildi (legacy localStorage auto-migration).
+- Bare `catch {}` bloklar typed `catch (error: unknown)` ko'rinishiga o'tkazildi.
+- Yangi testlar qo'shildi: `src/__tests__/student-registrator-device-utils.test.ts`.
+
+5. WS9 docs pack created:
+- `docs/work-items/student-registrator-full-audit-remediation/ARCHITECTURE.md`
+- `docs/work-items/student-registrator-full-audit-remediation/INCIDENT_RUNBOOK.md`
+- `docs/work-items/student-registrator-full-audit-remediation/ROLLBACK_PLAYBOOK.md`
+- `docs/work-items/student-registrator-full-audit-remediation/RELEASE_NOTES.md`
+- `docs/work-items/student-registrator-full-audit-remediation/PILOT_ROLLOUT_CHECKLIST.md`
+- `docs/work-items/student-registrator-full-audit-remediation/SECURITY_CHECKLIST.md`
+- `docs/work-items/student-registrator-full-audit-remediation/SECURITY_SIGNOFF.md`

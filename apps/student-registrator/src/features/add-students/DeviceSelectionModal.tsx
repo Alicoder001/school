@@ -1,8 +1,7 @@
 import { Icons } from '../../components/ui/Icons';
 import type { SchoolDeviceInfo } from '../../types';
 import { useModalA11y } from '../../hooks/useModalA11y';
-
-type DeviceStatus = 'online' | 'offline' | 'unknown';
+import { getDeviceSelectionStatusLabel, type DeviceSelectionStatus } from '../../utils/deviceStatus';
 
 type DeviceSelectionModalProps = {
   isOpen: boolean;
@@ -15,15 +14,9 @@ type DeviceSelectionModalProps = {
   confirmLabel: string;
   busy?: boolean;
   busyLabel?: string;
-  statuses?: Record<string, DeviceStatus>;
+  statuses?: Record<string, DeviceSelectionStatus>;
   disableConfirm?: boolean;
 };
-
-function renderStatusBadge(status: DeviceStatus): string {
-  if (status === 'online') return 'Online';
-  if (status === 'offline') return 'Offline';
-  return "Sozlanmagan";
-}
 
 export function DeviceSelectionModal({
   isOpen,
@@ -84,7 +77,7 @@ export function DeviceSelectionModal({
                         status === 'online' ? 'badge-success' : status === 'offline' ? 'badge-danger' : ''
                       }`}
                     >
-                      {renderStatusBadge(status)}
+                      {getDeviceSelectionStatusLabel(status)}
                     </span>
                   )}
                 </label>

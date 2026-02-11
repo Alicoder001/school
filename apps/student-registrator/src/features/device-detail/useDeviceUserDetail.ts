@@ -10,6 +10,7 @@ import {
   type StudentProfileDetail,
   type UserInfoEntry,
 } from '../../api';
+import { appLogger } from '../../utils/logger';
 
 type UseDeviceUserDetailParams = {
   localDevice: DeviceConfig | null;
@@ -114,7 +115,8 @@ export function useDeviceUserDetail({
       setEditClassId(detail.classId || '');
       setEditGender((detail.gender || 'MALE') as 'MALE' | 'FEMALE');
       setEditFacePreview(buildPhotoUrl(detail.photoUrl));
-    } catch {
+    } catch (error: unknown) {
+      appLogger.debug('No DB student found for selected device user', error);
       setSelectedStudentDetail(null);
     } finally {
       setDetailLoading(false);
