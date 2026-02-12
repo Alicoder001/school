@@ -155,7 +155,7 @@ const Students: React.FC = () => {
           }
         },
       }),
-    [isSingleDay, canEditOrDeleteStudent, schoolId],
+    [isSingleDay, canEditOrDeleteStudent, schoolId, navigate, form, message, fetchStudents],
   );
 
   const { handleImport, handleDownloadTemplate, handleExport } = createStudentsFileActions({

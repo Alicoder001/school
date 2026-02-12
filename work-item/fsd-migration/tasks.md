@@ -169,6 +169,12 @@
   - Risks: `.env` lookup yo'li o'zgarishi yoki app-local command policy drifti.
   - Done: diff ko'rildi, frontend source o'zgarmagani tasdiqlandi, `apps/frontend` va `apps/backend` gate'lari qayta PASS bo'ldi.
 
+- [x] T7.5 Frontend lint warning cleanup (`react-hooks/exhaustive-deps` 6 ta).
+  - Goal: warninglarni behaviorni o'zgartirmasdan bartaraf etish.
+  - Files: `apps/frontend/src/pages/{Attendance.tsx,Devices.tsx,Holidays.tsx,Schools.tsx,Students.tsx,Users.tsx}`
+  - Risks: memo/callback dependencylarni noto'g'ri yangilash oqibatida render oqimi regressiyasi.
+  - Done: handlerlar `useCallback`ga stabilizatsiya qilindi, `useMemo` dependencylari to'liqlandi, lint 0 warningga tushdi.
+
 - [x] T6.3 Legacy wrapper stabilizatsiyasi (`hooks/services/context`).
   - Goal: eski import yo'llarni buzmasdan FSD qatlamiga ko'chirish.
   - Files: `apps/frontend/src/hooks/**`, `apps/frontend/src/services/**`, `apps/frontend/src/context/**`
@@ -236,3 +242,7 @@
 | 7 (backend unstaged re-audit) | `300-line scan` (`apps/frontend/src/**/*.{ts,tsx,css}`) | PASS | Frontend source fayllarda 300+ qator aniqlanmadi |
 | 7 (backend unstaged re-audit) | `npm run typecheck` (`apps/backend`) | PASS | Backend app-local typecheck muvaffaqiyatli (`apps/backend/src/config.ts` o'zgarishi bilan) |
 | 7 (backend unstaged re-audit) | `npm run build` (`apps/backend`) | PASS | Backend build muvaffaqiyatli, kontrakt bo'yicha yangi regressiya topilmadi |
+| 7 (lint warning cleanup) | `npm run lint` (`apps/frontend`) | PASS | 0 error, 0 warning (`react-hooks/exhaustive-deps` warninglar yopildi) |
+| 7 (lint warning cleanup) | `npm run typecheck` (`apps/frontend`) | PASS | Callback/dependency refaktordan keyin typecheck toza |
+| 7 (lint warning cleanup) | `npm run build` (`apps/frontend`) | PASS | Build muvaffaqiyatli, chunk-size warning saqlanib qoldi |
+| 7 (lint warning cleanup) | `300-line scan` (`apps/frontend/src/pages/*.tsx` target files) | PASS | O'zgargan 6 ta page faylning barchasi 300 qatordan kichik |

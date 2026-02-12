@@ -205,4 +205,5 @@
 - `apps/frontend` relocation re-check (`typecheck/build/lint/300-line scan`) - PASS
 - `backend unstaged re-audit` (`apps/frontend` typecheck/build/300-line scan) - PASS
 - `backend unstaged re-audit` (`apps/backend` typecheck/build) - PASS
+- `post-lint-warning-cleanup` (`apps/frontend` lint/typecheck/build) - PASS (`lint`: 0 warning)
 - Eslatma: Vite chunk-size warning saqlanib qolgan, lekin build muvaffaqiyatli yakunlangan.

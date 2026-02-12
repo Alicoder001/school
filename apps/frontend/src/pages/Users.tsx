@@ -67,28 +67,34 @@ const Users: React.FC = () => {
     return () => setRefresh(null);
   }, [handleRefresh, setRefresh]);
 
-  const handleDelete = async (userId: string) => {
-    if (!schoolId) return;
-    try {
-      await usersService.delete(schoolId, userId);
-      message.success("Foydalanuvchi o'chirildi");
-      fetchUsers();
-    } catch {
-      message.error("O'chirishda xatolik");
-    }
-  };
+  const handleDelete = useCallback(
+    async (userId: string) => {
+      if (!schoolId) return;
+      try {
+        await usersService.delete(schoolId, userId);
+        message.success("Foydalanuvchi o'chirildi");
+        fetchUsers();
+      } catch {
+        message.error("O'chirishda xatolik");
+      }
+    },
+    [schoolId, message, fetchUsers],
+  );
 
-  const handleAssignClick = async (teacher: User) => {
-    if (!schoolId) return;
-    setSelectedTeacher(teacher);
-    try {
-      setTeacherClasses(await usersService.getTeacherClasses(schoolId, teacher.id));
-      assignForm.resetFields();
-      setAssignModalOpen(true);
-    } catch {
-      message.error("Sinflarni olishda xatolik");
-    }
-  };
+  const handleAssignClick = useCallback(
+    async (teacher: User) => {
+      if (!schoolId) return;
+      setSelectedTeacher(teacher);
+      try {
+        setTeacherClasses(await usersService.getTeacherClasses(schoolId, teacher.id));
+        assignForm.resetFields();
+        setAssignModalOpen(true);
+      } catch {
+        message.error("Sinflarni olishda xatolik");
+      }
+    },
+    [schoolId, assignForm, message],
+  );
 
   const availableClasses = useMemo(
     () => classes.filter((c) => !teacherClasses.some((tc) => tc.id === c.id)),
@@ -106,7 +112,7 @@ const Users: React.FC = () => {
         onAssign: handleAssignClick,
         onDelete: handleDelete,
       }),
-    [editForm],
+    [editForm, handleAssignClick, handleDelete],
   );
 
   const teacherCount = users.filter((u) => u.role === "TEACHER").length;

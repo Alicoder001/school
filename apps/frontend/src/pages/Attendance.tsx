@@ -119,31 +119,34 @@ const Attendance: React.FC = () => {
     return () => clearInterval(timer);
   }, [isTodayRange, fetchData]);
 
-  const handleStatusChange = async (record: DailyAttendance, status: AttendanceStatus) => {
-    if (!canEdit) return;
-    if (status === "EXCUSED") {
-      setSelectedRecord(record);
-      excuseForm.resetFields();
-      setExcuseModalOpen(true);
-      return;
-    }
-    try {
-      if (isTeacher) return;
-      if (record.id) {
-        await attendanceService.update(record.id, { status });
-      } else {
-        await attendanceService.upsert(schoolId!, {
-          studentId: record.studentId,
-          date: dayjs(record.date).toISOString(),
-          status,
-        });
+  const handleStatusChange = useCallback(
+    async (record: DailyAttendance, status: AttendanceStatus) => {
+      if (!canEdit) return;
+      if (status === "EXCUSED") {
+        setSelectedRecord(record);
+        excuseForm.resetFields();
+        setExcuseModalOpen(true);
+        return;
       }
-      message.success("Holat yangilandi");
-      fetchData();
-    } catch {
-      message.error("Yangilashda xatolik");
-    }
-  };
+      try {
+        if (isTeacher) return;
+        if (record.id) {
+          await attendanceService.update(record.id, { status });
+        } else {
+          await attendanceService.upsert(schoolId!, {
+            studentId: record.studentId,
+            date: dayjs(record.date).toISOString(),
+            status,
+          });
+        }
+        message.success("Holat yangilandi");
+        fetchData();
+      } catch {
+        message.error("Yangilashda xatolik");
+      }
+    },
+    [canEdit, excuseForm, isTeacher, schoolId, message, fetchData],
+  );
 
   const filteredRecords = useMemo(() => {
     if (!searchText.trim()) return records;
@@ -153,7 +156,7 @@ const Attendance: React.FC = () => {
 
   const columns = useMemo(
     () => buildAttendanceColumns({ canEdit, isTeacher, onStatusChange: handleStatusChange }),
-    [canEdit, isTeacher],
+    [canEdit, isTeacher, handleStatusChange],
   );
 
   const stats = getAttendanceStatsFromRecords(filteredRecords);

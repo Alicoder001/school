@@ -101,11 +101,14 @@ const Devices: React.FC = () => {
     }
   };
 
-  const handleEdit = (record: Device) => {
-    setEditingId(record.id);
-    form.setFieldsValue(record);
-    setModalOpen(true);
-  };
+  const handleEdit = useCallback(
+    (record: Device) => {
+      setEditingId(record.id);
+      form.setFieldsValue(record);
+      setModalOpen(true);
+    },
+    [form],
+  );
 
   const handleAdd = () => {
     setEditingId(null);
@@ -113,15 +116,18 @@ const Devices: React.FC = () => {
     setModalOpen(true);
   };
 
-  const handleDelete = async (id: string) => {
-    try {
-      await devicesService.delete(id);
-      message.success("Qurilma o'chirildi");
-      fetchDevices();
-    } catch {
-      message.error("O'chirishda xatolik");
-    }
-  };
+  const handleDelete = useCallback(
+    async (id: string) => {
+      try {
+        await devicesService.delete(id);
+        message.success("Qurilma o'chirildi");
+        fetchDevices();
+      } catch {
+        message.error("O'chirishda xatolik");
+      }
+    },
+    [message, fetchDevices],
+  );
 
   const columns = useMemo(
     () =>
@@ -130,7 +136,7 @@ const Devices: React.FC = () => {
         onEdit: handleEdit,
         onDelete: handleDelete,
       }),
-    [canManage],
+    [canManage, handleEdit, handleDelete],
   );
 
   return (

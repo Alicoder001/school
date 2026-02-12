@@ -23,7 +23,6 @@ const Schools: React.FC = () => {
   const [searchText, setSearchText] = useState("");
   const [attendanceScope, setAttendanceScope] = useState<AttendanceScope>("started");
   const [form] = Form.useForm();
-  const backStateBase = { backTo: location.pathname };
 
   const fetchSchools = useCallback(
     async (silent = false) => {
@@ -73,11 +72,14 @@ const Schools: React.FC = () => {
     );
   }, [schools, searchText]);
 
-  const openSchoolDashboard = (school: School) => {
-    navigate(`/schools/${school.id}/dashboard`, {
-      state: { ...backStateBase, schoolName: school.name },
-    });
-  };
+  const openSchoolDashboard = useCallback(
+    (school: School) => {
+      navigate(`/schools/${school.id}/dashboard`, {
+        state: { backTo: location.pathname, schoolName: school.name },
+      });
+    },
+    [navigate, location.pathname],
+  );
 
   const columns = useMemo(
     () =>
@@ -98,7 +100,7 @@ const Schools: React.FC = () => {
         },
         onOpenSchool: openSchoolDashboard,
       }),
-    [form],
+    [form, message, fetchSchools, openSchoolDashboard],
   );
 
   return (

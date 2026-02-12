@@ -76,7 +76,7 @@ const Holidays: React.FC = () => {
         setModalOpen(true);
     };
 
-    const handleDelete = async (id: string) => {
+    const handleDelete = useCallback(async (id: string) => {
         try {
             await holidaysService.delete(id);
             message.success('Bayram o\'chirildi');
@@ -84,7 +84,7 @@ const Holidays: React.FC = () => {
         } catch (err) {
             message.error('O\'chirishda xatolik');
         }
-    };
+    }, [message, fetchHolidays]);
 
     const handleSubmit = async (values: any) => {
         try {
