@@ -13,6 +13,7 @@
 | `vitest.config.ts` (backend test config) | `apps/backend/vitest.config.ts` | DONE (legacy root removed) |
 | `Dockerfile` | `apps/backend/Dockerfile` | DONE (root `Dockerfile` removed, canonical inside app) |
 | `docker-compose.yml` | root orchestration, backend build -> `apps/backend/Dockerfile` | DONE (updated) |
+| Root temp/build artifactlari (`.tmp`, `.cargo-target-sr`, `target_verify_*`, `image-for-face-id`, `tmp_rovodev_*`, root `dist`) | removed | DONE (dependency audit bilan tozalangan) |
 
 ## Runtime Path Sensitive Areas
 

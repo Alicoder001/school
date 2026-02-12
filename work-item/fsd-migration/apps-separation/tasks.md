@@ -97,6 +97,12 @@
   - Risk: yashirin import yoki operational bog'liqlik sinishi.
   - Done criteria: dependency auditda missing=0, legacy pathlar o'chirilgan, root gate (`typecheck/build/test/lint/frontend:*`) PASS.
 
+- [x] A5.3 Root artifact hygiene cleanup.
+  - Goal: rootdagi vaqtinchalik/keraksiz artifactlarni olib tashlash.
+  - Impacted: `.tmp/**`, `.cargo-target-sr/**`, `target_verify_2026021295QSk9/**`, `image-for-face-id/**`, `tmp_rovodev_commit_a0b0ca0.tsx`, local `dist/`, `camera-debug.log`.
+  - Risk: noto'g'ri artifactni o'chirish.
+  - Done criteria: dependency auditda bog'liqlik yo'q, root gate (`typecheck/build/frontend:*`) PASS.
+
 ## Verification Log
 
 | Date | Command | Result | Notes |
@@ -166,6 +172,11 @@
 | 2026-02-12 | `npm run lint` (root, post legacy removal) | PASS | ESLint error yo'q |
 | 2026-02-12 | `npm run frontend:typecheck` (root, post legacy removal) | PASS | `apps/frontend` gate |
 | 2026-02-12 | `npm run frontend:build` (root, post legacy removal) | PASS | `apps/frontend` gate |
+| 2026-02-12 | `root artifact dependency audit` | PASS | `.tmp/.cargo-target-sr/target_verify/image-for-face-id/tmp_rovodev` uchun bog'liqlik topilmadi |
+| 2026-02-12 | `npm run typecheck` (root, post artifact cleanup) | PASS | `apps/backend` delegatsiya |
+| 2026-02-12 | `npm run build` (root, post artifact cleanup) | PASS | `apps/backend` delegatsiya |
+| 2026-02-12 | `npm run frontend:typecheck` (root, post artifact cleanup) | PASS | `apps/frontend` gate |
+| 2026-02-12 | `npm run frontend:build` (root, post artifact cleanup) | PASS | `apps/frontend` gate |
 | 2026-02-12 | `docker --version` | FAIL | local env'da docker binary yo'q, image verify bloklangan |
 
 ## Open Risks (Current)

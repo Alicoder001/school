@@ -89,6 +89,7 @@
 
 ### Phase 5 Current Result (2026-02-12)
 - Legacy root pathlar (`frontend/`, `src/`, `prisma/`, `scripts/`, `server.ts`, root util `*.ts`) dependency auditdan keyin to'liq olib tashlandi.
+- Root artifact cleanup ham bajarildi (`.tmp/`, `.cargo-target-sr/`, `target_verify_*`, `image-for-face-id/`, root `dist/`, `tmp_rovodev_*`, `camera-debug.log`).
 - Legacy transition qoidasi `legacy-policy.md` bilan yangilandi (canonical source: `apps/backend`, `apps/frontend`).
 - Final docs (`tasks.md`, `implementation-plan.md`, `apps-map.md`) sinxron qilindi.
 - Full gate PASS; yagona external blocker: docker runtime verify uchun lokal `docker` yo'q.
