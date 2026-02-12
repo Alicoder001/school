@@ -157,6 +157,12 @@
   - Risks: noto'liq dokumentatsiya.
   - Done: mapping yangilandi, phase loglar yakunlandi, yakuniy verify log qo'shildi.
 
+- [x] T7.3 Cross-agent impact audit (backend -> frontend contract drift tekshiruvi).
+  - Goal: boshqa agentlarning backend refaktori frontend FSD migratsiyaga regressiya kiritmaganini tasdiqlash.
+  - Files: `work-item/fsd-migration/cross-agent-impact-audit.md`, `work-item/fsd-migration/backend-ddd/*`
+  - Risks: endpoint/prefix kontrakt drift ko'zdan qochishi.
+  - Done: frontend-vs-backend endpoint diff bajarildi; yangi regressiya topilmadi, bitta pre-existing gap (`DELETE /schools/:id`) hujjatlashtirildi.
+
 - [x] T6.3 Legacy wrapper stabilizatsiyasi (`hooks/services/context`).
   - Goal: eski import yo'llarni buzmasdan FSD qatlamiga ko'chirish.
   - Files: `frontend/src/hooks/**`, `frontend/src/services/**`, `frontend/src/context/**`
@@ -207,3 +213,11 @@
 | 6 (import-normalization) | `npm run build` (frontend) | PASS | Build muvaffaqiyatli, chunk-size warning saqlanib qoldi |
 | 6 (import-normalization) | `npm run lint` (frontend) | PASS (warnings) | Lint error yo'q, avvalgi 6 ta `react-hooks/exhaustive-deps` warning saqlanib qoldi |
 | 6 (import-normalization) | `300-line scan` (`frontend/src/**/*.ts(x)`) | PASS | `.ts/.tsx` fayllar orasida 300 qatordan oshgani aniqlanmadi |
+| 7 (cross-agent impact) | `npm run typecheck` (backend root) | PASS | Backend DDD refaktordan keyin compile kontrakt tekshirildi |
+| 7 (cross-agent impact) | `npm run build` (backend root) | PASS | Backend build xatolarsiz |
+| 7 (cross-agent impact) | `npm run lint` (backend root) | PASS | Backend lint xatolarsiz |
+| 7 (cross-agent impact) | `npm test` (backend root) | PASS | 4 test file, 15 test pass |
+| 7 (cross-agent impact) | `npm run typecheck` (frontend) | PASS | Frontend FSD qatlami backend o'zgarishlaridan keyin ham barqaror |
+| 7 (cross-agent impact) | `npm run build` (frontend) | PASS | Frontend build xatolarsiz (chunk-size warning oldingi holat) |
+| 7 (cross-agent impact) | `npm run lint` (frontend) | PASS (warnings) | Lint error yo'q, 6 ta oldingi `react-hooks/exhaustive-deps` warning saqlangan |
+| 7 (cross-agent impact) | Endpoint diff audit | PASS (1 pre-existing gap) | Prefix-aware diffda yangi regressiya yo'q; `DELETE /schools/:id` oldindan mavjud gap sifatida qayd etildi |

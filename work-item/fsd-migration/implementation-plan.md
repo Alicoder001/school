@@ -188,10 +188,17 @@
   - Rootdagi `work-item/{tasks.md,implementation-plan.md,architecture-map.md}` fayllari `work-item/fsd-migration/student-registrator/` papkasiga ko'chirildi.
   - Rootdagi `work-item/backend-ddd/*` fayllari `work-item/fsd-migration/backend-ddd/` papkasiga ko'chirildi.
   - FSD frontend hujjatlari `work-item/fsd-migration/`da saqlandi.
+  - Cross-agent impact audit qo'shildi: `work-item/fsd-migration/cross-agent-impact-audit.md`.
+  - Frontend API endpointlar va backend `interfaces/http` endpointlari prefix-aware solishtirildi.
+  - Yangi regressiya topilmadi; `DELETE /schools/:id` pre-existing gap ekanligi (`HEAD~1` bilan) tasdiqlandi.
 
 ## Latest Verification
 - `npm run typecheck` (`frontend/`) - PASS
 - `npm run build` (`frontend/`) - PASS
 - `npm run lint` (`frontend/`) - PASS (warnings only)
 - `300-line scan` (`frontend/src/**/*.ts(x)`) - PASS
+- `npm run typecheck` (backend root) - PASS
+- `npm run build` (backend root) - PASS
+- `npm run lint` (backend root) - PASS
+- `npm test` (backend root) - PASS
 - Eslatma: Vite chunk-size warning saqlanib qolgan, lekin build muvaffaqiyatli yakunlangan.

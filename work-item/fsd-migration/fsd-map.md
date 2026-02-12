@@ -46,6 +46,7 @@
 - `work-item/tasks.md` -> `work-item/fsd-migration/tasks.legacy.md` (eski nusxa arxivlandi).
 - `work-item/{tasks.md,implementation-plan.md,architecture-map.md}` -> `work-item/fsd-migration/student-registrator/*` (rootdagi ish hujjatlari modul papkasiga ko'chirildi).
 - `work-item/backend-ddd/*` -> `work-item/fsd-migration/backend-ddd/*` (rootdagi backend DDD hujjatlari fsd-migration ichiga ko'chirildi).
+- `backend agent changes` -> `work-item/fsd-migration/cross-agent-impact-audit.md` (frontend-backend contract drift audit hujjati qo'shildi).
 - `frontend/src/hooks/useAuth.ts` -> `frontend/src/entities/auth/model/useAuth.ts` (legacy hook wrapper saqlandi).
 - `frontend/src/hooks/useSchool.ts` -> `frontend/src/entities/school/model/useSchool.ts` (legacy hook wrapper saqlandi).
 - `frontend/src/hooks/use{AttendanceSSE,SchoolSnapshotSSE,ClassSnapshotSSE,AdminSSE}.ts` -> `frontend/src/features/realtime/model/*` (legacy hook wrapper saqlandi).
