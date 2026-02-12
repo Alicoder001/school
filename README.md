@@ -1,5 +1,21 @@
 Attendance System
 
+Current app layout
+
+- Backend source: `apps/backend`
+- Web frontend source: `apps/frontend`
+- Desktop app source: `apps/student-registrator`
+
+Root commands (backward-compatible)
+
+- Backend: `npm run dev`, `npm run build`, `npm run typecheck`, `npm run test`, `npm run lint`
+- Frontend: `npm run frontend:dev`, `npm run frontend:build`, `npm run frontend:typecheck`
+
+Docker layout
+
+- Backend image definition: `apps/backend/Dockerfile`
+- Compose orchestration: root `docker-compose.yml` (backend build context `apps/backend`)
+
 Setup & run
 
 1. Install dependencies:

@@ -1,3 +1,8 @@
+# Legacy Frontend Path
+
+Bu katalog legacy-wrapper holatida qoldirilgan.
+Aktiv frontend source: `apps/frontend`.
+
 # React + TypeScript + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.

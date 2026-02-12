@@ -12,6 +12,7 @@ FROM deps AS build
 COPY tsconfig.json ./
 COPY prisma ./prisma
 COPY src ./src
+COPY scripts ./scripts
 COPY server.ts ./
 RUN npx prisma generate
 RUN npm run build
@@ -22,6 +23,6 @@ RUN npm ci --omit=dev
 COPY --from=build /app/prisma ./prisma
 RUN npx prisma generate
 COPY --from=build /app/dist ./dist
-RUN mkdir -p /app/dist/uploads
+RUN mkdir -p /app/uploads
 EXPOSE 5000
 CMD ["sh", "-c", "npx prisma migrate deploy && node dist/server.js"]
