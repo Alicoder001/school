@@ -168,3 +168,5 @@
 .sidebar-link-label {
   overflow: hidden;
   text-overflow: ellipsis;
+  flex: 1;
+}
