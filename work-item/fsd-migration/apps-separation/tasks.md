@@ -171,4 +171,3 @@
 ## Open Risks (Current)
 
 - R1: Docker runtime verify local muhitda bloklangan (`docker` binary mavjud emas).
-- R2: Lokal muhitda eski `frontend`dan ishga tushgan process (`vite/esbuild`) lock sabab ignore qilingan runtime fayllarni avtomatik tozalashni bloklashi mumkin; process to'xtatilgach `git clean -fdx frontend` bilan nolga tushiriladi.
