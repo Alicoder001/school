@@ -56,6 +56,18 @@
   - Risk: auth/request flow regressiya
   - Done criteria: source <=300, helper/chunk ajratilgan
 
+- [x] Frontend ownershipni to'liq joyiga tushirish
+  - Goal: `widgets/layout`, `shared/lib`, `shared/types`da real ownership; legacy pathlar shim
+  - Impacted: `apps/student-registrator/src/widgets/layout/**`, `apps/student-registrator/src/shared/lib/**`, `apps/student-registrator/src/shared/types/**`, `apps/student-registrator/src/components/layout/**`, `apps/student-registrator/src/utils/**`, `apps/student-registrator/src/types/**`
+  - Risk: import drift
+  - Done criteria: eski import pathlar ishlashi saqlangan, yangi ownership aniq
+
+- [x] Rust clean-layer skelet yakuni + wrapper strategiyasi
+  - Goal: `app/application/domain/infrastructure/interfaces/shared` qatlamlarini minimal-risk joriy etish
+  - Impacted: `apps/student-registrator/src-tauri/src/main.rs`, `apps/student-registrator/src-tauri/src/app/**`, `apps/student-registrator/src-tauri/src/application/**`, `apps/student-registrator/src-tauri/src/domain/**`, `apps/student-registrator/src-tauri/src/infrastructure/**`, `apps/student-registrator/src-tauri/src/interfaces/**`, `apps/student-registrator/src-tauri/src/shared/**`, `apps/student-registrator/src-tauri/src/{api.rs,storage.rs,types.rs,command_services.rs}`
+  - Risk: module wiring regressiya
+  - Done criteria: `main.rs` -> `app::run()`, eski modullar thin wrapper, compile PASS
+
 - [x] Global line-limit audit
   - Goal: barcha source fayllar <=300
   - Impacted: `apps/student-registrator/src/**`, `apps/student-registrator/src-tauri/src/**`
@@ -79,8 +91,18 @@
 | 5/6 yakun | `cargo check` (`apps/student-registrator/src-tauri`) | FAIL | `Access is denied (os error 5)` target write/remove bosqichida |
 | 5/6 yakun | `cargo build` (`apps/student-registrator/src-tauri`) | FAIL | `Access is denied (os error 5)` |
 | 5/6 yakun | `npm run build:desktop` (`apps/student-registrator`) | FAIL | `tauri build --ci`: cargo metadata `Access is denied` |
+| Final re-run | `npm run typecheck` (`apps/student-registrator`) | PASS | yakuniy refaktor holati |
+| Final re-run | `npm run build` (`apps/student-registrator`) | PASS | CSS split boundary buglar tuzatildi |
+| Final re-run | `cargo check` (`apps/student-registrator/src-tauri`) | PASS | clean-layer wrapperlar bilan compile toza |
+| Final re-run | `cargo build` (`apps/student-registrator/src-tauri`) | PASS | debug build toza |
+| Final re-run | `npm run build:desktop` (`apps/student-registrator`) | PASS | MSI/NSIS bundle yaratildi |
 
-## Blocker Notes
-- Rust build chain va desktop build OS-level permission lock bilan bloklangan (`os error 5`).
-- Frontend `vite build` ham process spawn (`spawn EPERM`) bilan bloklangan.
-- Refaktor ichki line-limit/typecheck auditlari PASS; build-chain blokeri environmentga bog'liq.
+## Blocker Notes (Resolved)
+- Oldingi `spawn EPERM` va `os error 5` environment bloklari qayta tekshiruvda kuzatilmadi.
+- CSS partial splitdagi 3 ta sintaksis uzilishi (`layout`, `devices`, `index`) tuzatildi.
+- `register_student_body_{1,2,3}.rs` dead chunklar o'chirildi (reference yo'q edi).
+
+## Backend Relocation Impact (`apps/backend`)
+- Xulosa: student-registrator runtime jihatdan backend fayl yo'liga bog'liq emas; HTTP endpoint orqali ishlaydi (`VITE_BACKEND_URL`).
+- Ta'sir maydoni: monorepo ichidagi backendning fizik joylashuvi o'zgargani student-registrator IPC/UI logikasini o'zgartirmaydi.
+- Ehtiyot nuqta: lokal backend port/host o'zgarsa, `apps/student-registrator/.env`dagi `VITE_BACKEND_URL` mos qiymatda bo'lishi shart (masalan `http://localhost:5000`).
