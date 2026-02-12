@@ -26,4 +26,52 @@ export default defineConfig([
       'react-hooks/set-state-in-effect': 'off',
     },
   },
+  {
+    files: ['src/shared/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        patterns: ['@entities/*', '@features/*', '@widgets/*', '@pages/*', '@processes/*', '@app/*'],
+      }],
+    },
+  },
+  {
+    files: ['src/entities/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        patterns: ['@features/*', '@widgets/*', '@pages/*', '@processes/*', '@app/*'],
+      }],
+    },
+  },
+  {
+    files: ['src/features/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        patterns: ['@widgets/*', '@pages/*', '@processes/*', '@app/*'],
+      }],
+    },
+  },
+  {
+    files: ['src/widgets/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        patterns: ['@pages/*', '@processes/*', '@app/*'],
+      }],
+    },
+  },
+  {
+    files: ['src/pages/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        patterns: ['@processes/*', '@app/*'],
+      }],
+    },
+  },
+  {
+    files: ['src/processes/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        patterns: ['@app/*'],
+      }],
+    },
+  },
 ])

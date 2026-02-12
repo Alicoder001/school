@@ -11,7 +11,7 @@ import type {
   AttendanceStatus,
   EffectiveAttendanceStatus,
   EventType,
-} from "../../types";
+} from "@shared/types";
 
 export const ATTENDANCE_STATUS_TAG: Record<
   AttendanceStatus,

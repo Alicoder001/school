@@ -1,6 +1,6 @@
 import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
-import type { PeriodType } from "../../types";
+import type { PeriodType } from "@shared/types";
 
 export type PresetPeriod = Exclude<PeriodType, "custom">;
 export type DayRange = [Dayjs, Dayjs];

@@ -1,4 +1,4 @@
-import type { Camera, CameraArea, CameraStatus } from "../../../types";
+import type { Camera, CameraArea, CameraStatus } from "@shared/types";
 
 export function buildCameraAreas(params: {
   schoolId: string;

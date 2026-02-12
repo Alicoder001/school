@@ -1,6 +1,6 @@
 import React from "react";
 import { Tag } from "antd";
-import type { AttendanceStatus, EventType } from "../../../types";
+import type { AttendanceStatus, EventType } from "@shared/types";
 import dayjs from "dayjs";
 import {
   ATTENDANCE_STATUS_TAG,

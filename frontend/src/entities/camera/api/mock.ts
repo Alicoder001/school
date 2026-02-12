@@ -1,4 +1,4 @@
-import type { Camera, CameraArea, CameraStreamInfo, Nvr } from "../../../types";
+import type { Camera, CameraArea, CameraStreamInfo, Nvr } from "@shared/types";
 import { buildCameraAreas, buildMockCameras } from "../model";
 
 export async function getMockNvrs(schoolId: string): Promise<Nvr[]> {

@@ -2,7 +2,7 @@ import React, { useMemo } from "react";
 import { DatePicker, Segmented } from "antd";
 import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
-import type { PeriodType } from "../../types";
+import type { PeriodType } from "@shared/types";
 import {
   PRESET_PERIOD_OPTIONS,
   detectPeriodFromRange,

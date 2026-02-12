@@ -2,8 +2,8 @@ import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { Card, Col, Empty, Row, Space, Tag, Typography } from "antd";
 import { VideoCameraOutlined } from "@ant-design/icons";
 import { PageHeader, StatItem, useHeaderMeta } from "../shared/ui";
-import { schoolsService } from "../services/schools";
-import type { School } from "../types";
+import { schoolsService } from "@entities/school";
+import type { School } from "@shared/types";
 import { cameraApi } from "../entities/camera";
 import { useNavigate, useLocation } from "react-router-dom";
 
@@ -119,3 +119,4 @@ const CamerasSuperAdmin: React.FC = () => {
 };
 
 export default CamerasSuperAdmin;
+

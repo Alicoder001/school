@@ -1,4 +1,4 @@
-import type { PeriodType } from "../../types";
+import type { PeriodType } from "@shared/types";
 
 export const PERIOD_OPTIONS: Array<{ label: string; value: PeriodType }> = [
   { label: "Bugun", value: "today" },

@@ -1,19 +1,19 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
-import { Table, Button, Modal, Form, Input, DatePicker, Card, Calendar, Badge, App, Popconfirm, Row, Col, Typography, Space, Tooltip, Tag } from 'antd';
-import { 
-    PlusOutlined, 
-    DeleteOutlined, 
+import { Table, Button, Modal, Form, Input, DatePicker, Card, Calendar, Badge, App, Row, Col, Typography, Space, Tooltip } from 'antd';
+import {
+    PlusOutlined,
     CalendarOutlined,
     ClockCircleOutlined,
     CheckCircleOutlined,
     HistoryOutlined,
     GiftOutlined,
 } from '@ant-design/icons';
-import { useSchool } from '../hooks/useSchool';
-import { holidaysService } from '../services/holidays';
+import { useSchool } from '@entities/school';
+import { holidaysService } from '@entities/holiday';
 import { PageHeader, Divider, StatItem, useHeaderMeta } from '../shared/ui';
-import type { Holiday } from '../types';
+import type { Holiday } from '@shared/types';
 import dayjs, { Dayjs } from 'dayjs';
+import { buildHolidayColumns } from './holidaysColumns';
 
 const { Text } = Typography;
 
@@ -124,62 +124,7 @@ const Holidays: React.FC = () => {
         .filter(h => dayjs(h.date).isBefore(dayjs()))
         .sort((a, b) => dayjs(b.date).diff(dayjs(a.date)));
 
-    const columns = [
-        { 
-            title: 'Sana', 
-            dataIndex: 'date', 
-            key: 'date', 
-            width: 140,
-            render: (d: string) => {
-                const date = dayjs(d);
-                const isUpcoming = date.isAfter(dayjs());
-                const isPast = date.isBefore(dayjs());
-                const isToday = date.isSame(dayjs(), 'day');
-                
-                return (
-                    <Space>
-                        <Text strong={isToday} type={isPast ? 'secondary' : undefined}>
-                            {date.format('DD MMM, YYYY')}
-                        </Text>
-                        {isToday && <Tag color="green">Bugun</Tag>}
-                        {isUpcoming && !isToday && (
-                            <Text type="secondary" style={{ fontSize: 11 }}>
-                                ({date.diff(dayjs(), 'day')} kun)
-                            </Text>
-                        )}
-                    </Space>
-                );
-            }
-        },
-        { 
-            title: 'Nomi', 
-            dataIndex: 'name', 
-            key: 'name',
-            render: (name: string) => (
-                <Space>
-                    <GiftOutlined style={{ color: '#eb2f96' }} />
-                    <Text>{name}</Text>
-                </Space>
-            )
-        },
-        {
-            title: '',
-            key: 'actions',
-            width: 60,
-            render: (_: any, record: Holiday) => (
-                <Popconfirm 
-                    title="Bayramni o'chirish?" 
-                    onConfirm={() => handleDelete(record.id)}
-                    okText="Ha"
-                    cancelText="Yo'q"
-                >
-                    <Tooltip title="O'chirish">
-                        <Button size="small" icon={<DeleteOutlined />} danger />
-                    </Tooltip>
-                </Popconfirm>
-            ),
-        },
-    ];
+    const columns = useMemo(() => buildHolidayColumns(handleDelete), [handleDelete]);
 
     return (
         <div>
@@ -335,3 +280,4 @@ const Holidays: React.FC = () => {
 };
 
 export default Holidays;
+

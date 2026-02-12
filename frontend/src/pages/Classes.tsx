@@ -2,10 +2,10 @@ import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { Table, Button, Modal, Form, Input, Select, TimePicker, Tag, Typography, Space, Tooltip, App } from 'antd';
 import { PlusOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined, UserOutlined, TeamOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
-import { useSchool } from '../hooks/useSchool';
-import { classesService } from '../services/classes';
+import { useSchool } from '@entities/school';
+import { classesService } from '@entities/class';
 import { PageHeader, Divider, StatItem, useHeaderMeta } from '../shared/ui';
-import type { Class } from '../types';
+import type { Class } from '@shared/types';
 import { ATTENDANCE_STATUS_TAG, STATUS_COLORS, StatusBar } from '../entities/attendance';
 
 const { Text } = Typography;
@@ -244,3 +244,4 @@ const Classes: React.FC = () => {
 };
 
 export default Classes;
+

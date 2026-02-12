@@ -5,8 +5,8 @@ import {
     ClockCircleOutlined, 
     SaveOutlined,
 } from '@ant-design/icons';
-import { useSchool } from '../hooks/useSchool';
-import { schoolsService } from '../services/schools';
+import { useSchool } from '@entities/school';
+import { schoolsService } from '@entities/school';
 import { PageHeader, StatItem, useHeaderMeta } from '../shared/ui';
 
 const Settings: React.FC = () => {
@@ -153,3 +153,4 @@ const Settings: React.FC = () => {
 };
 
 export default Settings;
+

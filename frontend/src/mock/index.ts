@@ -4,6 +4,7 @@
  */
 
 export * from './data';
+export * from './generators';
 export * from './services';
 
 // Mock mode tekshirish

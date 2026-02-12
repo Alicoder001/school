@@ -1,6 +1,6 @@
 import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
-import type { PeriodType } from "../../types";
+import type { PeriodType } from "@shared/types";
 
 export function isWithinPeriod(params: {
   date: string | Date | Dayjs;

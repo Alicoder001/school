@@ -3,7 +3,7 @@ import type {
   DailyAttendance,
   EffectiveAttendanceStatus,
   Student,
-} from "../../../types";
+} from "@shared/types";
 import {
   ATTENDANCE_STATUS_TAG,
   EFFECTIVE_STATUS_COLORS,

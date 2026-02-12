@@ -1,11 +1,11 @@
-import type { Camera, CameraArea, CameraStreamInfo, Nvr } from "../../../types";
+import type { Camera, CameraArea, CameraStreamInfo, Nvr } from "@shared/types";
 import {
   getMockAreas,
   getMockCameras,
   getMockNvrs,
   getMockStreamInfo,
 } from "./mock";
-import api from "../../../services/api";
+import { api } from "@shared/api";
 
 type CameraApiMode = "mock" | "live";
 const CAMERA_API_MODE: CameraApiMode =
