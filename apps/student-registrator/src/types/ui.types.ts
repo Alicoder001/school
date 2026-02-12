@@ -1,9 +1,1 @@
-// UI related types
-
-export interface Toast {
-  id: number;
-  message: string;
-  type: "success" | "error" | "info";
-}
-
-export type ThemeMode = "light" | "dark";
+export * from '../shared/types/ui.types';
