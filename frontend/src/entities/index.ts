@@ -1,9 +1,0 @@
-export * as attendance from "./attendance";
-export * as auth from "./auth";
-export * as camera from "./camera";
-export * as classEntity from "./class";
-export * as device from "./device";
-export * as holiday from "./holiday";
-export * as school from "./school";
-export * as student from "./student";
-export * as user from "./user";

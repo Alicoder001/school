@@ -147,7 +147,7 @@ Excel (iVMS-4200 face import prep)
 
 - Extract embedded images and name by `Person ID`:
   - `npm run excel:extract-images -- --input "<file.xlsx>" --out ".\\out\\faces" [--sheet "<sheet>"] [--id-header "Person ID"] [--name-header "Name"]`
-  - Docs: `scripts/extract-excel-images.md`
+  - Docs: `apps/backend/scripts/extract-excel-images.md`
 
 - Simple web UI (upload XLSX → download ZIP):
   - Open: `GET /tools/excel-face-export`

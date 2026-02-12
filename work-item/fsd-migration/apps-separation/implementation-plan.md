@@ -31,7 +31,7 @@
 ### Phase 1 Current Result (2026-02-12)
 - `apps/frontend` copy-first migration muvaffaqiyatli boshlandi.
 - Lint ignore va root wrapper commandlar qo'shildi.
-- `frontend/` legacy wrapperga o'tkazildi (script delegatsiya `apps/frontend`ga), bitta aktiv source `apps/frontend`.
+- Yakuniy cleanupda `frontend/` root legacy to'liq olib tashlandi, aktiv source faqat `apps/frontend`.
 
 ## Phase 2 - Backend Move Prep (DONE)
 - Scope:
@@ -88,6 +88,7 @@
   - Full gate PASS, ochiq checklist qolmasligi.
 
 ### Phase 5 Current Result (2026-02-12)
-- Legacy transition qoidasi `legacy-policy.md` bilan aniqlandi (canonical source: `apps/backend`, `apps/frontend`).
+- Legacy root pathlar (`frontend/`, `src/`, `prisma/`, `scripts/`, `server.ts`, root util `*.ts`) dependency auditdan keyin to'liq olib tashlandi.
+- Legacy transition qoidasi `legacy-policy.md` bilan yangilandi (canonical source: `apps/backend`, `apps/frontend`).
 - Final docs (`tasks.md`, `implementation-plan.md`, `apps-map.md`) sinxron qilindi.
 - Full gate PASS; yagona external blocker: docker runtime verify uchun lokal `docker` yo'q.

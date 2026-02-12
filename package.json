@@ -2,7 +2,7 @@
   "name": "attendance-system",
   "version": "0.1.0",
   "private": true,
-  "main": "dist/server.js",
+  "main": "apps/backend/dist/server.js",
   "scripts": {
     "predev": "npm run predev --prefix apps/backend",
     "dev": "npm run dev:raw --prefix apps/backend",

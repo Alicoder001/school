@@ -16,7 +16,6 @@ module.exports = {
   ignorePatterns: [
     "dist/",
     "node_modules/",
-    "frontend/node_modules/",
     "apps/frontend/node_modules/",
   ],
   rules: {

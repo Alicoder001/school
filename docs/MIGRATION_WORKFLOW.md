@@ -4,7 +4,7 @@ Bu loyiha hozir **`prisma migrate dev`** bilan to'liq ishlamaydi, sababi shadow 
 
 ## Tavsiya etilgan ish tartibi (data saqlanadi)
 
-1) Schema o'zgartiring (`prisma/schema.prisma`)
+1) Schema o'zgartiring (`apps/backend/prisma/schema.prisma`)
 2) Migratsiya generatsiya qiling:
 
 ```powershell

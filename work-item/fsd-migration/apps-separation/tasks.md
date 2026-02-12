@@ -11,11 +11,11 @@
 | Phase | Goal | Status | Risks | Done Criteria |
 |---|---|---|---|---|
 | 0 | Audit + migration baseline | DONE | Yashirin bog'liqliklar o'tkazib yuborilishi | Path/config/deploy dependency ro'yxati to'liq |
-| 1 | Frontendni `apps/frontend`ga ko'chirish (safe start) | DONE | File lock, deploy root drift | `apps/frontend` canonical + legacy `frontend` wrapper holatida |
+| 1 | Frontendni `apps/frontend`ga ko'chirish (safe start) | DONE | File lock, deploy root drift | `apps/frontend` canonical, root legacy `frontend` olib tashlangan |
 | 2 | Backend move-prep (path/cwd hardening) | DONE | upload/tools/.env yo'l drift | runtime pathlar helperga yig'ilgan, parity gate PASS |
 | 3 | Backendni `apps/backend`ga ko'chirish | DONE | Docker/Prisma/script regressiya | `apps/backend` paketida `dev/build/typecheck/test/lint` PASS + root default backend commandlar `apps/backend`ga yo'nalgan + root util skriptlar parityda ko'chirilgan |
 | 4 | Root wrapperlar + CI/deploy yangilash | DONE | Eski commandlar sinishi | root commandlar backward-compatible + docker wiring yangilangan |
-| 5 | Final cleanup + dead path removal | DONE | Legacy shadow path qolib ketishi | legacy policy bilan canonical source qoidasi yopilgan, yakuniy gate PASS |
+| 5 | Final cleanup + dead path removal | DONE | Legacy shadow path qolib ketishi | root legacy pathlar o'chirilgan, canonical source faqat `apps/*`, yakuniy gate PASS |
 
 ## Task Checklist
 
@@ -40,8 +40,8 @@
 - [x] A1.2 Frontend root switch + eski `frontend/`ni controlled retire.
   - Goal: bitta canonical frontend root qoldirish.
   - Impacted: `frontend/package.json`, `frontend/README.md`, root script wrappers.
-  - Risk: lock sabab physical move/delete qilinmadi.
-  - Done criteria: `frontend` aktiv source emas, command-level delegatsiya `apps/frontend`ga o'tgan.
+  - Risk: lock sabab physical move/delete kechikishi.
+  - Done criteria: `frontend` aktiv source emas, command-level delegatsiya `apps/frontend`ga o'tgan va yakunda root `frontend/` olib tashlangan.
 
 - [x] A2.1 Backend runtime path hardening (`uploads/tools/.env`) - step 1.
   - Goal: `apps/backend` move oldidan root-path drift riskini pasaytirish.
@@ -90,6 +90,12 @@
   - Impacted: `work-item/fsd-migration/apps-separation/{tasks.md,implementation-plan.md,apps-map.md,legacy-policy.md}`.
   - Risk: doc/code drift.
   - Done criteria: phase/status/checklist sinxron, final gate PASS, qolgan blockerlar aniq qayd etilgan.
+
+- [x] A5.2 Legacy root source hard cleanup.
+  - Goal: eski duplicate source kodni to'liq olib tashlash.
+  - Impacted: `frontend/**`, `src/**`, `prisma/**`, `scripts/**`, `server.ts`, root backend util `*.ts`, `vitest.config.ts`.
+  - Risk: yashirin import yoki operational bog'liqlik sinishi.
+  - Done criteria: dependency auditda missing=0, legacy pathlar o'chirilgan, root gate (`typecheck/build/test/lint/frontend:*`) PASS.
 
 ## Verification Log
 
@@ -153,8 +159,16 @@
 | 2026-02-12 | `npm run build` (root, docker-inside update) | PASS | `apps/backend` delegatsiya |
 | 2026-02-12 | `npm run test` (root, docker-inside update) | PASS | 4 file, 15 test |
 | 2026-02-12 | `npm run lint` (root, docker-inside update) | PASS | ESLint error yo'q |
+| 2026-02-12 | `parity audit (src/prisma/scripts/frontend + root util ts)` | PASS | `*_MISSING_IN_APP=0` |
+| 2026-02-12 | `npm run typecheck` (root, post legacy removal) | PASS | `apps/backend` delegatsiya |
+| 2026-02-12 | `npm run build` (root, post legacy removal) | PASS | `apps/backend` delegatsiya |
+| 2026-02-12 | `npm run test` (root, post legacy removal) | PASS | 4 file, 15 test |
+| 2026-02-12 | `npm run lint` (root, post legacy removal) | PASS | ESLint error yo'q |
+| 2026-02-12 | `npm run frontend:typecheck` (root, post legacy removal) | PASS | `apps/frontend` gate |
+| 2026-02-12 | `npm run frontend:build` (root, post legacy removal) | PASS | `apps/frontend` gate |
 | 2026-02-12 | `docker --version` | FAIL | local env'da docker binary yo'q, image verify bloklangan |
 
 ## Open Risks (Current)
 
 - R1: Docker runtime verify local muhitda bloklangan (`docker` binary mavjud emas).
+- R2: Lokal muhitda eski `frontend`dan ishga tushgan process (`vite/esbuild`) lock sabab ignore qilingan runtime fayllarni avtomatik tozalashni bloklashi mumkin; process to'xtatilgach `git clean -fdx frontend` bilan nolga tushiriladi.
