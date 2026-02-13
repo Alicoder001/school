@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
-import { ConfigProvider, App as AppAntd } from "antd";
 import { AuthProvider } from "./auth";
+import { QueryProvider } from "./query/QueryProvider";
 
 type AppProviderProps = {
   children: ReactNode;
@@ -8,17 +8,8 @@ type AppProviderProps = {
 
 export function AppProvider({ children }: AppProviderProps) {
   return (
-    <ConfigProvider
-      theme={{
-        token: {
-          colorPrimary: "#1890ff",
-          borderRadius: 6,
-        },
-      }}
-    >
-      <AppAntd>
-        <AuthProvider>{children}</AuthProvider>
-      </AppAntd>
-    </ConfigProvider>
+    <QueryProvider>
+      <AuthProvider>{children}</AuthProvider>
+    </QueryProvider>
   );
 }

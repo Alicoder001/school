@@ -1,14 +1,25 @@
 import dayjs from "dayjs";
 import type { AttendanceEvent, DashboardStats } from "@shared/types";
-import { EFFECTIVE_STATUS_META, STATUS_COLORS } from "../entities/attendance";
+
+const STATUS_COLORS = {
+  PRESENT: "#52c41a",
+  LATE: "#fa8c16",
+  ABSENT: "#ff4d4f",
+  EXCUSED: "#8c8c8c",
+} as const;
+
+const PENDING_STATUS_COLORS = {
+  PENDING_EARLY: "#d9d9d9",
+  PENDING_LATE: "#fadb14",
+} as const;
 
 export const PIE_COLORS: Record<string, string> = {
   Kelgan: STATUS_COLORS.PRESENT,
   "Kech qoldi": STATUS_COLORS.LATE,
-  Kechikmoqda: EFFECTIVE_STATUS_META.PENDING_LATE.color,
+  Kechikmoqda: PENDING_STATUS_COLORS.PENDING_LATE,
   Kelmadi: STATUS_COLORS.ABSENT,
   Sababli: STATUS_COLORS.EXCUSED,
-  "Hali kelmagan": EFFECTIVE_STATUS_META.PENDING_EARLY.color,
+  "Hali kelmagan": PENDING_STATUS_COLORS.PENDING_EARLY,
 };
 
 export const getEventStudentLabel = (event: AttendanceEvent) => {

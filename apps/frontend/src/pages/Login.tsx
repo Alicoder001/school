@@ -1,90 +1,125 @@
 import React, { useState } from "react";
-import { Form, Input, Button, Card, Typography, App } from "antd";
-import { UserOutlined, LockOutlined } from "@ant-design/icons";
+import { Lock, LogIn, Mail } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@entities/auth";
+import { Button, Card, CardContent, CardHeader, CardTitle, Input } from "@/components/ui";
+import { featureFlags, isV2PageEnabled } from "@shared/config";
 
-const { Title } = Typography;
+type LoginFormState = {
+  email: string;
+  password: string;
+};
 
 const Login: React.FC = () => {
   const [loading, setLoading] = useState(false);
+  const [errorText, setErrorText] = useState<string | null>(null);
+  const [form, setForm] = useState<LoginFormState>({
+    email: "admin@system.com",
+    password: "admin123",
+  });
   const { login } = useAuth();
   const navigate = useNavigate();
-  const { message } = App.useApp();
 
-  const onFinish = async (values: { email: string; password: string }) => {
-    console.log("Login attempt:", values.email); // Debug
+  const onSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
     setLoading(true);
+    setErrorText(null);
     try {
-      const user = await login(values.email, values.password);
-      console.log("Login success:", user); // Debug
-      message.success("Kirish muvaffaqiyatli!");
-      if (user.role === "SUPER_ADMIN") {
-        navigate("/dashboard");
-      } else if (user.schoolId) {
-        navigate(`/schools/${user.schoolId}/dashboard`);
-      } else {
-        navigate("/dashboard");
+      const user = await login(form.email.trim(), form.password);
+
+      if (
+        featureFlags.uiV2Enabled &&
+        featureFlags.uiV2Force &&
+        user.role !== "SUPER_ADMIN" &&
+        user.schoolId &&
+        isV2PageEnabled("dashboard")
+      ) {
+        navigate(`/v2/schools/${user.schoolId}/dashboard`, { replace: true });
+        return;
       }
-    } catch (error: any) {
-      console.error("Login error:", error); // Debug
-      message.error(error.response?.data?.error || "Kirishda xatolik");
+
+      if (user.role === "SUPER_ADMIN") {
+        navigate("/dashboard", { replace: true });
+      } else if (user.schoolId) {
+        navigate(`/schools/${user.schoolId}/dashboard`, { replace: true });
+      } else {
+        navigate("/dashboard", { replace: true });
+      }
+    } catch (error: unknown) {
+      const message =
+        typeof error === "object" &&
+        error !== null &&
+        "response" in error &&
+        typeof (error as { response?: { data?: { error?: string } } }).response?.data?.error === "string"
+          ? (error as { response: { data: { error: string } } }).response.data.error
+          : "Kirishda xatolik";
+      setErrorText(message);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "center",
-        background: "#f0f2f5",
-      }}
-    >
-      <Card style={{ width: 400, boxShadow: "0 4px 12px rgba(0,0,0,0.1)" }}>
-        <div style={{ textAlign: "center", marginBottom: 32 }}>
-          <Title level={2} style={{ margin: 0, color: "#1890ff" }}>
-            Davomat tizimi
-          </Title>
-          <p style={{ color: "#8c8c8c", marginTop: 8 }}>
-            Hisobingizga kiring
-          </p>
-        </div>
-        <Form
-          name="login"
-          onFinish={onFinish}
-          onSubmitCapture={(e) => e.preventDefault()}
-          size="large"
-          layout="vertical"
-          initialValues={{
-            email: "admin@system.com",
-            password: "admin123",
-          }}
-        >
-          <Form.Item
-            name="email"
-            rules={[
-              { required: true, message: "Elektron pochtani kiriting" },
-              { type: "email", message: "To'g'ri elektron pochta kiriting" },
-            ]}
-          >
-            <Input prefix={<UserOutlined />} placeholder="Elektron pochta" />
-          </Form.Item>
-          <Form.Item
-            name="password"
-            rules={[{ required: true, message: "Parolni kiriting" }]}
-          >
-            <Input.Password prefix={<LockOutlined />} placeholder="Parol" />
-          </Form.Item>
-          <Form.Item>
-            <Button type="primary" htmlType="submit" loading={loading} block>
-              Kirish
+    <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top_left,_#dbeafe_0%,_#eef4fb_45%,_#f8fafc_100%)] p-4">
+      <Card className="w-full max-w-md border-border/80 bg-card/95 shadow-lg backdrop-blur">
+        <CardHeader className="space-y-1 text-center">
+          <CardTitle className="text-2xl text-primary">Davomat tizimi</CardTitle>
+          <p className="text-sm text-muted">Hisobingizga kiring</p>
+        </CardHeader>
+        <CardContent>
+          <form className="space-y-4" onSubmit={(event) => void onSubmit(event)}>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted" htmlFor="email">
+                Elektron pochta
+              </label>
+              <div className="relative">
+                <Mail className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted" />
+                <Input
+                  id="email"
+                  type="email"
+                  autoComplete="email"
+                  className="pl-9"
+                  value={form.email}
+                  onChange={(event) =>
+                    setForm((prev) => ({ ...prev, email: event.target.value }))
+                  }
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted" htmlFor="password">
+                Parol
+              </label>
+              <div className="relative">
+                <Lock className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted" />
+                <Input
+                  id="password"
+                  type="password"
+                  autoComplete="current-password"
+                  className="pl-9"
+                  value={form.password}
+                  onChange={(event) =>
+                    setForm((prev) => ({ ...prev, password: event.target.value }))
+                  }
+                  required
+                />
+              </div>
+            </div>
+
+            {errorText ? (
+              <div className="rounded-md border border-danger/30 bg-danger/5 px-3 py-2 text-sm text-danger">
+                {errorText}
+              </div>
+            ) : null}
+
+            <Button type="submit" className="w-full" disabled={loading}>
+              <LogIn className="mr-2 h-4 w-4" />
+              {loading ? "Kirilmoqda..." : "Kirish"}
             </Button>
-          </Form.Item>
-        </Form>
+          </form>
+        </CardContent>
       </Card>
     </div>
   );

@@ -1,42 +1,122 @@
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { Suspense, lazy, type ReactNode } from "react";
+import {
+  BrowserRouter,
+  Navigate,
+  Route,
+  Routes,
+  useParams,
+} from "react-router-dom";
+
 import { ProtectedRoute } from "./ProtectedRoute";
 import { Layout } from "@widgets/layout";
-import Login from "@pages/Login";
-import Dashboard from "@pages/Dashboard";
-import SuperAdminDashboard from "@pages/SuperAdminDashboard";
-import Students from "@pages/Students";
-import StudentDetail from "@pages/StudentDetail";
-import Attendance from "@pages/Attendance";
-import Classes from "@pages/Classes";
-import ClassDetail from "@pages/ClassDetail";
-import Devices from "@pages/Devices";
-import Holidays from "@pages/Holidays";
-import Schools from "@pages/Schools";
-import Users from "@pages/Users";
-import Cameras from "@pages/Cameras";
-import CamerasSuperAdmin from "@pages/CamerasSuperAdmin";
-import { UiGallery } from "@shared/ui";
+import { AppShellV2 } from "@widgets/layout-v2";
+import { AntdProvider } from "../providers/AntdProvider";
+import { featureFlags, isV2PageEnabled, type V2PageKey } from "@shared/config";
+
+const Login = lazy(() => import("@pages/Login"));
+const Dashboard = lazy(() => import("@pages/Dashboard"));
+const SuperAdminDashboard = lazy(() => import("@pages/SuperAdminDashboard"));
+const Students = lazy(() => import("@pages/Students"));
+const StudentDetail = lazy(() => import("@pages/StudentDetail"));
+const Attendance = lazy(() => import("@pages/Attendance"));
+const Classes = lazy(() => import("@pages/Classes"));
+const ClassDetail = lazy(() => import("@pages/ClassDetail"));
+const Devices = lazy(() => import("@pages/Devices"));
+const Holidays = lazy(() => import("@pages/Holidays"));
+const Schools = lazy(() => import("@pages/Schools"));
+const Users = lazy(() => import("@pages/Users"));
+const Cameras = lazy(() => import("@pages/Cameras"));
+const CamerasSuperAdmin = lazy(() => import("@pages/CamerasSuperAdmin"));
+const UiGallery = lazy(() => import("@shared/ui/UiGallery"));
+
+const DashboardV2 = lazy(() => import("@pages/v2/DashboardV2"));
+const StudentsV2 = lazy(() => import("@pages/v2/StudentsV2"));
+const DevicesV2 = lazy(() => import("@pages/v2/DevicesV2"));
+
+function RouteLoader() {
+  return (
+    <div className="flex min-h-screen items-center justify-center text-sm text-muted">
+      Yuklanmoqda...
+    </div>
+  );
+}
+
+function RouteSuspense({ children }: { children: ReactNode }) {
+  return <Suspense fallback={<RouteLoader />}>{children}</Suspense>;
+}
+
+function ForceV2Redirect({ page }: { page: V2PageKey }) {
+  const { schoolId } = useParams<{ schoolId: string }>();
+  if (!schoolId) return <Navigate to="/dashboard" replace />;
+  return <Navigate to={`/v2/schools/${schoolId}/${page}`} replace />;
+}
 
 export function AppRouter() {
+  const enableV2 = featureFlags.uiV2Enabled;
+  const forceV2 = featureFlags.uiV2Force;
+
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/login" element={<Login />} />
+        <Route
+          path="/login"
+          element={
+            <RouteSuspense>
+              <Login />
+            </RouteSuspense>
+          }
+        />
+
+        {forceV2 && enableV2 && isV2PageEnabled("dashboard") && (
+          <Route
+            path="/schools/:schoolId/dashboard"
+            element={
+              <ProtectedRoute requiredRoles={["SCHOOL_ADMIN", "TEACHER", "GUARD"]}>
+                <ForceV2Redirect page="dashboard" />
+              </ProtectedRoute>
+            }
+          />
+        )}
+        {forceV2 && enableV2 && isV2PageEnabled("students") && (
+          <Route
+            path="/schools/:schoolId/students"
+            element={
+              <ProtectedRoute requiredRoles={["SCHOOL_ADMIN", "TEACHER", "GUARD"]}>
+                <ForceV2Redirect page="students" />
+              </ProtectedRoute>
+            }
+          />
+        )}
+        {forceV2 && enableV2 && isV2PageEnabled("devices") && (
+          <Route
+            path="/schools/:schoolId/devices"
+            element={
+              <ProtectedRoute requiredRoles={["SCHOOL_ADMIN", "GUARD"]}>
+                <ForceV2Redirect page="devices" />
+              </ProtectedRoute>
+            }
+          />
+        )}
 
         <Route
           path="/"
           element={
             <ProtectedRoute>
-              <Layout />
+              <AntdProvider>
+                <Layout />
+              </AntdProvider>
             </ProtectedRoute>
           }
         >
           <Route index element={<Navigate to="/dashboard" replace />} />
+
           <Route
             path="dashboard"
             element={
               <ProtectedRoute requiredRoles={["SUPER_ADMIN"]}>
-                <SuperAdminDashboard />
+                <RouteSuspense>
+                  <SuperAdminDashboard />
+                </RouteSuspense>
               </ProtectedRoute>
             }
           />
@@ -45,15 +125,20 @@ export function AppRouter() {
             path="schools"
             element={
               <ProtectedRoute requiredRoles={["SUPER_ADMIN"]}>
-                <Schools />
+                <RouteSuspense>
+                  <Schools />
+                </RouteSuspense>
               </ProtectedRoute>
             }
           />
+
           <Route
             path="cameras"
             element={
               <ProtectedRoute requiredRoles={["SUPER_ADMIN"]}>
-                <CamerasSuperAdmin />
+                <RouteSuspense>
+                  <CamerasSuperAdmin />
+                </RouteSuspense>
               </ProtectedRoute>
             }
           />
@@ -62,7 +147,13 @@ export function AppRouter() {
             path="schools/:schoolId/dashboard"
             element={
               <ProtectedRoute requiredRoles={["SCHOOL_ADMIN", "TEACHER", "GUARD"]}>
-                <Dashboard />
+                {forceV2 && isV2PageEnabled("dashboard") ? (
+                  <ForceV2Redirect page="dashboard" />
+                ) : (
+                  <RouteSuspense>
+                    <Dashboard />
+                  </RouteSuspense>
+                )}
               </ProtectedRoute>
             }
           />
@@ -70,7 +161,13 @@ export function AppRouter() {
             path="schools/:schoolId/students"
             element={
               <ProtectedRoute requiredRoles={["SCHOOL_ADMIN", "TEACHER", "GUARD"]}>
-                <Students />
+                {forceV2 && isV2PageEnabled("students") ? (
+                  <ForceV2Redirect page="students" />
+                ) : (
+                  <RouteSuspense>
+                    <Students />
+                  </RouteSuspense>
+                )}
               </ProtectedRoute>
             }
           />
@@ -78,7 +175,9 @@ export function AppRouter() {
             path="schools/:schoolId/attendance"
             element={
               <ProtectedRoute requiredRoles={["SCHOOL_ADMIN", "TEACHER", "GUARD"]}>
-                <Attendance />
+                <RouteSuspense>
+                  <Attendance />
+                </RouteSuspense>
               </ProtectedRoute>
             }
           />
@@ -86,7 +185,9 @@ export function AppRouter() {
             path="schools/:schoolId/classes"
             element={
               <ProtectedRoute requiredRoles={["SCHOOL_ADMIN", "TEACHER", "GUARD"]}>
-                <Classes />
+                <RouteSuspense>
+                  <Classes />
+                </RouteSuspense>
               </ProtectedRoute>
             }
           />
@@ -94,7 +195,9 @@ export function AppRouter() {
             path="schools/:schoolId/classes/:classId"
             element={
               <ProtectedRoute requiredRoles={["SCHOOL_ADMIN", "TEACHER", "GUARD"]}>
-                <ClassDetail />
+                <RouteSuspense>
+                  <ClassDetail />
+                </RouteSuspense>
               </ProtectedRoute>
             }
           />
@@ -102,7 +205,9 @@ export function AppRouter() {
             path="schools/:schoolId/cameras"
             element={
               <ProtectedRoute requiredRoles={["SCHOOL_ADMIN", "GUARD", "SUPER_ADMIN"]}>
-                <Cameras />
+                <RouteSuspense>
+                  <Cameras />
+                </RouteSuspense>
               </ProtectedRoute>
             }
           />
@@ -110,7 +215,13 @@ export function AppRouter() {
             path="schools/:schoolId/devices"
             element={
               <ProtectedRoute requiredRoles={["SCHOOL_ADMIN", "GUARD"]}>
-                <Devices />
+                {forceV2 && isV2PageEnabled("devices") ? (
+                  <ForceV2Redirect page="devices" />
+                ) : (
+                  <RouteSuspense>
+                    <Devices />
+                  </RouteSuspense>
+                )}
               </ProtectedRoute>
             }
           />
@@ -118,7 +229,9 @@ export function AppRouter() {
             path="schools/:schoolId/holidays"
             element={
               <ProtectedRoute requiredRoles={["SCHOOL_ADMIN"]}>
-                <Holidays />
+                <RouteSuspense>
+                  <Holidays />
+                </RouteSuspense>
               </ProtectedRoute>
             }
           />
@@ -126,7 +239,9 @@ export function AppRouter() {
             path="schools/:schoolId/users"
             element={
               <ProtectedRoute requiredRoles={["SCHOOL_ADMIN", "SUPER_ADMIN"]}>
-                <Users />
+                <RouteSuspense>
+                  <Users />
+                </RouteSuspense>
               </ProtectedRoute>
             }
           />
@@ -134,13 +249,72 @@ export function AppRouter() {
             path="schools/:schoolId/students/:id"
             element={
               <ProtectedRoute requiredRoles={["SCHOOL_ADMIN", "TEACHER", "GUARD"]}>
-                <StudentDetail />
+                <RouteSuspense>
+                  <StudentDetail />
+                </RouteSuspense>
               </ProtectedRoute>
             }
           />
 
-          {import.meta.env.DEV && <Route path="ui-gallery" element={<UiGallery />} />}
+          {import.meta.env.DEV && (
+            <Route
+              path="ui-gallery"
+              element={
+                <RouteSuspense>
+                  <UiGallery />
+                </RouteSuspense>
+              }
+            />
+          )}
         </Route>
+
+        {enableV2 && (
+          <Route
+            path="/v2"
+            element={
+              <ProtectedRoute>
+                <AppShellV2 />
+              </ProtectedRoute>
+            }
+          >
+            {isV2PageEnabled("dashboard") && (
+              <Route
+                path="schools/:schoolId/dashboard"
+                element={
+                  <ProtectedRoute requiredRoles={["SCHOOL_ADMIN", "TEACHER", "GUARD"]}>
+                    <RouteSuspense>
+                      <DashboardV2 />
+                    </RouteSuspense>
+                  </ProtectedRoute>
+                }
+              />
+            )}
+            {isV2PageEnabled("students") && (
+              <Route
+                path="schools/:schoolId/students"
+                element={
+                  <ProtectedRoute requiredRoles={["SCHOOL_ADMIN", "TEACHER", "GUARD"]}>
+                    <RouteSuspense>
+                      <StudentsV2 />
+                    </RouteSuspense>
+                  </ProtectedRoute>
+                }
+              />
+            )}
+            {isV2PageEnabled("devices") && (
+              <Route
+                path="schools/:schoolId/devices"
+                element={
+                  <ProtectedRoute requiredRoles={["SCHOOL_ADMIN", "GUARD"]}>
+                    <RouteSuspense>
+                      <DevicesV2 />
+                    </RouteSuspense>
+                  </ProtectedRoute>
+                }
+              />
+            )}
+          </Route>
+        )}
 
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>

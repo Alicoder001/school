@@ -1,8 +1,6 @@
 import React from "react";
 import { Navigate, useLocation } from "react-router-dom";
-import { Spin } from "antd";
 import { useAuth } from "@entities/auth";
-import { protectedRouteContainerStyle } from "@shared/ui/styles";
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -16,8 +14,11 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requir
 
   if (loading) {
     return (
-      <div style={protectedRouteContainerStyle}>
-        <Spin size="large" />
+      <div className="flex h-screen items-center justify-center bg-background">
+        <div
+          className="h-9 w-9 animate-spin rounded-full border-2 border-primary border-t-transparent"
+          aria-label="Yuklanmoqda"
+        />
       </div>
     );
   }
